@@ -5,7 +5,7 @@ Architecture work begins only after this sequence is complete:
 | Order | Document | Required result |
 |---:|---|---|
 | 0 | [`zluda-tracing.md`](zluda-tracing.md) | **Complete.** Pinned ZLUDA's x86 NVIDIA injection path and the exact Mirror's Edge capture procedure. |
-| 1 | [`mirrors-edge-native-trace.md`](mirrors-edge-native-trace.md) | Preserve and identify a controlled native trace; document the route, environment, CUDA initialization, chronological API behavior, module loads, launches, transfers, errors, and shutdown. |
+| 1 | [`mirrors-edge-native-trace.md`](mirrors-edge-native-trace.md) | **Baseline captured; coverage incomplete.** Preserve and identify controlled native traces; document routes, environments, CUDA initialization, chronological API behavior, module loads, launches, transfers, errors, and shutdown. Add confirmed cloth and debris/glass coverage before closing this item. |
 | 2 | [`mirrors-edge-ptx-corpus.md`](mirrors-edge-ptx-corpus.md) | Deduplicate every captured module and map modules, functions, and launches. Inventory PTX versions, instructions, address spaces, barriers, warp operations, textures, shared memory, parameters, and launch shapes. |
 | 3 | [`cuda-driver-contract.md`](cuda-driver-contract.md) | Turn the observed API surface into a finite compatibility contract: x86 ABI, state transitions, ordering, memory behavior, device attributes, legacy launch setup, required outputs, and observed error behavior. |
 | 4 | [`zluda-runtime.md`](zluda-runtime.md) | For each observed CUDA API requirement, cite ZLUDA's concrete implementation path, state model, 32/64-bit boundary, behavior, limitations, and reusable ideas. Ignore unobserved CUDA functionality. |
