@@ -1,0 +1,15 @@
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor-local state
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local scratch directories
+tmp/
+temp/
