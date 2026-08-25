@@ -5,7 +5,7 @@ Architecture work begins only after this sequence is complete:
 | Order | Document | Required result |
 |---:|---|---|
 | 0 | [`zluda-tracing.md`](zluda-tracing.md) | **Complete.** Pinned ZLUDA's x86 NVIDIA injection path and the exact Mirror's Edge capture procedure. |
-| 1 | [`mirrors-edge-native-trace.md`](mirrors-edge-native-trace.md) | **Baseline captured; coverage incomplete.** Preserve and identify controlled native traces; document routes, environments, CUDA initialization, chronological API behavior, module loads, launches, transfers, errors, and shutdown. Add confirmed cloth and debris/glass coverage before closing this item. |
+| 1 | [`mirrors-edge-native-trace.md`](mirrors-edge-native-trace.md) | **Fluid, deformable, and visibly broken-glass workloads captured; control pending.** Preserve and identify controlled native traces; document routes, environments, CUDA initialization, chronological API behavior, module loads, launches, transfers, errors, and shutdown. |
 | 2 | [`mirrors-edge-ptx-corpus.md`](mirrors-edge-ptx-corpus.md) | Deduplicate every captured module and map modules, functions, and launches. Inventory PTX versions, instructions, address spaces, barriers, warp operations, textures, shared memory, parameters, and launch shapes. |
 | 3 | [`cuda-driver-contract.md`](cuda-driver-contract.md) | Turn the observed API surface into a finite compatibility contract: x86 ABI, state transitions, ordering, memory behavior, device attributes, legacy launch setup, required outputs, and observed error behavior. |
 | 4 | [`zluda-runtime.md`](zluda-runtime.md) | For each observed CUDA API requirement, cite ZLUDA's concrete implementation path, state model, 32/64-bit boundary, behavior, limitations, and reusable ideas. Ignore unobserved CUDA functionality. |
@@ -22,3 +22,31 @@ Architecture work begins only after this sequence is complete:
 - Put only observed workload behavior in the required scope.
 - Record uncertainty explicitly; use `native-oracle-probes.md` rather than guessing.
 - Do not choose architecture, dependencies, or general CUDA coverage before `research-synthesis.md`.
+
+## Implementation start gate
+
+The native traces now establish the workload families. Before writing the
+permanent pxvk runtime, complete enough research to answer:
+
+- **Module contract:** which fatbins/PTX modules and entry points are unique,
+  which kernels actually launch, and which globals and texture references each
+  uses.
+- **PTX contract:** the exact directives, instructions, types, address spaces,
+  barriers, warp operations, texture operations, and shared-memory behavior in
+  the launched corpus.
+- **Launch ABI:** how each captured packed buffer maps to the corresponding PTX
+  `.param` declarations, including alignment and pointer fields.
+- **Driver ABI:** the finite exported and Dark API surface, x86 calling
+  conventions, handle lifetimes, state transitions, queried device values,
+  synchronization, and error results.
+- **Backend facts:** which Vulkan features and limits can implement that
+  contract while preserving CUDA-visible warp size 32.
+- **Oracle:** at least one deterministic correctness signal for fluid and
+  deformable execution, not only visual success. Prefer focused native probes
+  or selected output-buffer hashes over full replay capture.
+- **Scope gate:** `research-synthesis.md` names the first independently testable
+  slice and confirms that unresolved items do not block it.
+
+A disposable experiment may start after the PTX and driver contracts expose a
+coherent thin path. Language, dependency, and permanent architecture choices
+remain deferred until the synthesis gate.

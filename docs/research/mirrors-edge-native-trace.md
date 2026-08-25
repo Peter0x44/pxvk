@@ -348,20 +348,80 @@ user confirmed normal window and focus behavior. Remove `d3d9.dll` and
 whether this graphics wrapper was present; it is operational tooling, not a
 pxvk runtime dependency.
 
+## Targeted effect captures
+
+Scene switching used local `TdInput.ini` bindings that issue Unreal `start`
+commands only after an ordinary level has loaded:
+
+```ini
+F3 = start Subway_p?LoadCheckpoint=Subway_Station?Game=TdGame.TdSpStoryGame?AllowCPSaving=FALSE
+F4 = start Scraper_p?LoadCheckpoint=Server_room?Game=TdGame.TdSpStoryGame?AllowCPSaving=FALSE
+F11 = start Escape_p?LoadCheckpoint=Office?Game=TdGame.TdSpStoryGame?AllowCPSaving=FALSE
+```
+
+### Subway station: deformable workload
+
+F3 loaded the subway-station checkpoint. The user did not identify an obvious
+cloth object, but the trace conclusively exercised a deformable simulation for
+76 steps:
+
+| Kernel | Calls | Grid X | Block X | Shared memory | Parameter bytes |
+|---|---:|---:|---:|---:|---:|
+| `PxgCudaDeformableUpdate` | 76 | 28 | 64 | 0 | 12 |
+| `KernelDeformableUberCollision` | 76 | 30 | 64 | 0 | 4 |
+| `KernelDeformableUberSolver<512>` | 76 | 6 | 64 | 7072 B | 16 |
+
+The complete run recorded 44,537 launches, 6,563 synchronizations, 17 fatbins,
+and 15 distinct launch-parameter samples with no nonzero CUDA result. Its
+44,855-line log is 10,766,827 bytes. The archive is preserved locally at
+`tmp/evidence/mirrors-edge-cloth-trace-001/raw-trace.tar.gz`, SHA-256
+`40ac4732de8bdd7a392aaa36fcf309cda97e931025dadef8fca946fd10dc1ff9`.
+
+This establishes the deformable kernel path, not visual cloth identification.
+
+### Server room: confirmed glass workload
+
+F4 loaded the server-room checkpoint. The user confirmed that glass was present
+and that both the player and police gunfire broke it. Persistent shards and
+smoke were not observed carefully enough to claim.
+
+The run recorded 5,762 launches, 641 synchronizations, 17 fatbins, and 13
+distinct launch-parameter samples with no nonzero CUDA result. Its 6,080-line
+log is 1,412,649 bytes. Compared with the tutorial fluid baseline it added or
+materially expanded:
+
+| Kernel stem | Calls | Notable observation |
+|---|---:|---|
+| `KernelFluidSimpleParticle` | 514 | 44-byte parameter buffer; grid X 2–10 |
+| Fluid convex-shape collision | 476 | 20-byte parameters |
+| Fluid capsule-shape collision | 512 | 20-byte parameters |
+| Fluid box-shape collision | 1,088 | largest collision-call family |
+| Fluid triangle collision | 638 | grid X reached 94 |
+
+The archive is preserved locally at
+`tmp/evidence/mirrors-edge-glass-trace-001/raw-trace.tar.gz`, SHA-256
+`eb68cc59f35cbddb0e3e125c56b6c7963b9c7ef9339580e4a84f0548072a1c29`.
+
+The trace confirms the workload associated with a visibly broken-glass scene.
+It does not prove which launches simulate glass fragments versus nearby smoke
+or other particles; that correlation needs an enhanced-PhysX-off control or a
+more focused trigger.
+
+
 ## Missing evidence and required follow-up
 
 This baseline does not close native trace research:
 
-1. **Launch parameters beyond the first sample:** buffer sizes and one sample per observed fluid kernel are now captured; dynamic changes across later launches are not preserved.
+1. **Launch parameters beyond the first sample:** buffer sizes and one sample per observed kernel are captured; dynamic changes across later launches are not preserved.
 2. **Transfer payloads:** copy contents were not captured.
-3. **Cloth/deformables:** deformable modules loaded, but no deformable kernel launched.
-4. **Glass/debris:** the route did not visibly exercise them.
-5. **Coverage:** a short tutorial segment cannot establish all Mirror's Edge GPU PhysX paths.
-6. **Timing:** tracing changes execution and is not performance evidence.
+3. **Visual cloth identity:** the deformable path is proven, but the simulated object was not identified visually.
+4. **Glass attribution:** glass destruction is confirmed, but persistent shards and smoke were not separately observed.
+5. **Control run:** the same server-room checkpoint has not been captured with enhanced PhysX disabled.
+6. **Coverage:** these three short scenes cannot establish every Mirror's Edge GPU PhysX path.
+7. **Timing:** tracing changes execution and is not performance evidence.
 
 Before deriving the final CUDA contract, collect targeted traces for:
 
-- a confirmed cloth/deformable scene;
-- a confirmed glass/debris scene;
-- the same scene with enhanced PhysX disabled as a control;
+- the server-room checkpoint with enhanced PhysX disabled as a control;
+- a visually confirmed cloth object if deterministic visual validation is needed;
 - additional launch samples only if later traces show a new function or packed-buffer size.
