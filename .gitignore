@@ -13,3 +13,6 @@ Desktop.ini
 # Local scratch directories
 tmp/
 temp/
+
+# Generated build trees
+/build/
