@@ -11,13 +11,18 @@ endif()
 
 set(VULKAN_SDK_ROOT "$ENV{VULKAN_SDK}" CACHE PATH "Vulkan SDK root")
 if(NOT VULKAN_SDK_ROOT)
-    set(VULKAN_SDK_ROOT "C:/VulkanSDK/1.4.357.0")
+    message(FATAL_ERROR "Set VULKAN_SDK or pass -DVULKAN_SDK_ROOT=<SDK root>")
+endif()
+
+set(VOLK_SOURCE "${VULKAN_SDK_ROOT}/Include/Volk/volk.c")
+if(NOT EXISTS "${VOLK_SOURCE}")
+    message(FATAL_ERROR "Volk source not found at ${VOLK_SOURCE}")
 endif()
 
 add_executable(
     vulkan-probe
     main.c
-    "${VULKAN_SDK_ROOT}/Include/Volk/volk.c"
+    "${VOLK_SOURCE}"
 )
 target_include_directories(
     vulkan-probe
@@ -31,5 +36,11 @@ target_compile_definitions(
     PRIVATE
         _WIN32_WINNT=0x0601
 )
-target_compile_options(vulkan-probe PRIVATE -Wall -Wextra)
-target_link_options(vulkan-probe PRIVATE -static-libgcc)
+if(MSVC)
+    target_compile_options(vulkan-probe PRIVATE /W4)
+else()
+    target_compile_options(vulkan-probe PRIVATE -Wall -Wextra)
+    if(MINGW)
+        target_link_options(vulkan-probe PRIVATE -static-libgcc)
+    endif()
+endif()
