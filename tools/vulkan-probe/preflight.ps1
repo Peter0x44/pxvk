@@ -186,7 +186,9 @@ $report = [ordered]@{
         "AMD game integration still requires the deferred non-NVIDIA NVAPI gate."
     )
 }
-$report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
+$reportJson = ($report | ConvertTo-Json -Depth 8) + [System.Environment]::NewLine
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($reportPath, $reportJson, $utf8NoBom)
 
 Write-Host ""
 Write-Host "pxvk Mirror's Edge Vulkan hardware preflight"

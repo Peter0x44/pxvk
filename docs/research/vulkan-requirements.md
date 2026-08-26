@@ -75,7 +75,7 @@ The normalized fetched-dependency output remains local at
 `tmp/vulkan-preflight-fetch/capabilities.json`, SHA-256
 `c6dffac9696fbb0a2165a0ca14505386e06d6a54969f884669b89c24225166dd`.
 
-### Workstation results
+### Observed device results
 
 | Property | Intel UHD Graphics | RTX 3070 Laptop |
 |---|---:|---:|
@@ -92,8 +92,31 @@ The normalized fetched-dependency output remains local at
 | `robustBufferAccess2` | yes | yes |
 | `vulkanMemoryModel` | yes | yes |
 
-These are local feasibility results, not portable minimums. Startup must still
-query and reject a device that misses a hard requirement.
+A later submitted AMD PE32 run also passed:
+
+| Property | AMD Radeon 8060S |
+|---|---:|
+| Vendor / device ID | `0x1002` / `0x1586` |
+| Device Vulkan version | 1.4.349 |
+| Compute queues | 16 |
+| Max workgroup invocations / size X | 1,024 / 1,024 |
+| Max workgroup count X | 4,294,967,295 |
+| Max workgroup shared memory | 32,768 B |
+| Max storage-buffer range | 4,294,967,295 B |
+| Max allocation / buffer | 2,147,483,648 B |
+| Max push constants | 256 B |
+| `shaderInt64` and storage-buffer 8/16-bit access | yes |
+| f32 preserve / FTZ / RTE / RTZ | yes / yes / yes / yes |
+
+The redistributable AMD fixtures are preserved under
+`tools/vulkan-probe/expected/amd-radeon-8060s-device1586-driver8389003/`.
+The raw capabilities SHA-256 is
+`f35d24ad1404a2267e2dd5853466ef63960fb0de330b891d2de6c949c503fa7d`;
+the normalized preflight SHA-256 is
+`9989dc0a20d043d234a9c6b8e85a668571e16fa1c30bdc9a20a22667a34430d4`.
+
+These are observed feasibility results, not portable minimums. Startup must
+still query and reject a device that misses a hard requirement.
 
 ## Required and optional Vulkan capabilities
 
@@ -241,16 +264,16 @@ The native CUDA fixture makes these observable requirements:
   explicitly accepted error envelope.
 
 SPIR-V provides the relevant controls, but the device properties decide which
-execution modes may be requested. The local result is decisive:
+execution modes may be requested. The observed device results are decisive:
 
-| f32 property | Intel | RTX 3070 |
-|---|---:|---:|
-| signed-zero/Inf/NaN preserve | yes | yes |
-| denorm preserve | yes | no |
-| denorm flush to zero | yes | no |
-| rounding mode RTE | yes | yes |
-| rounding mode RTZ | yes | yes |
-| shader float controls 2 | yes | yes |
+| f32 property | Intel | RTX 3070 | AMD 8060S |
+|---|---:|---:|---:|
+| signed-zero/Inf/NaN preserve | yes | yes | yes |
+| denorm preserve | yes | no | yes |
+| denorm flush to zero | yes | no | yes |
+| rounding mode RTE | yes | yes | yes |
+| rounding mode RTZ | yes | yes | yes |
+| shader float controls 2 | yes | yes | yes |
 
 Therefore:
 
@@ -278,14 +301,14 @@ not yet prove that the proposed helper placement reproduces every intermediate.
 
 ## Subgroup size 32
 
-The x86 probe reported:
+The x86 probes reported:
 
-| Property | Intel | RTX 3070 |
-|---|---:|---:|
-| Default subgroup size | 32 | 32 |
-| Minimum / maximum | 8 / 32 | 32 / 32 |
-| Required-size support in compute | yes | yes |
-| `subgroupSizeControl` | yes | yes |
+| Property | Intel | RTX 3070 | AMD 8060S |
+|---|---:|---:|---:|
+| Default subgroup size | 32 | 32 | 64 |
+| Minimum / maximum | 8 / 32 | 32 / 32 | 32 / 64 |
+| Required-size support in compute | yes | yes | yes |
+| `subgroupSizeControl` | yes | yes | yes |
 
 This is useful headroom, not a current hard requirement. The PTX corpus has no
 `vote`, `shfl`, `match`, `%laneid`, `%warpid`, or lane-mask use. `bar.sync 0` is

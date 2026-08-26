@@ -246,12 +246,14 @@ There is no shared blanket epsilon and no comparison of formatted decimal text.
 
 ### Device matrix
 
-Run standalone Vulkan differentials on both local devices:
+Run standalone Vulkan differentials on every available target device:
 
-- RTX 3070 Vulkan: isolates CUDA-versus-Vulkan semantic differences on the same
+- RTX 3070 Vulkan isolates CUDA-versus-Vulkan semantic differences on the same
   physical architecture;
-- Intel UHD Vulkan: proves the implementation does not depend on NVIDIA Vulkan
-  behavior.
+- Intel UHD Vulkan proves the implementation does not depend on NVIDIA Vulkan
+  behavior;
+- AMD Radeon 8060S Vulkan is the first external cross-vendor target. Its PE32
+  hardware gate passes, but it still needs the standalone SPIR-V/oracle run.
 
 Each result records the physical-device name, vendor/device IDs, Vulkan API,
 driver version, enabled features, shader hash, and pxvk commit.
@@ -455,7 +457,7 @@ a developer's memory.
 |---|---|
 | CUDA facade initializes | PE32 export/ABI smoke, Dark lifecycle, startup gate, clean teardown |
 | PTX frontend covers the target | all 17 local modules parse; all 16 launched entries emit valid SPIR-V |
-| Vulkan semantics are viable | committed CUDA-oracle differential passes on RTX Vulkan and Intel Vulkan, with every mismatch classified |
+| Vulkan semantics are viable | committed CUDA-oracle differential passes on RTX, Intel, and AMD Vulkan, with every mismatch classified |
 | First translated PhysX kernel works | one stable real-kernel fixture passes bitwise with guards |
 | Fluid/deformable family works | selected single-kernel fixture plus complete-step sequence fixture passes |
 | Mirror's Edge integration works | applicable real-workload fixtures plus all three game routes pass |
@@ -473,7 +475,7 @@ The smallest useful slice after research synthesis is:
 2. create a Vulkan runner for one integer/global-memory microkernel;
 3. add f32, barrier, and integer-texture cases without changing their expected
    JSON fields;
-4. run on RTX Vulkan and Intel Vulkan;
+4. run on RTX, Intel, and AMD Vulkan;
 5. classify differences before capturing proprietary real-kernel fixtures.
 
 This slice proves the compiler/runtime test loop while keeping game data,

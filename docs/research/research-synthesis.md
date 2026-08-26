@@ -203,11 +203,11 @@ Enumerate every physical device. Apply the documented feature/limit gate without
 vendor-name branches. Development runners accept an explicit device index and
 print vendor/device IDs; the DLL defaults to the first passing non-CPU device
 and later exposes a diagnostic override such as `PXVK_VULKAN_DEVICE`.
-
-AMD is a required validation platform once available, not a source of AMD-only
-lowering. The implementation may select a capability path—native versus
-software FTZ, for example—but not a vendor-specific semantic shortcut without a
-measured oracle result.
+An AMD Radeon 8060S has now passed the PE32 hardware gate. AMD remains a
+required execution platform for the standalone oracle runner, not a source of
+AMD-only lowering. The implementation may select a capability path—native
+versus software FTZ, for example—but not a vendor-specific semantic shortcut
+without a measured oracle result.
 
 The AMD machine needs:
 
@@ -319,20 +319,24 @@ The report states three remaining limits explicitly: it does not allocate the
 required buffers, execute SPIR-V, or validate software FTZ. It also records that
 AMD game integration still needs NVAPI.
 
-Reference-workstation verification found two passing devices:
+Observed preflight devices:
 
-| Device | Vendor | Result | f32 path |
-|---|---|---|---|
-| Intel UHD Graphics | `0x8086` | hardware gate passed | native FTZ |
-| RTX 3070 Laptop | `0x10de` | hardware gate passed | software FTZ required |
+| Device | Vendor | Result | f32 path | Default subgroup |
+|---|---|---|---|---:|
+| Intel UHD Graphics | `0x8086` | hardware gate passed | native FTZ | 32 |
+| RTX 3070 Laptop | `0x10de` | hardware gate passed | software FTZ required | 32 |
+| AMD Radeon 8060S | `0x1002` | hardware gate passed | native FTZ | 64 |
 
-Invocations from the repository root and from `C:\Users` through the script's
-absolute path produced byte-identical fetched-dependency capability output,
-SHA-256:
-`c6dffac9696fbb0a2165a0ca14505386e06d6a54969f884669b89c24225166dd`.
+The AMD submission is archived under
+`tools/vulkan-probe/expected/amd-radeon-8060s-device1586-driver8389003/`.
+Its raw capability SHA-256 is
+`f35d24ad1404a2267e2dd5853466ef63960fb0de330b891d2de6c949c503fa7d`.
+It proves the cross-vendor PE32 loader and hardware gate on AMD. It does not yet
+prove SPIR-V execution, PTX semantics, NVAPI game startup, or PhysX output.
 
-No AMD device was available in this research session. AMD support is therefore
-a runnable vendor-neutral path, not a claimed observed pass.
+AMD's default subgroup size is 64 while this corpus has no subgroup operation.
+This independently supports the decision not to make Vulkan subgroup size 32 a
+hardware gate; CUDA-visible warp size remains an emulated API value.
 
 ## First independently testable implementation slice
 
@@ -356,7 +360,7 @@ exports and no proprietary inputs.
 
 - PE32 process confirmed in output;
 - no vendor-name conditionals or non-core vendor extensions;
-- integer/global-memory case exact on RTX and Intel;
+- integer/global-memory case exact on RTX, Intel, and AMD;
 - every existing oracle field exact or one named approximate mismatch report;
 - Vulkan validation layer reports no error in development runs;
 - three runs per selected device produce byte-identical normalized JSON;
