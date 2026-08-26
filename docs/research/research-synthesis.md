@@ -127,10 +127,10 @@ Use Vulkan headers plus Volk and compile `volk.c` into each executable/DLL. Do
 not link `vulkan-1.lib` and do not use vendor SDK APIs. The deployed binary loads
 the system x86 `vulkan-1.dll`, which dispatches to NVIDIA, Intel, or AMD ICDs.
 
-CMake FetchContent pins and retrieves Vulkan-Headers and Volk revisions. A
-Vulkan SDK is optional development tooling for `spirv-val` in later shader
-slices, not a build dependency of the preflight. End users do not need an SDK
-when running a built binary.
+CMake FetchContent pins and retrieves Vulkan-Headers, SPIRV-Headers, and Volk
+revisions. A Vulkan SDK is optional development tooling for `spirv-val`, not a
+build dependency of the preflight. End users do not need an SDK when running a
+built binary.
 
 This is intentionally raw Vulkan rather than a higher-level wrapper. The
 required API surface is one instance, one device/queue, buffers, descriptors,
@@ -288,18 +288,20 @@ directory. It can therefore be invoked from any directory:
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File D:\path\to\pxvk\tools\vulkan-probe\preflight.ps1 `
-  -Toolchain MinGW
+  -Toolchain MinGW `
+  -RunMemorySmoke
 ```
 
-CMake fetches pinned Volk and Vulkan-Headers commits on first configure. No
-Vulkan SDK path is required. Use `-SourceDir` only if the script is deliberately
-moved away from `CMakeLists.txt` and `main.c`. For Visual Studio 2022 with x86
-tools:
+CMake fetches pinned Volk, Vulkan-Headers, and SPIRV-Headers commits on first
+configure. No Vulkan SDK path is required. Use `-SourceDir` only if the script
+is deliberately moved away from `CMakeLists.txt`, `main.c`, and
+`memory_smoke.cpp`. For Visual Studio 2022 with x86 tools:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File D:\path\to\pxvk\tools\vulkan-probe\preflight.ps1 `
-  -Toolchain MSVC
+  -Toolchain MSVC `
+  -RunMemorySmoke
 ```
 
 By default, outputs are relative to the invocation directory:
@@ -307,17 +309,20 @@ By default, outputs are relative to the invocation directory:
 ```text
 vulkan-preflight/capabilities.json
 vulkan-preflight/preflight.json
+vulkan-preflight/memory-smoke.json
 ```
 
-Override them with `-OutputDir` and `-BuildDir`. `capabilities.json` is the raw
+Override paths with `-OutputDir` and `-BuildDir`. `capabilities.json` is the raw
 deterministic PE32 query. `preflight.json` contains the compiled Vulkan header
 version, gate values, per-device pass/fail reasons, FTZ path, dependency source,
-and capability hash. Exit status is nonzero only when no enumerated device
-passes the hardware gate.
+and capability hash. Exit status is nonzero when no enumerated device passes
+the hardware gate or when the optional memory smoke fails.
 
-The report states three remaining limits explicitly: it does not allocate the
-required buffers, execute SPIR-V, or validate software FTZ. It also records that
-AMD game integration still needs NVAPI.
+`-RunMemorySmoke` runs a separate generated SPIR-V compute shader on every
+device. It allocates the real 32 MiB device and staging buffers, performs
+transfer-to-compute and compute-to-transfer barriers, preserves an input guard,
+and checks the exact integer output. It does not validate PTX, floating point,
+textures, barriers within a workgroup, NVAPI, or PhysX.
 
 Observed preflight devices:
 
@@ -355,6 +360,20 @@ exports and no proprietary inputs.
 6. Compare against
    `tools/cuda-oracle/expected/rtx3070-driver610.88.json`.
 7. Run each passing physical device independently.
+
+### Current status
+
+Items 1–4 now exist as `vulkan-memory-smoke`. On the reference workstation it
+created device-local 32 MiB buffers, dispatched a generated 123-word SPIR-V
+module, and returned exact `0xc7b13c62` on Intel and RTX. The module passed
+`spirv-val --target-env vulkan1.2`; three runs produced byte-identical JSON. The
+committed fixture is
+`tools/vulkan-probe/expected/reference-workstation/memory-smoke.json`, SHA-256
+`4527312167c098277ba0422cfcd87d48a5578fdeeea3883234dbac0bbed2d2a0`.
+
+The next external check is the same command with `-RunMemorySmoke` on the AMD
+8060S. The next implementation work is item 5: add f32, workgroup barrier, and
+integer texture cases to form the full standalone oracle runner.
 
 ### Slice acceptance
 

@@ -2,6 +2,7 @@
 param(
     [ValidateSet("MinGW", "MSVC")]
     [string]$Toolchain = "MinGW",
+    [switch]$RunMemorySmoke,
     [string]$SourceDir = "",
     [string]$BuildDir = "",
     [string]$OutputDir = "",
@@ -82,6 +83,20 @@ $executableCandidates = @(
 $probeExecutable = $executableCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
 if ($null -eq $probeExecutable) {
     throw "Built vulkan-probe.exe was not found under $BuildDir"
+}
+
+$memorySmokePath = Join-Path $OutputDir "memory-smoke.json"
+if ($RunMemorySmoke) {
+    $memorySmokeCandidates = @(
+        (Join-Path $BuildDir "vulkan-memory-smoke.exe"),
+        (Join-Path $BuildDir "Release\vulkan-memory-smoke.exe")
+    )
+    $memorySmokeExecutable = $memorySmokeCandidates |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        Select-Object -First 1
+    if ($null -eq $memorySmokeExecutable) {
+        throw "Built vulkan-memory-smoke.exe was not found under $BuildDir"
+    }
 }
 
 $capabilityPath = Join-Path $OutputDir "capabilities.json"
@@ -189,6 +204,9 @@ $report = [ordered]@{
 $reportJson = ($report | ConvertTo-Json -Depth 8) + [System.Environment]::NewLine
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($reportPath, $reportJson, $utf8NoBom)
+if ($RunMemorySmoke) {
+    Invoke-Checked -File $memorySmokeExecutable -Arguments @($memorySmokePath)
+}
 
 Write-Host ""
 Write-Host "pxvk Mirror's Edge Vulkan hardware preflight"
@@ -203,8 +221,16 @@ foreach ($device in $deviceReports) {
 }
 Write-Host "Capabilities: $capabilityPath"
 Write-Host "Report:       $reportPath"
+if ($RunMemorySmoke) {
+    Write-Host "Memory smoke: $memorySmokePath"
+}
 Write-Host ""
-Write-Host "This checks cross-vendor hardware eligibility only; it does not run translated PhysX kernels."
+if ($RunMemorySmoke) {
+    Write-Host "Hardware preflight and integer/global-memory execution completed."
+}
+else {
+    Write-Host "This checks cross-vendor hardware eligibility only; use -RunMemorySmoke to execute generated SPIR-V."
+}
 
 if ($eligibleCount -eq 0) {
     exit 1

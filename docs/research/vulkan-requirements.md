@@ -44,7 +44,7 @@ This study combines:
 It does not establish requirements for unlaunched PhysX entries, other games,
 D3D/CUDA interop, warp intrinsics, or general CUDA.
 
-## Reproducible x86 capability probe
+## Reproducible x86 capability and memory probes
 
 The probe is implemented at:
 
@@ -52,11 +52,14 @@ The probe is implemented at:
 tools/vulkan-probe/
 ├── CMakeLists.txt
 ├── main.c
-└── preflight.ps1
+├── memory_smoke.cpp
+├── preflight.ps1
+└── expected/
 ```
 
-CMake FetchContent retrieves pinned Volk and Vulkan-Headers commits; no Vulkan
-SDK path or import library is required. Build and run manually:
+CMake FetchContent retrieves pinned Volk, Vulkan-Headers, and SPIRV-Headers
+commits; no Vulkan SDK path or import library is required. Build and run
+manually:
 
 ```bat
 cmake -S tools/vulkan-probe -B build/vulkan-probe -G "MinGW Makefiles" ^
@@ -65,6 +68,7 @@ cmake -S tools/vulkan-probe -B build/vulkan-probe -G "MinGW Makefiles" ^
   -DCMAKE_MAKE_PROGRAM=mingw32-make
 cmake --build build/vulkan-probe --parallel
 build\vulkan-probe\vulkan-probe.exe vulkan-x86-capabilities.json
+build\vulkan-probe\vulkan-memory-smoke.exe vulkan-memory-smoke.json
 ```
 
 The process reported `pointer_bits: 32`, Vulkan header version 1.4.357, and
@@ -74,6 +78,14 @@ parsed the result and confirmed both devices report `shaderInt64`.
 The normalized fetched-dependency output remains local at
 `tmp/vulkan-preflight-fetch/capabilities.json`, SHA-256
 `c6dffac9696fbb0a2165a0ca14505386e06d6a54969f884669b89c24225166dd`.
+
+The generated integer/global-memory shader then allocated one 32 MiB
+device-local buffer and one 32 MiB host-visible staging buffer per device.
+Intel and RTX both returned exact `0xc7b13c62` while preserving the input guard.
+The 123-word module passed `spirv-val --target-env vulkan1.2`; three runs
+produced byte-identical JSON. The committed result is
+`tools/vulkan-probe/expected/reference-workstation/memory-smoke.json`, SHA-256
+`4527312167c098277ba0422cfcd87d48a5578fdeeea3883234dbac0bbed2d2a0`.
 
 ### Observed device results
 

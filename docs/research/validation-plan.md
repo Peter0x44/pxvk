@@ -51,6 +51,7 @@ framework, runtime language, shader compiler, or architecture.
 | `tools/nvcuda-trace/tests/proxy_smoke.c` | `LoadLibrary`, export lookup, `cuInit`, and enumeration | Shape for an out-of-process pxvk facade smoke test |
 | `tools/nvcuda-trace/tests/injected_smoke.c` | Startup-injected `nvcuda.dll` discovery and calls | Shape for launcher/injection validation |
 | `tools/vulkan-probe/main.c` | x86 loader, device features, and quantitative limits | Input to startup-gate tests, not a compute-correctness test |
+| `tools/vulkan-probe/memory_smoke.cpp` | Generated SPIR-V, real 32 MiB buffers, transfer/compute barriers, exact integer output on Intel and RTX | First executable Vulkan semantic and allocation gate; run unchanged on AMD |
 | 17 local captured PTX modules | Complete corpus accepted by ZLUDA; hashes cataloged | Local parser/compile coverage without committing proprietary PTX |
 | Three native game traces | Fluid, deformable, and confirmed broken-glass execution | Route and workload-presence oracle |
 
