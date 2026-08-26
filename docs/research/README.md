@@ -11,7 +11,7 @@ Architecture work begins only after this sequence is complete:
 | 4 | [`zluda-runtime.md`](zluda-runtime.md) | **Complete for the observed runtime surface.** ZLUDA's x86 facade, shared-memory/event server boundary, public/Dark APIs, virtual pointers and handles, module metadata, packed launches, texture simplifications, NVAPI gate, reusable ideas, and deliberately excluded HIP/server machinery are documented. |
 | 5 | [`zluda-ptx.md`](zluda-ptx.md) | **Complete for the captured corpus.** Parser coverage, normalization order, dead-code removal, 32-bit offset conversion, module metadata, arithmetic/FP behavior, memory spaces, predication, barriers, textures, backend helpers, reusable frontend ideas, and HIP/LLVM-specific exclusions are documented. |
 | 6 | [`native-oracle-probes.md`](native-oracle-probes.md) | **Core PTX semantic probes complete; workload-output/runtime probes remain.** A MinGW x86 tool and committed RTX 3070 fixture define native FTZ, FMA, approximate math, conversion, `bar.sync`, and legacy linear-texture bounds behavior. |
-| 7 | [`vulkan-requirements.md`](vulkan-requirements.md) | Map the settled CUDA/PTX contract to required Vulkan capabilities and limits. Separate hard workload requirements from candidate implementation techniques; do not select a wrapper or detailed architecture. |
+| 7 | [`vulkan-requirements.md`](vulkan-requirements.md) | **Complete for the captured corpus and local x86 devices.** Vulkan 1.2, integer/float-control features, quantitative limits, storage/workgroup mappings, dispatch barriers, software-FTZ risk, texture bounds, and the non-requirement for subgroup size 32 are documented without selecting a permanent wrapper or runtime architecture. |
 | 8 | [`validation-plan.md`](validation-plan.md) | Define observable correctness checks against the NVIDIA oracle: focused API/PTX tests, captured corpus checks, and a reproducible Mirror's Edge smoke route. |
 | 9 | [`research-synthesis.md`](research-synthesis.md) | Consolidate the minimum implementation scope, explicit exclusions, evidence, remaining blockers, risks, and the recommended first independently testable implementation slice. This is the architecture gate. |
 
@@ -50,3 +50,21 @@ permanent pxvk runtime, complete enough research to answer:
 A disposable experiment may start after the PTX and driver contracts expose a
 coherent thin path. Language, dependency, and permanent architecture choices
 remain deferred until the synthesis gate.
+
+## Deferred probe register
+
+Open probes are tracked rather than dropped:
+
+| Probe | Status | Required before |
+|---|---|---|
+| Deterministic fluid/deformable kernel outputs | Deferred to `validation-plan.md`; standalone PTX semantics already have an oracle | Accepting the first real translated PhysX kernel |
+| Float legacy-texture fetch bits/OOB | Deferred until a candidate texture lowering exists | Accepting texture lowering |
+| Queried-only CUDA symbol NULL versus stub behavior | Non-blocking; ZLUDA proves non-null not-supported stubs work | Removing conservative export stubs |
+| Minimal non-NVIDIA NVAPI interface set | Deferred to game-integration validation | Running the original PhysX runtime without NVIDIA |
+| CUDA host-call thread IDs | Deferred runtime-hardening evidence | Claiming observed single-thread assumptions or optimizing locking |
+| PhysX-off server-room control | Deferred attribution check | Claiming individual particle launches represent only glass |
+| Vulkan differential against committed CUDA oracle | Necessarily waits for a backend | Accepting PTX arithmetic/barrier/texture correctness |
+
+Only the first two can block correctness of an implemented execution path.
+They do not block Vulkan capability research or a disposable frontend/backend
+experiment.
