@@ -1,0 +1,496 @@
+# Validation plan for the Mirror's Edge target
+
+## Status
+
+Validation is split into independently useful gates. No game run can substitute
+for a failed API, PTX, or workload-output gate, and no screenshot can establish
+numerical correctness.
+
+The project already has a committed native NVIDIA semantic oracle for f32,
+`bar.sync 0`, and unsigned linear textures. The missing correctness evidence is
+one repeatable real fluid-kernel fixture and one repeatable real
+deformable-kernel fixture. Those fixtures are required before accepting the
+first translated PhysX kernel, but they do not block a disposable Vulkan
+microkernel or CUDA-facade experiment.
+
+This document defines pass/fail evidence. It does not select the permanent test
+framework, runtime language, shader compiler, or architecture.
+
+## Validation principles
+
+1. **Native NVIDIA is the behavioral oracle.** Compare the same x86 API call,
+   PTX, launch, and input against driver 610.88 on the RTX 3070 reference system.
+2. **Exact by default.** Compare integer values and floating-point bit patterns
+   exactly. A tolerance is permitted only for one named approximate operation
+   after its native and Vulkan difference is measured and documented.
+3. **Test the narrow contract.** Cover the 35 active public CUDA exports, active
+   Dark API slots, 16 launched entries, and 120 launched opcode variants. Do not
+   add generic CUDA tests as a proxy for target evidence.
+4. **Separate contract from hardening.** Native-observed results are conformance
+   checks. Bounds checks, allocation failures, stale-handle rejection, and
+   malformed inputs may be safety tests, but must not be presented as observed
+   NVIDIA error compatibility.
+5. **Reproduce before preserving.** Record a native result at least three times
+   and require byte-identical normalized output before making it a fixture.
+6. **Pin every input.** A result report names the executable, driver, GPU,
+   Vulkan device/driver, PTX/fatbin, test program, and fixture hashes.
+7. **Do not bless a mismatch.** Classify it as capture instability, API state,
+   parser, lowering, synchronization, floating point, texture, or runtime
+   integration before changing expected output.
+8. **Visual success is integration evidence only.** The game may look plausible
+   while a simulation buffer is numerically wrong.
+
+## Existing validation assets
+
+| Asset | Current evidence | Role in the plan |
+|---|---|---|
+| `tools/cuda-oracle/probe.ptx` | Native PTX microkernels for f32, barrier, and texture behavior | Run unchanged through native CUDA and the Vulkan translator |
+| `tools/cuda-oracle/expected/rtx3070-driver610.88.json` | Committed exact NVIDIA result bits | Primary standalone semantic fixture |
+| `tools/cuda-oracle/main.c` | PE32/i386 Driver API launcher | Native reference runner and shape for a backend runner |
+| `tools/nvcuda-trace/tests/launch_params_test.c` | Standard/reversed packed launch tokens and malformed/unreadable inputs | Preserve `pxvk_parse_launch_extra` behavior; extend only when the launch ABI changes |
+| `tools/nvcuda-trace/tests/proxy_smoke.c` | `LoadLibrary`, export lookup, `cuInit`, and enumeration | Shape for an out-of-process pxvk facade smoke test |
+| `tools/nvcuda-trace/tests/injected_smoke.c` | Startup-injected `nvcuda.dll` discovery and calls | Shape for launcher/injection validation |
+| `tools/vulkan-probe/main.c` | x86 loader, device features, and quantitative limits | Input to startup-gate tests, not a compute-correctness test |
+| 17 local captured PTX modules | Complete corpus accepted by ZLUDA; hashes cataloged | Local parser/compile coverage without committing proprietary PTX |
+| Three native game traces | Fluid, deformable, and confirmed broken-glass execution | Route and workload-presence oracle |
+
+The committed CUDA oracle SHA-256 remains
+`a69570c48f5361afafbcca15408a350f19b9782730f613b35695692ce20141f9`.
+Its JSON contains 14 named f32 results, a 64-element barrier result, and 12
+texture-coordinate rows.
+
+## Validation layers
+
+| Layer | Runs without GPU | Needs Vulkan GPU | Needs native NVIDIA | Needs proprietary game data |
+|---|---:|---:|---:|---:|
+| Host utilities and state invariants | yes | no | no | no |
+| CUDA x86 facade and Dark API contract | mostly | initialization path | differential only | local corpus cases only |
+| PTX parser and static lowering | yes | no | differential only | local whole-corpus pass |
+| Standalone SPIR-V execution | no | yes | expected fixture already captured | no |
+| Real-kernel replay | no | yes | fixture capture | yes, kept local |
+| Mirror's Edge smoke routes | no | yes | comparison runs | yes |
+
+A change runs the lowest layer that can observe it. Milestone claims require all
+applicable higher layers; routine parser edits do not require launching the
+game.
+
+## CUDA facade and runtime contract checks
+
+### PE32 ABI and symbol surface
+
+A 32-bit client must:
+
+- load the candidate `nvcuda.dll` by the same mechanism used for the game;
+- resolve every one of the 196 names queried by the captured CUDART until the
+  deferred NULL-versus-stub probe narrows that list;
+- call every active export using its captured `__stdcall` signature;
+- verify repeated calls return with an intact x86 stack;
+- verify queried-only stubs are never reached on the synthetic active path and
+  return a non-success result if deliberately invoked.
+
+This is symbol and ABI coverage, not implementation of the 161 unused CUDA
+features.
+
+### Initialization and state
+
+One synthetic client should reproduce the observed lifecycle:
+
+```text
+cuInit and device enumeration
+  -> six cuGetExportTable requests
+  -> dark ctx_create_v2_bypass(flags=20, device=0)
+  -> current-context queries
+  -> CLS get/get/put/get
+  -> module registration and lookup
+  -> allocation, copies, launch, synchronize
+  -> frees, cuCtxDetach, dark heap release
+```
+
+Checks:
+
+- ordinal 0 and current-context handles remain stable;
+- the first two CLS `get` calls return `CUDA_ERROR_INVALID_HANDLE`;
+- `put` followed by `get` returns the stored pointer and `CUDA_SUCCESS`;
+- modules, functions, globals, and texture references remain valid through
+  context teardown;
+- normal teardown releases pools and does not require module unload, streams,
+  events, arrays, or graphics interop.
+
+Do not create native-result assertions for public invalid arguments or
+asynchronous failures: no such result was captured.
+
+### Device properties
+
+Test only values that affect caller behavior or backend feasibility:
+
+- one device at ordinal 0;
+- 32-bit `CUdeviceptr` and saturated x86 total-memory behavior;
+- warp size 32;
+- launch dimension/shared-memory values sufficient for captured launches;
+- the private attribute `0x20080402` behavior once the facade implements it.
+
+Clock, PCI, cache, surface, and unused texture limits are trace fixtures for
+investigation, not mandatory RTX constants. A later conservative-value probe
+must determine which can differ without changing PhysX behavior.
+
+### Memory and ordering
+
+A synthetic test allocates one 32 MiB host pool and one 32 MiB device pool, then
+checks:
+
+1. returned device pointers and interior arithmetic remain 32-bit offsets;
+2. `cuMemGetAddressRange_v2` on several interior addresses returns the same pool
+   base and full size;
+3. `cuMemsetD8_v2` covers exact boundary ranges;
+4. HtoD, DtoD, and DtoH operations preserve bytes at sizes 8, 256, 1024, and
+   5120, covering captured endpoints and the fixed DtoD size;
+5. operations issued to `stream = NULL` become visible in issue order after
+   `cuCtxSynchronize`;
+6. copies do not affect guard ranges outside the requested interval.
+
+The guard checks are implementation safety invariants. Native behavior for an
+invalid address is not asserted.
+
+### Modules, globals, textures, and launches
+
+Committed synthetic modules cover handle/state behavior. The local corpus pass
+additionally requires:
+
+- all 17 fatbins register through Dark CUDART slot 1;
+- all 70 functions, 7 globals, and 33 texture references resolve by exact name;
+- `cuModuleGetGlobal_v2(..., bytes=NULL)` succeeds for observed globals;
+- texture bind, unbind, format, flags, point filtering, zero mip fields, zero
+  anisotropy, and dimension-0 clamp setters preserve the observed state;
+- `cuTexRefSetAddress_v2(..., byte_offset=NULL)` is accepted;
+- all 16 packed parameter layouts preserve their exact bytes and padding;
+- `kernel_parameters=NULL`, packed `extra`, `stream=NULL`, Y/Z dimensions 1,
+  block X values 64/128/192/256, and dynamic shared sizes 0/260/4096/7072 are
+  accepted;
+- the implementation consumes or copies the packed bytes before caller reuse.
+
+The existing `pxvk_parse_launch_extra` tests remain the focused check for token
+order and malformed host memory. End-to-end launch tests additionally prove the
+parsed bytes reach shader-visible parameters.
+
+## PTX frontend and static-lowering checks
+
+### Whole-corpus local gate
+
+For each of the 17 cataloged PTX hashes:
+
+1. parse the module without diagnostics;
+2. reproduce its manifest of PTX version, target, address size, entry names,
+   globals, texture references, parameter layouts, and shared/local sizes;
+3. select and lower each runtime-resolved function;
+4. compile all 16 launched entries to valid SPIR-V for the selected Vulkan
+   target;
+5. run `spirv-val` for every emitted module;
+6. reject an unsupported instruction or directive with the module hash, entry,
+   source location, and exact form.
+
+The raw PTX remains local. A committed normalized manifest should contain only
+hashes and non-proprietary structural expectations already documented in
+`mirrors-edge-ptx-corpus.md`.
+
+### Committed synthetic PTX cases
+
+Synthetic cases should defend observable lowering boundaries rather than one
+shallow test per spelling:
+
+| Area | Required observations |
+|---|---|
+| Parameters and control flow | byte-array/scalar alignment, predicates, predicated branches, weak helper calls, return paths |
+| Integer arithmetic | 16/32/64-bit wrapping, signed/unsigned compare, `mul.wide.s16`, `mad.lo`, `clz.b64`, shifts at relevant boundaries |
+| Addressing and memory | `u8/u16/u32/u64/f32`, scalar/v2/v4, 32-bit offset arithmetic, global/constant/local/shared spaces, volatile shared `u32` |
+| Launch built-ins | `%tid.x`, `%ntid.x`, `%ctaid.x`, `%nctaid.x` at observed block sizes and multi-block grids |
+| Shared memory | static alignment, dynamic base alignment, and static-plus-dynamic sizes used by radix, reorder, and deformable solver entries |
+| Floating point | every field in the committed CUDA oracle, including fused versus separate operations and NaN operand behavior |
+| Barrier | all 64 workgroup invocations observe neighbor writes after `bar.sync 0` |
+| Texture | signed coordinates, in-range four-component values, and negative/high zero result for `u32`; f32 case after its native probe |
+
+Parser-only cases may use dead code to cover the 27 whole-corpus variants absent
+from launched entries. They do not become execution requirements unless a
+selected launched function reaches them.
+
+## Standalone Vulkan differential
+
+The existing CUDA oracle is the first backend acceptance test. Run the same PTX
+intent through the candidate translator and compare normalized JSON field by
+field.
+
+### Exact fields
+
+These remain bit-exact unless new native evidence changes the contract:
+
+- division results captured by the oracle;
+- every FTZ zero result;
+- fused FMA and separate multiply/add distinction;
+- RTZ and RTE conversion results;
+- min/max NaN result for the captured operand order;
+- all barrier values;
+- all integer texture values and OOB zeros.
+
+### Approximate fields
+
+`rcp.approx`, `sqrt.approx`, and `rsqrt.approx` start as exact comparisons to the
+RTX fixture. If Vulkan differs:
+
+1. rerun native and Vulkan at least three times;
+2. record both bit patterns and ULP distance;
+3. check whether a helper can reproduce native bits;
+4. if exact reproduction is disproportionate, define a separate tolerance for
+   that operation and input class;
+5. prove the tolerance does not hide FTZ, NaN, infinity, or sign errors.
+
+There is no shared blanket epsilon and no comparison of formatted decimal text.
+
+### Device matrix
+
+Run standalone Vulkan differentials on both local devices:
+
+- RTX 3070 Vulkan: isolates CUDA-versus-Vulkan semantic differences on the same
+  physical architecture;
+- Intel UHD Vulkan: proves the implementation does not depend on NVIDIA Vulkan
+  behavior.
+
+Each result records the physical-device name, vendor/device IDs, Vulkan API,
+driver version, enabled features, shader hash, and pxvk commit.
+
+## Real PhysX kernel fixtures
+
+### Capture method
+
+Extend the native tracer only when the backend can run standalone microkernels.
+For one selected launch, capture immediately before and after native execution:
+
+- raw fatbin/PTX hash and exact entry name;
+- grid, block, dynamic shared size, and packed parameter bytes;
+- the 32 MiB device-pool base normalized to offset zero;
+- the complete pre-launch device-pool bytes;
+- post-launch changed intervals and their exact bytes;
+- module global/constant bytes reachable by that entry;
+- active texture-reference metadata and bound ranges;
+- native driver/GPU identity and all artifact hashes.
+
+The interceptor synchronizes before reading pre-state and after each replayed
+launch. Those waits are capture instrumentation, not runtime/performance
+requirements.
+
+Capturing the full pre-launch pool avoids guessing which pointer-shaped fields
+are inputs. Storing only normalized changed intervals for expected output avoids
+including unrelated post-launch bytes in the comparison. Guard intervals around
+all changes must remain unchanged in replay.
+
+At the intercepted launch, restore the frozen pool and module state and execute
+the same native launch three times in the same context, recording each
+post-state. Require identical changed intervals, then restore one accepted
+post-state before allowing the game to continue. This holds device addresses
+and texture handles constant. If in-process restoration is unsafe, use a
+focused native host launcher and explicitly record any address relocation; do
+not compensate with a broad output tolerance.
+
+Game/runtime payloads are proprietary and stay under `tmp/evidence/` with a
+manifest and SHA-256 values. Do not commit raw heaps, fatbins, or PTX.
+
+### First two fixtures
+
+Use low-complexity launched entries to isolate integration before validating a
+whole simulation step:
+
+1. **Fluid:** `KernelFluidCalcHashPacked` — 52-byte packed parameters, block X
+   64, grid X 1–5, no dynamic shared memory.
+2. **Deformable:** `PxgCudaDeformableUpdate` — 12-byte packed parameters, block
+   X 64, grid X 28, no dynamic shared memory in the captured subway route.
+
+These are initial capture candidates, not assumptions that their output alone
+proves the full fluid or deformable pipeline. If either cannot produce a stable
+changed range, choose another launched entry and record the reason.
+
+### Comparison policy
+
+Replay begins from the exact normalized pre-launch pool and module state.
+Compare:
+
+- every expected changed byte;
+- every guard interval;
+- completion/error state;
+- no unexpected changed interval.
+
+Bitwise output is required initially. A mismatch inside a float-bearing range
+must be traced to a named PTX operation before any structured field or ULP
+comparison is introduced.
+
+After both single-kernel fixtures pass, capture one complete nine-kernel fluid
+spine and one three-kernel deformable step. These sequence fixtures validate
+default-stream ordering, dispatch barriers, dynamic shared memory, and
+inter-kernel state. They are required before claiming workload-family
+correctness, but not before the first translated-kernel milestone.
+
+## Mirror's Edge integration smoke
+
+### Fixed environment
+
+Every smoke manifest records:
+
+- `MirrorsEdge.exe` SHA-256
+  `58de3df21f40e9953e00be92f7749097832bad02e5b657d8485cdb61f360a3dd`;
+- system PhysX component hashes from `mirrors-edge-native-trace.md`;
+- disabled private `PhysXDevice.dll`/`PhysXLocal` state;
+- `PhysXEnhanced=True` and `bDisablePhysXHardwareSupport=False`;
+- pxvk binary/commit and Vulkan device/driver;
+- renderer wrapper presence, display mode, and resolution;
+- save/checkpoint and exact user actions;
+- process exit status and backend diagnostic log hash.
+
+The reference display setup is 1280x720 native windowed mode. A graphics wrapper
+is operational tooling and must be recorded, never silently treated as a pxvk
+dependency.
+
+### Route A: tutorial fluid
+
+1. Start from the captured tutorial save.
+2. Continue through the swing using the same ordinary play route.
+3. Require CUDA initialization, 17 module registrations, and at least one
+   complete nine-kernel fluid spine.
+4. Require clean synchronization and normal exit.
+
+Exact launch totals are not a pass criterion because route duration and frame
+rate vary. Presence and ordering of the nine-kernel spine are.
+
+### Route B: subway deformable
+
+After an ordinary level has loaded, use:
+
+```ini
+F3 = start Subway_p?LoadCheckpoint=Subway_Station?Game=TdGame.TdSpStoryGame?AllowCPSaving=FALSE
+```
+
+Require all three captured deformable entries:
+
+- `PxgCudaDeformableUpdate`;
+- `KernelDeformableUberCollision`;
+- `KernelDeformableUberSolver<512>` with 7,072 bytes dynamic shared memory.
+
+The native run contained 76 steps, but exact count is diagnostic rather than a
+portable pass threshold. No cloth object was visually identified, so this route
+must not claim visual cloth equivalence.
+
+### Route C: server-room glass
+
+After an ordinary level has loaded, use:
+
+```ini
+F4 = start Scraper_p?LoadCheckpoint=Server_room?Game=TdGame.TdSpStoryGame?AllowCPSaving=FALSE
+```
+
+Trigger both player and police gunfire against the known glass. Require:
+
+- visibly intact glass before the trigger and visibly broken glass afterward;
+- `KernelFluidSimpleParticle` and the captured collision families to launch;
+- no non-success active CUDA result, device loss, hang, or crash;
+- normal level operation after destruction.
+
+This is the only current visual effect assertion. It proves scene integration,
+not attribution of every particle launch to glass; the enhanced-PhysX-off
+control remains a separate attribution probe.
+
+### Smoke failure classification
+
+| Symptom | First evidence to inspect |
+|---|---|
+| Hardware PhysX warning or no CUDA init | system/private PhysX selection, NVAPI gate, export presence |
+| Init succeeds, no modules | Dark API table IDs/slots and x86 ABI |
+| Modules resolve, first launch fails | packed parameters, PTX selection, Vulkan startup gate |
+| Hang during a scene | default-stream ordering, workgroup barrier, fence completion |
+| Scene runs but effect is absent/wrong | real-kernel/sequence fixture before visual tuning |
+| Device loss/validation error | Vulkan object lifetime, bounds, synchronization log |
+| Native and Vulkan both vary | fixture/route nondeterminism, not expected-output update |
+
+## Artifact and report policy
+
+### Commit
+
+Commit only redistributable inputs and normalized expectations:
+
+- synthetic test sources and PTX;
+- exact JSON outputs from project-owned probes;
+- structural manifests without proprietary code/data;
+- comparison code;
+- concise result metadata.
+
+### Keep local and hash
+
+- Mirror's Edge binaries and saves;
+- PhysX/CUDART binaries not owned by the project;
+- raw fatbins and PTX;
+- full device-pool snapshots;
+- raw game traces, logs, videos, and screenshots.
+
+Each local fixture directory contains a manifest, per-file SHA-256 list, capture
+command, environment, and route. Normalization must be deterministic and its
+tool/version recorded.
+
+### Result record
+
+A pass record includes:
+
+```text
+pxvk commit
+runner and expected-fixture hashes
+host process architecture
+GPU, vendor/device ID, driver, Vulkan API
+shader/module hash
+enabled Vulkan features relevant to the test
+command/route
+comparison result and any named tolerance
+raw log/result hash
+```
+
+A test is not reproducible if its expected fixture cannot be identified without
+a developer's memory.
+
+## Acceptance gates
+
+| Claim | Required evidence |
+|---|---|
+| CUDA facade initializes | PE32 export/ABI smoke, Dark lifecycle, startup gate, clean teardown |
+| PTX frontend covers the target | all 17 local modules parse; all 16 launched entries emit valid SPIR-V |
+| Vulkan semantics are viable | committed CUDA-oracle differential passes on RTX Vulkan and Intel Vulkan, with every mismatch classified |
+| First translated PhysX kernel works | one stable real-kernel fixture passes bitwise with guards |
+| Fluid/deformable family works | selected single-kernel fixture plus complete-step sequence fixture passes |
+| Mirror's Edge integration works | applicable real-workload fixtures plus all three game routes pass |
+| Mirror's Edge target is validated | facade, corpus, standalone, real-kernel, sequence, and game gates pass; remaining exclusions are explicit |
+
+Performance is not an acceptance gate until correctness passes without tracing.
+Later timing must use an untraced build and compare simulation stability/frame
+impact over a fixed route; trace timings are not evidence.
+
+## First validation implementation slice
+
+The smallest useful slice after research synthesis is:
+
+1. reuse the CUDA oracle inputs as a backend-independent expected schema;
+2. create a Vulkan runner for one integer/global-memory microkernel;
+3. add f32, barrier, and integer-texture cases without changing their expected
+   JSON fields;
+4. run on RTX Vulkan and Intel Vulkan;
+5. classify differences before capturing proprietary real-kernel fixtures.
+
+This slice proves the compiler/runtime test loop while keeping game data,
+NVAPI, queried-only exports, and full facade integration out of the critical
+path.
+
+## Deferred validation evidence
+
+- Float `tex.1d.v4.f32.s32` native component/OOB behavior is required before
+  accepting its lowering.
+- Real fluid and deformable input/output captures are required before accepting
+  the first corresponding translated kernel.
+- Queried-only NULL-versus-stub behavior is required before shrinking the
+  conservative symbol surface.
+- A minimal non-NVIDIA NVAPI interface set is required before game integration
+  on a non-NVIDIA renderer.
+- Host thread IDs are required before using observed single-thread behavior to
+  relax locking; thread-safe state remains the default.
+- The enhanced-PhysX-off server-room control is required only for attributing
+  individual particle launches, not for the broken-glass smoke assertion.
