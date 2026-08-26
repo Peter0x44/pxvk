@@ -51,28 +51,29 @@ The probe is implemented at:
 ```text
 tools/vulkan-probe/
 ├── CMakeLists.txt
-└── main.c
+├── main.c
+└── preflight.ps1
 ```
 
-It compiles the SDK's `Volk/volk.c` directly and therefore does not link an
-architecture-specific Vulkan import library. Build and run:
+CMake FetchContent retrieves pinned Volk and Vulkan-Headers commits; no Vulkan
+SDK path or import library is required. Build and run manually:
 
 ```bat
 cmake -S tools/vulkan-probe -B build/vulkan-probe -G "MinGW Makefiles" ^
   -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc ^
-  -DCMAKE_MAKE_PROGRAM=mingw32-make ^
-  -DVULKAN_SDK_ROOT=C:/VulkanSDK/1.4.357.0
+  -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++ ^
+  -DCMAKE_MAKE_PROGRAM=mingw32-make
 cmake --build build/vulkan-probe --parallel
 build\vulkan-probe\vulkan-probe.exe vulkan-x86-capabilities.json
 ```
 
-The process reported `pointer_bits: 32` and loader API version 1.4.357. Two
-executions produced byte-identical JSON. `jq` parsed the result and confirmed
-both devices report `shaderInt64`.
+The process reported `pointer_bits: 32`, Vulkan header version 1.4.357, and
+loader API version 1.4.357. Two executions produced byte-identical JSON. `jq`
+parsed the result and confirmed both devices report `shaderInt64`.
 
-The normalized output remains local at
-`tmp/vulkan-x86-capabilities.json`, SHA-256
-`bebcc1666ee27141a5996971e1e5dfd2543e45651769ada3fbdc3a35548a47c3`.
+The normalized fetched-dependency output remains local at
+`tmp/vulkan-preflight-fetch/capabilities.json`, SHA-256
+`c6dffac9696fbb0a2165a0ca14505386e06d6a54969f884669b89c24225166dd`.
 
 ### Workstation results
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.22.1)
 
 project(pxvk_vulkan_probe LANGUAGES C)
 
@@ -9,27 +9,31 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "vulkan-probe must be built with a 32-bit compiler")
 endif()
 
-set(VULKAN_SDK_ROOT "$ENV{VULKAN_SDK}" CACHE PATH "Vulkan SDK root")
-if(NOT VULKAN_SDK_ROOT)
-    message(FATAL_ERROR "Set VULKAN_SDK or pass -DVULKAN_SDK_ROOT=<SDK root>")
-endif()
-
-set(VOLK_SOURCE "${VULKAN_SDK_ROOT}/Include/Volk/volk.c")
-if(NOT EXISTS "${VOLK_SOURCE}")
-    message(FATAL_ERROR "Volk source not found at ${VOLK_SOURCE}")
-endif()
-
-add_executable(
-    vulkan-probe
-    main.c
-    "${VOLK_SOURCE}"
+include(FetchContent)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+set(VULKAN_HEADERS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(VULKAN_HEADERS_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(VULKAN_HEADERS_ENABLE_MODULE OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    VulkanHeaders
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
+    GIT_TAG e3b1eec08173d6b825cd3ac88c885a63b621504a
 )
-target_include_directories(
-    vulkan-probe
-    PRIVATE
-        "${VULKAN_SDK_ROOT}/Include"
-        "${VULKAN_SDK_ROOT}/Include/Volk"
+FetchContent_MakeAvailable(VulkanHeaders)
+set(VULKAN_HEADERS_INSTALL_DIR "${vulkanheaders_SOURCE_DIR}" CACHE PATH "" FORCE)
+
+set(VOLK_PULL_IN_VULKAN ON CACHE BOOL "" FORCE)
+set(VOLK_INSTALL OFF CACHE BOOL "" FORCE)
+set(VOLK_HEADERS_ONLY ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    volk
+    GIT_REPOSITORY https://github.com/zeux/volk.git
+    GIT_TAG 776893306c5d3b22b6185b5d4a258b81d94572bf
 )
+FetchContent_MakeAvailable(volk)
+
+add_executable(vulkan-probe main.c "${volk_SOURCE_DIR}/volk.c")
+target_link_libraries(vulkan-probe PRIVATE volk::volk_headers Vulkan::Headers)
 target_compile_features(vulkan-probe PRIVATE c_std_11)
 target_compile_definitions(
     vulkan-probe

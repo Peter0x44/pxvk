@@ -2,11 +2,12 @@
 param(
     [ValidateSet("MinGW", "MSVC")]
     [string]$Toolchain = "MinGW",
-    [string]$SdkRoot = $env:VULKAN_SDK,
+    [string]$SourceDir = "",
     [string]$BuildDir = "",
     [string]$OutputDir = "",
     [string]$Generator = "",
     [string]$CCompiler = "i686-w64-mingw32-gcc",
+    [string]$CxxCompiler = "i686-w64-mingw32-g++",
     [string]$MakeProgram = "mingw32-make"
 )
 
@@ -25,63 +26,32 @@ function Invoke-Checked {
     }
 }
 
-function Find-VulkanSdk {
-    param([string]$RequestedRoot)
-
-    if (-not [string]::IsNullOrWhiteSpace($RequestedRoot)) {
-        return [System.IO.Path]::GetFullPath($RequestedRoot)
-    }
-
-    $sdkParent = "C:\VulkanSDK"
-    if (-not (Test-Path -LiteralPath $sdkParent -PathType Container)) {
-        throw "Vulkan SDK not found. Set VULKAN_SDK or pass -SdkRoot."
-    }
-
-    $versioned = @()
-    foreach ($directory in Get-ChildItem -LiteralPath $sdkParent -Directory) {
-        try {
-            $versioned += [pscustomobject]@{
-                Version = [version]$directory.Name
-                Path = $directory.FullName
-            }
-        }
-        catch {
-            continue
-        }
-    }
-    $selected = $versioned | Sort-Object Version -Descending | Select-Object -First 1
-    if ($null -eq $selected) {
-        throw "No versioned Vulkan SDK directory found under $sdkParent."
-    }
-    return $selected.Path
+if ([string]::IsNullOrWhiteSpace($SourceDir)) {
+    $SourceDir = $PSScriptRoot
+}
+$SourceDir = [System.IO.Path]::GetFullPath($SourceDir)
+$cmakeFile = Join-Path $SourceDir "CMakeLists.txt"
+if (-not (Test-Path -LiteralPath $cmakeFile -PathType Leaf)) {
+    throw "Source directory '$SourceDir' does not contain CMakeLists.txt. Keep preflight.ps1 beside the probe sources or pass -SourceDir."
 }
 
-$repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
-$sourceDir = Join-Path $repoRoot "tools\vulkan-probe"
-$SdkRoot = Find-VulkanSdk $SdkRoot
-$volkSource = Join-Path $SdkRoot "Include\Volk\volk.c"
-if (-not (Test-Path -LiteralPath $volkSource -PathType Leaf)) {
-    throw "Volk source not found at $volkSource"
-}
-
-if ([string]::IsNullOrWhiteSpace($BuildDir)) {
-    $BuildDir = Join-Path $repoRoot ("build\vulkan-probe-" + $Toolchain.ToLowerInvariant())
-}
-else {
-    $BuildDir = [System.IO.Path]::GetFullPath($BuildDir)
-}
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
-    $OutputDir = Join-Path $repoRoot "tmp\vulkan-preflight"
+    $OutputDir = Join-Path ([System.Environment]::CurrentDirectory) "vulkan-preflight"
 }
 else {
     $OutputDir = [System.IO.Path]::GetFullPath($OutputDir)
 }
+if ([string]::IsNullOrWhiteSpace($BuildDir)) {
+    $BuildDir = Join-Path $OutputDir ("build-" + $Toolchain.ToLowerInvariant())
+}
+else {
+    $BuildDir = [System.IO.Path]::GetFullPath($BuildDir)
+}
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 $configureArguments = @(
-    "-S", $sourceDir,
-    "-B", $BuildDir,
-    "-DVULKAN_SDK_ROOT=$SdkRoot"
+    "-S", $SourceDir,
+    "-B", $BuildDir
 )
 if ($Toolchain -eq "MinGW") {
     if ([string]::IsNullOrWhiteSpace($Generator)) {
@@ -90,6 +60,7 @@ if ($Toolchain -eq "MinGW") {
     $configureArguments += @(
         "-G", $Generator,
         "-DCMAKE_C_COMPILER=$CCompiler",
+        "-DCMAKE_CXX_COMPILER=$CxxCompiler",
         "-DCMAKE_MAKE_PROGRAM=$MakeProgram",
         "-DCMAKE_BUILD_TYPE=Release"
     )
@@ -200,10 +171,11 @@ foreach ($device in $capabilities.devices) {
 
 $eligibleCount = @($deviceReports | Where-Object { $_.hardware_gate_pass }).Count
 $report = [ordered]@{
-    schema_version = 1
+    schema_version = 2
     probe_pointer_bits = [int]$capabilities.pointer_bits
+    vulkan_header_version = [string]$capabilities.vulkan_header_version
     loader_api_version = [string]$capabilities.loader_api_version
-    vulkan_sdk_version = Split-Path -Leaf $SdkRoot
+    dependency_source = "CMake FetchContent with pinned commits"
     capabilities_sha256 = (Get-FileHash -LiteralPath $capabilityPath -Algorithm SHA256).Hash.ToLowerInvariant()
     requirements = $requirements
     eligible_device_count = $eligibleCount

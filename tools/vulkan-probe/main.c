@@ -113,8 +113,13 @@ int main(int argc, char **argv)
     }
 
     fprintf(output,
-            "{\n  \"pointer_bits\": %u,\n  \"loader_api_version\": \"%u.%u.%u\",\n  \"devices\": [\n",
+            "{\n  \"pointer_bits\": %u,\n"
+            "  \"vulkan_header_version\": \"%u.%u.%u\",\n"
+            "  \"loader_api_version\": \"%u.%u.%u\",\n  \"devices\": [\n",
             (unsigned int)(sizeof(void *) * 8),
+            VK_API_VERSION_MAJOR(VK_HEADER_VERSION_COMPLETE),
+            VK_API_VERSION_MINOR(VK_HEADER_VERSION_COMPLETE),
+            VK_API_VERSION_PATCH(VK_HEADER_VERSION_COMPLETE),
             VK_API_VERSION_MAJOR(loader_version),
             VK_API_VERSION_MINOR(loader_version),
             VK_API_VERSION_PATCH(loader_version));

@@ -127,9 +127,10 @@ Use Vulkan headers plus Volk and compile `volk.c` into each executable/DLL. Do
 not link `vulkan-1.lib` and do not use vendor SDK APIs. The deployed binary loads
 the system x86 `vulkan-1.dll`, which dispatches to NVIDIA, Intel, or AMD ICDs.
 
-The build pins Vulkan-Headers and Volk revisions before the permanent target is
-created. The Vulkan SDK supplies those files and `spirv-val` during the first
-slice; end users do not need the SDK when running a built binary.
+CMake FetchContent pins and retrieves Vulkan-Headers and Volk revisions. A
+Vulkan SDK is optional development tooling for `spirv-val` in later shader
+slices, not a build dependency of the preflight. End users do not need an SDK
+when running a built binary.
 
 This is intentionally raw Vulkan rather than a higher-level wrapper. The
 required API surface is one instance, one device/queue, buffers, descriptors,
@@ -213,7 +214,8 @@ The AMD machine needs:
 - 64-bit Windows with an x86 Vulkan loader/AMD ICD installed by the display
   driver;
 - Vulkan 1.2 and the documented feature/limit gate;
-- for building: CMake, a Win32 compiler, and a Vulkan SDK containing Volk;
+- for building: CMake, Git/network access on first configure, and a Win32 C/C++
+  compiler;
 - for running a future prebuilt binary: only the x86 Vulkan loader/driver.
 
 AMD game integration additionally needs the deferred minimal NVAPI shim. The
@@ -280,32 +282,36 @@ thread-unsafe state.
 
 ## Runnable cross-vendor preflight
 
-From the repository root on Windows PowerShell:
+The script derives its CMake source from its own location, not the current
+directory. It can therefore be invoked from any directory:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\tools\vulkan-probe\preflight.ps1 `
+  -File D:\path\to\pxvk\tools\vulkan-probe\preflight.ps1 `
   -Toolchain MinGW
 ```
 
-The script finds the newest `C:\VulkanSDK\<version>` when `VULKAN_SDK` is not
-set. Override with `-SdkRoot`. For Visual Studio 2022 with x86 tools:
+CMake fetches pinned Volk and Vulkan-Headers commits on first configure. No
+Vulkan SDK path is required. Use `-SourceDir` only if the script is deliberately
+moved away from `CMakeLists.txt` and `main.c`. For Visual Studio 2022 with x86
+tools:
 
 ```powershell
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\tools\vulkan-probe\preflight.ps1 `
+  -File D:\path\to\pxvk\tools\vulkan-probe\preflight.ps1 `
   -Toolchain MSVC
 ```
 
-Outputs:
+By default, outputs are relative to the invocation directory:
 
 ```text
-tmp/vulkan-preflight/capabilities.json
-tmp/vulkan-preflight/preflight.json
+vulkan-preflight/capabilities.json
+vulkan-preflight/preflight.json
 ```
 
-`capabilities.json` is the raw deterministic PE32 query. `preflight.json`
-contains the gate values, per-device pass/fail reasons, FTZ path, SDK version,
+Override them with `-OutputDir` and `-BuildDir`. `capabilities.json` is the raw
+deterministic PE32 query. `preflight.json` contains the compiled Vulkan header
+version, gate values, per-device pass/fail reasons, FTZ path, dependency source,
 and capability hash. Exit status is nonzero only when no enumerated device
 passes the hardware gate.
 
@@ -320,9 +326,10 @@ Reference-workstation verification found two passing devices:
 | Intel UHD Graphics | `0x8086` | hardware gate passed | native FTZ |
 | RTX 3070 Laptop | `0x10de` | hardware gate passed | software FTZ required |
 
-Automatic SDK discovery and explicit `-SdkRoot` produced the same capability
+Invocations from the repository root and from `C:\Users` through the script's
+absolute path produced byte-identical fetched-dependency capability output,
 SHA-256:
-`bebcc1666ee27141a5996971e1e5dfd2543e45651769ada3fbdc3a35548a47c3`.
+`c6dffac9696fbb0a2165a0ca14505386e06d6a54969f884669b89c24225166dd`.
 
 No AMD device was available in this research session. AMD support is therefore
 a runnable vendor-neutral path, not a claimed observed pass.
