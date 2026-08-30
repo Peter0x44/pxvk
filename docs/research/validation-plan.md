@@ -254,7 +254,8 @@ Run standalone Vulkan differentials on every available target device:
 - Intel UHD Vulkan proves the implementation does not depend on NVIDIA Vulkan
   behavior;
 - AMD Radeon 8060S Vulkan is the first external cross-vendor target. Its PE32
-  hardware gate passes, but it still needs the standalone SPIR-V/oracle run.
+  hardware gate passes; the standalone SPIR-V/oracle run is explicitly deferred
+  until that machine is available again.
 
 Each result records the physical-device name, vendor/device IDs, Vulkan API,
 driver version, enabled features, shader hash, and pxvk commit.
@@ -458,7 +459,8 @@ a developer's memory.
 |---|---|
 | CUDA facade initializes | PE32 export/ABI smoke, Dark lifecycle, startup gate, clean teardown |
 | PTX frontend covers the target | all 17 local modules parse; all 16 launched entries emit valid SPIR-V |
-| Vulkan semantics are viable | committed CUDA-oracle differential passes on RTX, Intel, and AMD Vulkan, with every mismatch classified |
+| Vulkan semantics are viable on the reference system | committed CUDA-oracle differential passes on RTX and Intel Vulkan, with every mismatch classified |
+| Cross-vendor AMD execution is validated | the same generated SPIR-V/oracle output passes on the AMD Radeon 8060S |
 | First translated PhysX kernel works | one stable real-kernel fixture passes bitwise with guards |
 | Fluid/deformable family works | selected single-kernel fixture plus complete-step sequence fixture passes |
 | Mirror's Edge integration works | applicable real-workload fixtures plus all three game routes pass |
@@ -476,7 +478,8 @@ The smallest useful slice after research synthesis is:
 2. create a Vulkan runner for one integer/global-memory microkernel;
 3. add f32, barrier, and integer-texture cases without changing their expected
    JSON fields;
-4. run on RTX, Intel, and AMD Vulkan;
+4. run on RTX and Intel Vulkan; preserve the identical command/output for the
+   deferred AMD run;
 5. classify differences before capturing proprietary real-kernel fixtures.
 
 This slice proves the compiler/runtime test loop while keeping game data,
@@ -484,6 +487,9 @@ NVAPI, queried-only exports, and full facade integration out of the critical
 path.
 
 ## Deferred validation evidence
+- AMD Radeon 8060S memory-smoke and standalone-oracle execution are deferred
+  until the machine is available again. This blocks AMD execution claims, not
+  continued runner development or reference-system acceptance.
 
 - Float `tex.1d.v4.f32.s32` native component/OOB behavior is required before
   accepting its lowering.

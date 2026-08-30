@@ -63,8 +63,8 @@ Open probes are tracked rather than dropped:
 | Minimal non-NVIDIA NVAPI interface set | Deferred to game-integration validation | Running the original PhysX runtime without NVIDIA |
 | CUDA host-call thread IDs | Deferred runtime-hardening evidence | Claiming observed single-thread assumptions or optimizing locking |
 | PhysX-off server-room control | Deferred attribution check | Claiming individual particle launches represent only glass |
-| Vulkan differential against committed CUDA oracle | Necessarily waits for a backend | Accepting PTX arithmetic/barrier/texture correctness |
+| Vulkan differential against committed CUDA oracle | Integer/global-memory case passes on Intel/RTX; f32, barrier, and texture cases remain | Accepting PTX arithmetic/barrier/texture correctness |
+| AMD generated-SPIR-V execution | Hardware preflight passes; memory smoke and full oracle deferred until the AMD machine is available | Claiming cross-vendor execution correctness on AMD |
 
-Only the first two can block correctness of an implemented execution path.
-They do not block Vulkan capability research or a disposable frontend/backend
-experiment.
+Each probe blocks only the named acceptance point. None blocks continued
+standalone-oracle development on the reference Intel/RTX workstation.

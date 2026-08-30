@@ -203,11 +203,11 @@ Enumerate every physical device. Apply the documented feature/limit gate without
 vendor-name branches. Development runners accept an explicit device index and
 print vendor/device IDs; the DLL defaults to the first passing non-CPU device
 and later exposes a diagnostic override such as `PXVK_VULKAN_DEVICE`.
-An AMD Radeon 8060S has now passed the PE32 hardware gate. AMD remains a
-required execution platform for the standalone oracle runner, not a source of
-AMD-only lowering. The implementation may select a capability path—native
-versus software FTZ, for example—but not a vendor-specific semantic shortcut
-without a measured oracle result.
+An AMD Radeon 8060S has passed the PE32 hardware gate. Its execution replay is
+deferred until that machine is available again, so it does not block continued
+oracle-runner work on Intel and RTX. AMD remains a required target for a later
+cross-vendor execution claim, not a source of AMD-only lowering or semantic
+shortcuts.
 
 The AMD machine needs:
 
@@ -371,19 +371,20 @@ committed fixture is
 `tools/vulkan-probe/expected/reference-workstation/memory-smoke.json`, SHA-256
 `4527312167c098277ba0422cfcd87d48a5578fdeeea3883234dbac0bbed2d2a0`.
 
-The next external check is the same command with `-RunMemorySmoke` on the AMD
-8060S. The next implementation work is item 5: add f32, workgroup barrier, and
-integer texture cases to form the full standalone oracle runner.
+The AMD 8060S `-RunMemorySmoke` replay is preserved as a deferred external
+check. The next implementation work can proceed locally: item 5 adds f32,
+workgroup barrier, and integer texture cases to form the full standalone oracle
+runner.
 
 ### Slice acceptance
 
 - PE32 process confirmed in output;
 - no vendor-name conditionals or non-core vendor extensions;
-- integer/global-memory case exact on RTX, Intel, and AMD;
+- integer/global-memory case exact on RTX and Intel;
 - every existing oracle field exact or one named approximate mismatch report;
 - Vulkan validation layer reports no error in development runs;
-- three runs per selected device produce byte-identical normalized JSON;
-- command and report format is suitable to copy to an AMD Windows system.
+- three runs per selected local device produce byte-identical normalized JSON;
+- command and report format is preserved for the deferred AMD run.
 
 Do not begin the CUDA DLL, PTX corpus parser, NVAPI shim, or real-kernel capture
 inside this slice. Those changes would obscure whether the Vulkan semantic core
@@ -415,6 +416,7 @@ behavior.
 | Deterministic fluid/deformable fixtures | accepting corresponding real kernels | standalone runner and frontend parsing |
 | Queried-only NULL/stub probe | shrinking export table | conservative stubs and standalone work |
 | Minimal non-NVIDIA NVAPI set | game startup on AMD/non-NVIDIA renderer | AMD Vulkan preflight and oracle runner |
+| AMD memory/oracle execution replay | claiming generated SPIR-V execution on AMD | continuing and accepting the reference-system runner on Intel/RTX |
 | Host call thread IDs | relaxing coarse locking | thread-safe implementation |
 | PhysX-off server-room control | attributing particle launches specifically to glass | broken-glass integration smoke |
 
