@@ -1,1 +1,4 @@
 tools/**/expected/*.json text eol=lf
+tools/**/*.ptx text eol=lf
+tools/**/*.comp text eol=lf
+tools/**/*.spvasm text eol=lf

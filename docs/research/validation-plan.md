@@ -52,6 +52,7 @@ framework, runtime language, shader compiler, or architecture.
 | `tools/nvcuda-trace/tests/injected_smoke.c` | Startup-injected `nvcuda.dll` discovery and calls | Shape for launcher/injection validation |
 | `tools/vulkan-probe/main.c` | x86 loader, device features, and quantitative limits | Input to startup-gate tests, not a compute-correctness test |
 | `tools/vulkan-probe/memory_smoke.cpp` plus `oracle.spv` | Generated SPIR-V, real 32 MiB buffers, f32/FMA/conversion, workgroup barrier, and integer texture output exactly match CUDA on Intel and RTX | Completed reference-system standalone Vulkan semantic gate; preserve for deferred AMD run |
+| `tools/ptx-frontend/main.cpp` | Strict project-owned PTX parser normalizes all three oracle entries into a deterministic manifest | First frontend gate; expand unchanged parser structures to the 17 local modules |
 | 17 local captured PTX modules | Complete corpus accepted by ZLUDA; hashes cataloged | Local parser/compile coverage without committing proprietary PTX |
 | Three native game traces | Fluid, deformable, and confirmed broken-glass execution | Route and workload-presence oracle |
 

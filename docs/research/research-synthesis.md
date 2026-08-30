@@ -401,6 +401,40 @@ works.
 
 1. **Finite PTX frontend:** parse synthetic cases, then all 17 local modules;
    emit the standalone oracle through normalized PTX operations.
+
+The first frontend sub-slice is now complete for project-owned PTX.
+`tools/ptx-frontend` provides a source-located tokenizer, strict module/entry
+parser, packed parameter and static shared-memory layout, typed opcode
+base/modifier normalization, operand structure, deterministic nlohmann/json
+output, and negative self-tests. It parses all three `probe.ptx` entries:
+
+| Entry | Instructions | Packed parameters | Static shared |
+|---|---:|---:|---:|
+| `math_probe` | 59 | 4 B | 0 |
+| `barrier_probe` | 18 | 4 B | 256 B |
+| `texture_probe` | 7 | 4 B | 0 |
+
+The normalized surface contains 20 base families and 27 exact variants. Three
+runs produced byte-identical
+`tools/ptx-frontend/expected/oracle-manifest.json`, SHA-256
+`ddbb737a2423f2da34fb28cbac05d4ab304e6811be9adc76935c4a29dc675d74`.
+This proves strict parsing/metadata normalization only; it does not yet emit
+SPIR-V or accept the proprietary 17-module corpus.
+
+Build and run:
+
+```powershell
+cmake -S tools/ptx-frontend -B build/ptx-frontend -A Win32
+cmake --build build/ptx-frontend --config Release
+build/ptx-frontend/Release/ptx-frontend.exe --self-test
+build/ptx-frontend/Release/ptx-frontend.exe `
+  tools/cuda-oracle/probe.ptx oracle-manifest.json
+```
+
+The build fetches pinned nlohmann/json commit
+`9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03`; JSON serialization is external,
+while PTX grammar and normalization remain project-owned.
+
 2. **CUDA facade without game:** x86 export/ABI client, Dark lifecycle, handles,
    memory, module state, packed launch, and clean teardown.
 3. **Native real-kernel fixtures:** capture and replay one fluid and one
@@ -442,9 +476,10 @@ behavior.
 
 ## Architecture gate conclusion
 
-The reference-system standalone Vulkan oracle gate is complete. The next gate is
-open for the finite PTX frontend: strict parsing, normalization, and emission of
-the same oracle operations before broadening to proprietary entries.
+The reference-system standalone Vulkan oracle gate and project-owned PTX parser
+gate are complete. The next gate is expanding the strict frontend to all 17
+local modules and 120 launched variants, then emitting the oracle through the
+normalized operations before compiling proprietary entries.
 
 The gate is not open for a claim that Mirror's Edge runs on Vulkan, AMD
 generated-SPIR-V execution, AMD game integration, or translated PhysX

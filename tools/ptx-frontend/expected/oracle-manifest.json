@@ -1,0 +1,1287 @@
+{
+  "schema_version": 1,
+  "source_bytes": 3337,
+  "ptx_version": "4.1",
+  "target": "sm_52",
+  "address_size": 32,
+  "texture_references": [
+    "probe_tex"
+  ],
+  "entries": [
+    {
+      "name": "math_probe",
+      "packed_parameter_bytes": 4,
+      "static_shared_bytes": 0,
+      "parameters": [
+        {
+          "name": "math_probe_param_0",
+          "type": ".u32",
+          "offset": 0,
+          "size": 4,
+          "alignment": 4
+        }
+      ],
+      "instructions": [
+        {
+          "line": 16,
+          "variant": "ld.param.u32",
+          "base": "ld",
+          "modifiers": [
+            "param",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%out",
+            "[math_probe_param_0]"
+          ]
+        },
+        {
+          "line": 18,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f1",
+            "0f3F800000"
+          ]
+        },
+        {
+          "line": 19,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f2",
+            "0f40400000"
+          ]
+        },
+        {
+          "line": 20,
+          "variant": "div.full.ftz.f32",
+          "base": "div",
+          "modifiers": [
+            "full",
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f3",
+            "%f1",
+            "%f2"
+          ]
+        },
+        {
+          "line": 21,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r1",
+            "%f3"
+          ]
+        },
+        {
+          "line": 22,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+0]",
+            "%r1"
+          ]
+        },
+        {
+          "line": 24,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f4",
+            "0f00800000"
+          ]
+        },
+        {
+          "line": 25,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f5",
+            "0f40000000"
+          ]
+        },
+        {
+          "line": 26,
+          "variant": "div.full.ftz.f32",
+          "base": "div",
+          "modifiers": [
+            "full",
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f6",
+            "%f4",
+            "%f5"
+          ]
+        },
+        {
+          "line": 27,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r2",
+            "%f6"
+          ]
+        },
+        {
+          "line": 28,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+4]",
+            "%r2"
+          ]
+        },
+        {
+          "line": 30,
+          "variant": "rcp.approx.ftz.f32",
+          "base": "rcp",
+          "modifiers": [
+            "approx",
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f7",
+            "%f2"
+          ]
+        },
+        {
+          "line": 31,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r3",
+            "%f7"
+          ]
+        },
+        {
+          "line": 32,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+8]",
+            "%r3"
+          ]
+        },
+        {
+          "line": 34,
+          "variant": "sqrt.approx.ftz.f32",
+          "base": "sqrt",
+          "modifiers": [
+            "approx",
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f8",
+            "%f5"
+          ]
+        },
+        {
+          "line": 35,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r4",
+            "%f8"
+          ]
+        },
+        {
+          "line": 36,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+12]",
+            "%r4"
+          ]
+        },
+        {
+          "line": 38,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f9",
+            "0f00000001"
+          ]
+        },
+        {
+          "line": 39,
+          "variant": "sqrt.approx.ftz.f32",
+          "base": "sqrt",
+          "modifiers": [
+            "approx",
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f10",
+            "%f9"
+          ]
+        },
+        {
+          "line": 40,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r5",
+            "%f10"
+          ]
+        },
+        {
+          "line": 41,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+16]",
+            "%r5"
+          ]
+        },
+        {
+          "line": 43,
+          "variant": "rsqrt.approx.ftz.f32",
+          "base": "rsqrt",
+          "modifiers": [
+            "approx",
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f11",
+            "%f5"
+          ]
+        },
+        {
+          "line": 44,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r6",
+            "%f11"
+          ]
+        },
+        {
+          "line": 45,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+20]",
+            "%r6"
+          ]
+        },
+        {
+          "line": 47,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f12",
+            "0f3F800001"
+          ]
+        },
+        {
+          "line": 48,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f13",
+            "0f3F7FFFFE"
+          ]
+        },
+        {
+          "line": 49,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f14",
+            "0fBF800000"
+          ]
+        },
+        {
+          "line": 50,
+          "variant": "fma.rn.ftz.f32",
+          "base": "fma",
+          "modifiers": [
+            "rn",
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f15",
+            "%f12",
+            "%f13",
+            "%f14"
+          ]
+        },
+        {
+          "line": 51,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r7",
+            "%f15"
+          ]
+        },
+        {
+          "line": 52,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+24]",
+            "%r7"
+          ]
+        },
+        {
+          "line": 54,
+          "variant": "mul.ftz.f32",
+          "base": "mul",
+          "modifiers": [
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f16",
+            "%f12",
+            "%f13"
+          ]
+        },
+        {
+          "line": 55,
+          "variant": "add.ftz.f32",
+          "base": "add",
+          "modifiers": [
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f17",
+            "%f16",
+            "%f14"
+          ]
+        },
+        {
+          "line": 56,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r8",
+            "%f17"
+          ]
+        },
+        {
+          "line": 57,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+28]",
+            "%r8"
+          ]
+        },
+        {
+          "line": 59,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f18",
+            "0fC0700000"
+          ]
+        },
+        {
+          "line": 60,
+          "variant": "cvt.rzi.ftz.s32.f32",
+          "base": "cvt",
+          "modifiers": [
+            "rzi",
+            "ftz",
+            "s32",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%s1",
+            "%f18"
+          ]
+        },
+        {
+          "line": 61,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r9",
+            "%s1"
+          ]
+        },
+        {
+          "line": 62,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+32]",
+            "%r9"
+          ]
+        },
+        {
+          "line": 64,
+          "variant": "mov.u32",
+          "base": "mov",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r10",
+            "16777217"
+          ]
+        },
+        {
+          "line": 65,
+          "variant": "cvt.rn.f32.u32",
+          "base": "cvt",
+          "modifiers": [
+            "rn",
+            "f32",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f19",
+            "%r10"
+          ]
+        },
+        {
+          "line": 66,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r11",
+            "%f19"
+          ]
+        },
+        {
+          "line": 67,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+36]",
+            "%r11"
+          ]
+        },
+        {
+          "line": 69,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f1",
+            "0f00000001"
+          ]
+        },
+        {
+          "line": 70,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f2",
+            "0f00000000"
+          ]
+        },
+        {
+          "line": 71,
+          "variant": "add.ftz.f32",
+          "base": "add",
+          "modifiers": [
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f3",
+            "%f1",
+            "%f2"
+          ]
+        },
+        {
+          "line": 72,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r12",
+            "%f3"
+          ]
+        },
+        {
+          "line": 73,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+40]",
+            "%r12"
+          ]
+        },
+        {
+          "line": 75,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f2",
+            "0f3F800000"
+          ]
+        },
+        {
+          "line": 76,
+          "variant": "mul.ftz.f32",
+          "base": "mul",
+          "modifiers": [
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f3",
+            "%f1",
+            "%f2"
+          ]
+        },
+        {
+          "line": 77,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r13",
+            "%f3"
+          ]
+        },
+        {
+          "line": 78,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+44]",
+            "%r13"
+          ]
+        },
+        {
+          "line": 80,
+          "variant": "mov.f32",
+          "base": "mov",
+          "modifiers": [
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f4",
+            "0f7FC00000"
+          ]
+        },
+        {
+          "line": 81,
+          "variant": "min.ftz.f32",
+          "base": "min",
+          "modifiers": [
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f5",
+            "%f4",
+            "%f2"
+          ]
+        },
+        {
+          "line": 82,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r14",
+            "%f5"
+          ]
+        },
+        {
+          "line": 83,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+48]",
+            "%r14"
+          ]
+        },
+        {
+          "line": 85,
+          "variant": "max.ftz.f32",
+          "base": "max",
+          "modifiers": [
+            "ftz",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%f6",
+            "%f4",
+            "%f2"
+          ]
+        },
+        {
+          "line": 86,
+          "variant": "mov.b32",
+          "base": "mov",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%r15",
+            "%f6"
+          ]
+        },
+        {
+          "line": 87,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%out+52]",
+            "%r15"
+          ]
+        },
+        {
+          "line": 89,
+          "variant": "ret",
+          "base": "ret",
+          "modifiers": [],
+          "predicate": "",
+          "operands": []
+        }
+      ],
+      "instruction_count": 59,
+      "base_families": [
+        "add",
+        "cvt",
+        "div",
+        "fma",
+        "ld",
+        "max",
+        "min",
+        "mov",
+        "mul",
+        "rcp",
+        "ret",
+        "rsqrt",
+        "sqrt",
+        "st"
+      ],
+      "variants": [
+        "add.ftz.f32",
+        "cvt.rn.f32.u32",
+        "cvt.rzi.ftz.s32.f32",
+        "div.full.ftz.f32",
+        "fma.rn.ftz.f32",
+        "ld.param.u32",
+        "max.ftz.f32",
+        "min.ftz.f32",
+        "mov.b32",
+        "mov.f32",
+        "mov.u32",
+        "mul.ftz.f32",
+        "rcp.approx.ftz.f32",
+        "ret",
+        "rsqrt.approx.ftz.f32",
+        "sqrt.approx.ftz.f32",
+        "st.global.u32"
+      ]
+    },
+    {
+      "name": "barrier_probe",
+      "packed_parameter_bytes": 4,
+      "static_shared_bytes": 256,
+      "parameters": [
+        {
+          "name": "barrier_probe_param_0",
+          "type": ".u32",
+          "offset": 0,
+          "size": 4,
+          "alignment": 4
+        }
+      ],
+      "instructions": [
+        {
+          "line": 104,
+          "variant": "ld.param.u32",
+          "base": "ld",
+          "modifiers": [
+            "param",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%out",
+            "[barrier_probe_param_0]"
+          ]
+        },
+        {
+          "line": 105,
+          "variant": "mov.u32",
+          "base": "mov",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%thread",
+            "%tid.x"
+          ]
+        },
+        {
+          "line": 106,
+          "variant": "add.u32",
+          "base": "add",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%value",
+            "%thread",
+            "1"
+          ]
+        },
+        {
+          "line": 107,
+          "variant": "shl.b32",
+          "base": "shl",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%offset",
+            "%thread",
+            "2"
+          ]
+        },
+        {
+          "line": 108,
+          "variant": "mov.u32",
+          "base": "mov",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%address",
+            "values"
+          ]
+        },
+        {
+          "line": 109,
+          "variant": "add.u32",
+          "base": "add",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%address",
+            "%address",
+            "%offset"
+          ]
+        },
+        {
+          "line": 110,
+          "variant": "st.shared.u32",
+          "base": "st",
+          "modifiers": [
+            "shared",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%address]",
+            "%value"
+          ]
+        },
+        {
+          "line": 111,
+          "variant": "bar.sync",
+          "base": "bar",
+          "modifiers": [
+            "sync"
+          ],
+          "predicate": "",
+          "operands": [
+            "0"
+          ]
+        },
+        {
+          "line": 112,
+          "variant": "add.u32",
+          "base": "add",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%neighbor",
+            "%thread",
+            "1"
+          ]
+        },
+        {
+          "line": 113,
+          "variant": "and.b32",
+          "base": "and",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%neighbor",
+            "%neighbor",
+            "63"
+          ]
+        },
+        {
+          "line": 114,
+          "variant": "shl.b32",
+          "base": "shl",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%offset",
+            "%neighbor",
+            "2"
+          ]
+        },
+        {
+          "line": 115,
+          "variant": "mov.u32",
+          "base": "mov",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%address",
+            "values"
+          ]
+        },
+        {
+          "line": 116,
+          "variant": "add.u32",
+          "base": "add",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%address",
+            "%address",
+            "%offset"
+          ]
+        },
+        {
+          "line": 117,
+          "variant": "ld.shared.u32",
+          "base": "ld",
+          "modifiers": [
+            "shared",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%value",
+            "[%address]"
+          ]
+        },
+        {
+          "line": 118,
+          "variant": "shl.b32",
+          "base": "shl",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%offset",
+            "%thread",
+            "2"
+          ]
+        },
+        {
+          "line": 119,
+          "variant": "add.u32",
+          "base": "add",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%address",
+            "%out",
+            "%offset"
+          ]
+        },
+        {
+          "line": 120,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%address]",
+            "%value"
+          ]
+        },
+        {
+          "line": 121,
+          "variant": "ret",
+          "base": "ret",
+          "modifiers": [],
+          "predicate": "",
+          "operands": []
+        }
+      ],
+      "instruction_count": 18,
+      "base_families": [
+        "add",
+        "and",
+        "bar",
+        "ld",
+        "mov",
+        "ret",
+        "shl",
+        "st"
+      ],
+      "variants": [
+        "add.u32",
+        "and.b32",
+        "bar.sync",
+        "ld.param.u32",
+        "ld.shared.u32",
+        "mov.u32",
+        "ret",
+        "shl.b32",
+        "st.global.u32",
+        "st.shared.u32"
+      ]
+    },
+    {
+      "name": "texture_probe",
+      "packed_parameter_bytes": 4,
+      "static_shared_bytes": 0,
+      "parameters": [
+        {
+          "name": "texture_probe_param_0",
+          "type": ".u32",
+          "offset": 0,
+          "size": 4,
+          "alignment": 4
+        }
+      ],
+      "instructions": [
+        {
+          "line": 134,
+          "variant": "ld.param.u32",
+          "base": "ld",
+          "modifiers": [
+            "param",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%out",
+            "[texture_probe_param_0]"
+          ]
+        },
+        {
+          "line": 135,
+          "variant": "mov.u32",
+          "base": "mov",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%thread",
+            "%tid.x"
+          ]
+        },
+        {
+          "line": 136,
+          "variant": "sub.s32",
+          "base": "sub",
+          "modifiers": [
+            "s32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%coord",
+            "%thread",
+            "2"
+          ]
+        },
+        {
+          "line": 137,
+          "variant": "tex.1d.v4.u32.s32",
+          "base": "tex",
+          "modifiers": [
+            "1d",
+            "v4",
+            "u32",
+            "s32"
+          ],
+          "predicate": "",
+          "operands": [
+            "{%r1,%r2,%r3,%r4}",
+            "[probe_tex,{%coord}]"
+          ]
+        },
+        {
+          "line": 138,
+          "variant": "mad.lo.s32",
+          "base": "mad",
+          "modifiers": [
+            "lo",
+            "s32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%address",
+            "%thread",
+            "16",
+            "%out"
+          ]
+        },
+        {
+          "line": 139,
+          "variant": "st.global.v4.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "v4",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%address]",
+            "{%r1,%r2,%r3,%r4}"
+          ]
+        },
+        {
+          "line": 140,
+          "variant": "ret",
+          "base": "ret",
+          "modifiers": [],
+          "predicate": "",
+          "operands": []
+        }
+      ],
+      "instruction_count": 7,
+      "base_families": [
+        "ld",
+        "mad",
+        "mov",
+        "ret",
+        "st",
+        "sub",
+        "tex"
+      ],
+      "variants": [
+        "ld.param.u32",
+        "mad.lo.s32",
+        "mov.u32",
+        "ret",
+        "st.global.v4.u32",
+        "sub.s32",
+        "tex.1d.v4.u32.s32"
+      ]
+    }
+  ]
+}
