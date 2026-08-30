@@ -181,9 +181,25 @@ The two legacy 1D texture operations can be modeled as typed linear range
 reads with explicit bounds-to-zero behavior. This strengthens the
 storage-buffer candidate and weakens the sampled-image candidate.
 
+## Vulkan differential result
+
+The first PE32 Vulkan oracle now reproduces every committed field bit-for-bit
+on Intel UHD and RTX 3070 Vulkan:
+
+- all 14 f32/conversion results;
+- the 64-thread shared-memory barrier sequence;
+- all 12 integer texture rows including signed OOB zero.
+
+Intel initially returned zero for the fused FMA because GLSL.std.450 `Fma`
+without `NoContraction` may be split. Decorating the FMA result explicitly
+restored native `0xa8800000`; the separate multiply/add remained zero on both
+devices. The result fixture is
+`tools/vulkan-probe/expected/reference-workstation/oracle.json`, SHA-256
+`42a8778edb77a7a74429e30fc2ec68c87c677ac0b9ca51a604539b07a8953968`.
+
 ## Remaining native probes
 
-Still open before validation/synthesis:
+Still open at their later acceptance gates:
 
 1. **Real workload output:** capture or construct one deterministic fluid kernel
    input/output and one deformable kernel input/output.
@@ -194,8 +210,6 @@ Still open before validation/synthesis:
    system `PhysXDevice.dll` on a non-NVIDIA rendering path.
 5. **Host threading:** add thread IDs to a game trace to record call-thread
    behavior, while still implementing thread-safe state.
-6. **Backend differential:** rerun this exact fixture through the first Vulkan
-   translator and classify every mismatch before broadening probes.
 
 A full game-memory replay capture is not required to begin a thin translator.
 The committed fixture now supplies deterministic oracle checks for the most

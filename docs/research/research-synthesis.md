@@ -289,7 +289,7 @@ directory. It can therefore be invoked from any directory:
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File D:\path\to\pxvk\tools\vulkan-probe\preflight.ps1 `
   -Toolchain MinGW `
-  -RunMemorySmoke
+  -RunOracle
 ```
 
 CMake fetches pinned Volk, Vulkan-Headers, and SPIRV-Headers commits on first
@@ -301,7 +301,7 @@ is deliberately moved away from `CMakeLists.txt`, `main.c`, and
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File D:\path\to\pxvk\tools\vulkan-probe\preflight.ps1 `
   -Toolchain MSVC `
-  -RunMemorySmoke
+  -RunOracle
 ```
 
 By default, outputs are relative to the invocation directory:
@@ -309,20 +309,21 @@ By default, outputs are relative to the invocation directory:
 ```text
 vulkan-preflight/capabilities.json
 vulkan-preflight/preflight.json
-vulkan-preflight/memory-smoke.json
+vulkan-preflight/oracle.json
 ```
 
 Override paths with `-OutputDir` and `-BuildDir`. `capabilities.json` is the raw
 deterministic PE32 query. `preflight.json` contains the compiled Vulkan header
 version, gate values, per-device pass/fail reasons, FTZ path, dependency source,
 and capability hash. Exit status is nonzero when no enumerated device passes
-the hardware gate or when the optional memory smoke fails.
+the hardware gate or when a requested execution mode fails.
 
-`-RunMemorySmoke` runs a separate generated SPIR-V compute shader on every
-device. It allocates the real 32 MiB device and staging buffers, performs
-transfer-to-compute and compute-to-transfer barriers, preserves an input guard,
-and checks the exact integer output. It does not validate PTX, floating point,
-textures, barriers within a workgroup, NVAPI, or PhysX.
+`-RunOracle` runs the full 64-thread semantic shader on every device. It
+allocates the real 32 MiB device and staging buffers, performs
+transfer/compute barriers, and checks exact f32, FMA, conversion, workgroup
+barrier, integer texture, and input-guard output. `-RunMemorySmoke` remains as
+the smaller allocation/integer-only diagnostic. Neither mode validates PTX,
+NVAPI, or real PhysX kernels.
 
 Observed preflight devices:
 
@@ -363,26 +364,32 @@ exports and no proprietary inputs.
 
 ### Current status
 
-Items 1–4 now exist as `vulkan-memory-smoke`. On the reference workstation it
-created device-local 32 MiB buffers, dispatched a generated 123-word SPIR-V
-module, and returned exact `0xc7b13c62` on Intel and RTX. The module passed
-`spirv-val --target-env vulkan1.2`; three runs produced byte-identical JSON. The
-committed fixture is
-`tools/vulkan-probe/expected/reference-workstation/memory-smoke.json`, SHA-256
-`4527312167c098277ba0422cfcd87d48a5578fdeeea3883234dbac0bbed2d2a0`.
+All seven items now run through `preflight.ps1 -RunOracle`. The PE32 runner
+allocates device-local 32 MiB buffers, dispatches one 64-thread SPIR-V module,
+and emits the CUDA oracle's math, barrier, and texture field names per device.
+Intel and RTX match every committed NVIDIA field bit-for-bit. Three runs
+produced byte-identical JSON.
 
-The AMD 8060S `-RunMemorySmoke` replay is preserved as a deferred external
-check. The next implementation work can proceed locally: item 5 adds f32,
-workgroup barrier, and integer texture cases to form the full standalone oracle
-runner.
+The readable GLSL source is `oracle.comp`. `rebuild-oracle.ps1` compiles it,
+adds the required `NoContraction` decoration to the GLSL.std.450 `Fma`, assembles
+`oracle.spv`, and validates it for Vulkan 1.2. Without that explicit decoration,
+Intel split the FMA and returned zero while RTX happened to fuse it; the patched
+module returns native `0xa8800000` on both.
+
+The committed result is
+`tools/vulkan-probe/expected/reference-workstation/oracle.json`, SHA-256
+`42a8778edb77a7a74429e30fc2ec68c87c677ac0b9ca51a604539b07a8953968`.
+The SPIR-V SHA-256 is
+`2f79e7a87e40ac60ae316f51772b9eb40160ba1838c4a64ed3425badacbf1fab`.
+The AMD replay remains a deferred external cross-vendor gate.
 
 ### Slice acceptance
 
 - PE32 process confirmed in output;
 - no vendor-name conditionals or non-core vendor extensions;
 - integer/global-memory case exact on RTX and Intel;
-- every existing oracle field exact or one named approximate mismatch report;
-- Vulkan validation layer reports no error in development runs;
+- every committed CUDA oracle field exact on RTX and Intel;
+- generated SPIR-V passes `spirv-val --target-env vulkan1.2`;
 - three runs per selected local device produce byte-identical normalized JSON;
 - command and report format is preserved for the deferred AMD run.
 
@@ -410,8 +417,8 @@ behavior.
 
 | Open item | Blocks | Does not block |
 |---|---|---|
-| Software FTZ differential | accepting f32 Vulkan semantics and real kernels | integer/global-memory runner and hardware preflight |
-| Approximate math classification | accepting affected standalone fields/real kernels | exact integer, barrier, and texture work |
+| Software FTZ placement beyond standalone cases | accepting real translated kernels | completed standalone f32 oracle and frontend work |
+| Approximate math beyond fixed oracle inputs | accepting affected real kernels | exact committed reciprocal/sqrt/rsqrt cases |
 | Float texture native probe | accepting `tex.1d.v4.f32.s32` | integer texture lowering |
 | Deterministic fluid/deformable fixtures | accepting corresponding real kernels | standalone runner and frontend parsing |
 | Queried-only NULL/stub probe | shrinking export table | conservative stubs and standalone work |
@@ -435,11 +442,11 @@ behavior.
 
 ## Architecture gate conclusion
 
-The architecture gate is open only for `pxvk-vulkan-oracle`, the standalone
-cross-vendor Vulkan semantic runner. The evidence is sufficient because its
-inputs and outputs are project-owned, exact, and independent of unresolved game
-integration.
+The reference-system standalone Vulkan oracle gate is complete. The next gate is
+open for the finite PTX frontend: strict parsing, normalization, and emission of
+the same oracle operations before broadening to proprietary entries.
 
-The gate is not open for a claim that Mirror's Edge runs on Vulkan, AMD game
-integration, or translated PhysX correctness. Those claims remain behind the
-explicit validation and native-fixture blockers above.
+The gate is not open for a claim that Mirror's Edge runs on Vulkan, AMD
+generated-SPIR-V execution, AMD game integration, or translated PhysX
+correctness. Those claims remain behind the explicit frontend, AMD replay,
+native-fixture, CUDA-facade, and NVAPI gates above.

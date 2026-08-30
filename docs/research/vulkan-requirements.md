@@ -53,7 +53,9 @@ tools/vulkan-probe/
 ├── CMakeLists.txt
 ├── main.c
 ├── memory_smoke.cpp
+├── oracle.comp / oracle.spvasm / oracle.spv
 ├── preflight.ps1
+├── rebuild-oracle.ps1
 └── expected/
 ```
 
@@ -69,6 +71,7 @@ cmake -S tools/vulkan-probe -B build/vulkan-probe -G "MinGW Makefiles" ^
 cmake --build build/vulkan-probe --parallel
 build\vulkan-probe\vulkan-probe.exe vulkan-x86-capabilities.json
 build\vulkan-probe\vulkan-memory-smoke.exe vulkan-memory-smoke.json
+build\vulkan-probe\vulkan-memory-smoke.exe vulkan-oracle.json build\vulkan-probe\oracle.spv
 ```
 
 The process reported `pointer_bits: 32`, Vulkan header version 1.4.357, and
@@ -86,6 +89,14 @@ The 123-word module passed `spirv-val --target-env vulkan1.2`; three runs
 produced byte-identical JSON. The committed result is
 `tools/vulkan-probe/expected/reference-workstation/memory-smoke.json`, SHA-256
 `4527312167c098277ba0422cfcd87d48a5578fdeeea3883234dbac0bbed2d2a0`.
+
+The combined 64-thread oracle then matched all committed native CUDA math,
+barrier, and integer-texture fields on both devices. Intel exposed one
+load-bearing SPIR-V rule: GLSL.std.450 `Fma` returned the separately rounded zero
+until its result was decorated `NoContraction`; with the decoration Intel and
+RTX both returned native `0xa8800000`. The combined result is
+`tools/vulkan-probe/expected/reference-workstation/oracle.json`, SHA-256
+`42a8778edb77a7a74429e30fc2ec68c87c677ac0b9ca51a604539b07a8953968`.
 
 ### Observed device results
 

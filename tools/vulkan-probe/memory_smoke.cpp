@@ -1,6 +1,8 @@
 #include <volk.h>
 #include <spirv/unified1/spirv.h>
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -16,11 +18,48 @@
 namespace {
 
 constexpr VkDeviceSize kBufferBytes = 32ull * 1024ull * 1024ull;
-constexpr VkDeviceSize kCopyBytes = 2ull * sizeof(std::uint32_t);
+constexpr VkDeviceSize kMemoryCopyBytes = 2ull * sizeof(std::uint32_t);
+constexpr VkDeviceSize kOracleCopyBytes = 304ull * sizeof(std::uint32_t);
 constexpr std::uint32_t kInput = 0x12345678u;
 constexpr std::uint32_t kMask = 0xa5a55a5au;
 constexpr std::uint32_t kAddend = 0x10203040u;
 constexpr std::uint32_t kExpected = (kInput ^ kMask) + kAddend;
+constexpr std::size_t kMathOffset = 16;
+constexpr std::size_t kBarrierOffset = 64;
+constexpr std::size_t kTextureInputOffset = 160;
+constexpr std::size_t kTextureOutputOffset = 256;
+constexpr std::array<std::uint32_t, 14> kExpectedMath = {
+    0x3eaaaaabu,
+    0x00000000u,
+    0x3eaaaaabu,
+    0x3fb504f3u,
+    0x00000000u,
+    0x3f3504f3u,
+    0xa8800000u,
+    0x00000000u,
+    0xfffffffdu,
+    0x4b800000u,
+    0x00000000u,
+    0x00000000u,
+    0x3f800000u,
+    0x3f800000u,
+};
+constexpr std::array<const char *, 14> kMathNames = {
+    "div_one_third",
+    "div_min_normal_half_ftz",
+    "rcp_three_approx",
+    "sqrt_two_approx",
+    "sqrt_min_subnormal_ftz",
+    "rsqrt_two_approx",
+    "fma_fused",
+    "mul_add_separate",
+    "cvt_rzi_neg3_75",
+    "cvt_rn_u32_16777217",
+    "add_min_subnormal_zero_ftz",
+    "mul_min_subnormal_one_ftz",
+    "min_nan_one",
+    "max_nan_one",
+};
 
 void check(VkResult result, const char *operation)
 {
@@ -303,13 +342,17 @@ struct DeviceResult {
     bool staging_coherent = false;
     std::uint32_t input_after = 0;
     std::uint32_t result = 0;
+    std::array<std::uint32_t, 14> math = {};
+    std::array<std::uint32_t, 64> barrier = {};
+    std::array<std::array<std::uint32_t, 4>, 12> texture = {};
     std::string error;
 };
 
 DeviceResult run_device(
     std::uint32_t device_index,
     VkPhysicalDevice physical_device,
-    const std::vector<std::uint32_t> &shader)
+    const std::vector<std::uint32_t> &shader,
+    bool oracle_mode)
 {
     DeviceResult result;
     result.index = device_index;
@@ -392,12 +435,22 @@ DeviceResult run_device(
         result.device_memory_local = device_buffer.device_local;
         result.staging_coherent = staging_buffer.host_coherent;
 
+        const VkDeviceSize copy_bytes = oracle_mode ? kOracleCopyBytes : kMemoryCopyBytes;
         check(
             vkMapMemory(device, staging_buffer.memory, 0, staging_buffer.allocation_size, 0, &mapped),
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
+        std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
         words[0] = kInput;
         words[1] = 0xdeadbeefu;
+        if (oracle_mode) {
+            for (std::uint32_t row = 0; row < 8; ++row) {
+                for (std::uint32_t component = 0; component < 4; ++component) {
+                    words[kTextureInputOffset + row * 4u + component] =
+                        0x10000000u * (component + 1u) + row * 0x100u + component;
+                }
+            }
+        }
         if (!staging_buffer.host_coherent) {
             VkMappedMemoryRange range = {
                 VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -541,7 +594,7 @@ DeviceResult run_device(
         };
         check(vkBeginCommandBuffer(command_buffer, &begin_info), "vkBeginCommandBuffer");
 
-        VkBufferCopy copy = {0, 0, kCopyBytes};
+        VkBufferCopy copy = {0, 0, copy_bytes};
         vkCmdCopyBuffer(command_buffer, staging_buffer.buffer, device_buffer.buffer, 1, &copy);
         VkBufferMemoryBarrier upload_barrier = {
             VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -552,7 +605,7 @@ DeviceResult run_device(
             VK_QUEUE_FAMILY_IGNORED,
             device_buffer.buffer,
             0,
-            kCopyBytes,
+            copy_bytes,
         };
         vkCmdPipelineBarrier(
             command_buffer,
@@ -585,7 +638,7 @@ DeviceResult run_device(
             VK_QUEUE_FAMILY_IGNORED,
             device_buffer.buffer,
             0,
-            kCopyBytes,
+            copy_bytes,
         };
         vkCmdPipelineBarrier(
             command_buffer,
@@ -629,8 +682,39 @@ DeviceResult run_device(
         result.input_after = words[0];
         result.result = words[1];
         result.pass = result.input_after == kInput && result.result == kExpected;
+        if (oracle_mode) {
+            std::copy_n(words + kMathOffset, result.math.size(), result.math.begin());
+            std::copy_n(words + kBarrierOffset, result.barrier.size(), result.barrier.begin());
+            for (std::size_t row = 0; row < result.texture.size(); ++row) {
+                std::copy_n(
+                    words + kTextureOutputOffset + row * 4u,
+                    4u,
+                    result.texture[row].begin());
+            }
+            result.pass = result.pass &&
+                std::equal(result.math.begin(), result.math.end(), kExpectedMath.begin());
+            for (std::size_t index = 0; index < result.barrier.size(); ++index) {
+                const std::uint32_t expected =
+                    index + 1u == result.barrier.size() ? 1u :
+                    static_cast<std::uint32_t>(index + 2u);
+                result.pass = result.pass && result.barrier[index] == expected;
+            }
+            for (std::size_t row = 0; row < result.texture.size(); ++row) {
+                const int coordinate = static_cast<int>(row) - 2;
+                for (std::size_t component = 0; component < 4; ++component) {
+                    const std::uint32_t expected = coordinate < 0 || coordinate >= 8
+                        ? 0u
+                        : 0x10000000u * static_cast<std::uint32_t>(component + 1u) +
+                            static_cast<std::uint32_t>(coordinate) * 0x100u +
+                            static_cast<std::uint32_t>(component);
+                    result.pass = result.pass && result.texture[row][component] == expected;
+                }
+            }
+        }
         if (!result.pass) {
-            result.error = "integer/global-memory result mismatch";
+            result.error = oracle_mode
+                ? "standalone oracle result mismatch"
+                : "integer/global-memory result mismatch";
         }
     } catch (const std::exception &error) {
         result.error = error.what();
@@ -685,7 +769,7 @@ DeviceResult run_device(
 int main(int argc, char **argv)
 {
     if (argc != 2 && argc != 3) {
-        std::cerr << "usage: vulkan-memory-smoke <output.json> [shader.spv]\n";
+        std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n";
         return 2;
     }
 
@@ -726,23 +810,38 @@ int main(int argc, char **argv)
     std::vector<VkPhysicalDevice> devices(device_count);
     check(vkEnumeratePhysicalDevices(instance, &device_count, devices.data()), "vkEnumeratePhysicalDevices");
 
-    const std::vector<std::uint32_t> shader = make_memory_shader();
-    if (argc == 3) {
-        std::ofstream shader_output(argv[2], std::ios::binary);
-        if (!shader_output) {
+    const bool oracle_mode = argc == 3;
+    std::vector<std::uint32_t> shader;
+    if (oracle_mode) {
+        std::ifstream shader_input(argv[2], std::ios::binary | std::ios::ate);
+        if (!shader_input) {
             vkDestroyInstance(instance, nullptr);
-            std::cerr << "failed to open SPIR-V output file\n";
+            std::cerr << "failed to open SPIR-V input file\n";
             return 3;
         }
-        shader_output.write(
-            reinterpret_cast<const char *>(shader.data()),
-            static_cast<std::streamsize>(shader.size() * sizeof(std::uint32_t)));
+        const std::streamsize byte_count = shader_input.tellg();
+        if (byte_count <= 0 ||
+            byte_count % static_cast<std::streamsize>(sizeof(std::uint32_t)) != 0) {
+            vkDestroyInstance(instance, nullptr);
+            std::cerr << "invalid SPIR-V byte length\n";
+            return 3;
+        }
+        shader.resize(static_cast<std::size_t>(byte_count) / sizeof(std::uint32_t));
+        shader_input.seekg(0);
+        shader_input.read(reinterpret_cast<char *>(shader.data()), byte_count);
+        if (!shader_input || shader.front() != SpvMagicNumber) {
+            vkDestroyInstance(instance, nullptr);
+            std::cerr << "invalid SPIR-V module\n";
+            return 3;
+        }
+    } else {
+        shader = make_memory_shader();
     }
     std::vector<DeviceResult> results;
     results.reserve(device_count);
     bool all_passed = true;
     for (std::uint32_t index = 0; index < device_count; ++index) {
-        DeviceResult result = run_device(index, devices[index], shader);
+        DeviceResult result = run_device(index, devices[index], shader, oracle_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -756,7 +855,7 @@ int main(int argc, char **argv)
     output << "{\n"
            << "  \"schema_version\": 1,\n"
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
-           << "  \"test\": \"integer_global_memory\",\n"
+           << "  \"test\": \"" << (oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory") << "\",\n"
            << "  \"buffer_bytes\": " << kBufferBytes << ",\n"
            << "  \"input\": \"" << hex32(kInput) << "\",\n"
            << "  \"mask\": \"" << hex32(kMask) << "\",\n"
@@ -781,8 +880,32 @@ int main(int argc, char **argv)
                << "      \"staging_host_coherent\": "
                << (result.staging_coherent ? "true" : "false") << ",\n"
                << "      \"input_after\": \"" << hex32(result.input_after) << "\",\n"
-               << "      \"result\": \"" << hex32(result.result) << "\",\n"
-               << "      \"pass\": " << (result.pass ? "true" : "false") << ",\n"
+               << "      \"result\": \"" << hex32(result.result) << "\",\n";
+        if (oracle_mode) {
+            output << "      \"math\": {\n";
+            for (std::size_t math_index = 0; math_index < result.math.size(); ++math_index) {
+                output << "        \"" << kMathNames[math_index] << "\": \""
+                       << hex32(result.math[math_index]) << "\""
+                       << (math_index + 1 == result.math.size() ? "\n" : ",\n");
+            }
+            output << "      },\n"
+                   << "      \"barrier\": {\"values\": [";
+            for (std::size_t barrier_index = 0; barrier_index < result.barrier.size(); ++barrier_index) {
+                output << (barrier_index == 0 ? "" : ", ") << result.barrier[barrier_index];
+            }
+            output << "]},\n"
+                   << "      \"texture\": {\"rows\": [\n";
+            for (std::size_t row = 0; row < result.texture.size(); ++row) {
+                output << "        {\"coord\": " << static_cast<int>(row) - 2 << ", \"value\": [";
+                for (std::size_t component = 0; component < 4; ++component) {
+                    output << (component == 0 ? "" : ", ")
+                           << "\"" << hex32(result.texture[row][component]) << "\"";
+                }
+                output << "]}" << (row + 1 == result.texture.size() ? "\n" : ",\n");
+            }
+            output << "      ]},\n";
+        }
+        output << "      \"pass\": " << (result.pass ? "true" : "false") << ",\n"
                << "      \"error\": " << json_string(result.error.c_str()) << "\n"
                << "    }" << (index + 1 == results.size() ? "\n" : ",\n");
     }

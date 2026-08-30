@@ -3,6 +3,7 @@ param(
     [ValidateSet("MinGW", "MSVC")]
     [string]$Toolchain = "MinGW",
     [switch]$RunMemorySmoke,
+    [switch]$RunOracle,
     [string]$SourceDir = "",
     [string]$BuildDir = "",
     [string]$OutputDir = "",
@@ -68,9 +69,11 @@ if ($Toolchain -eq "MinGW") {
 }
 else {
     if ([string]::IsNullOrWhiteSpace($Generator)) {
-        $Generator = "Visual Studio 17 2022"
+        $configureArguments += @("-A", "Win32")
     }
-    $configureArguments += @("-G", $Generator, "-A", "Win32")
+    else {
+        $configureArguments += @("-G", $Generator, "-A", "Win32")
+    }
 }
 
 Invoke-Checked -File "cmake" -Arguments $configureArguments
@@ -86,7 +89,8 @@ if ($null -eq $probeExecutable) {
 }
 
 $memorySmokePath = Join-Path $OutputDir "memory-smoke.json"
-if ($RunMemorySmoke) {
+$oraclePath = Join-Path $OutputDir "oracle.json"
+if ($RunMemorySmoke -or $RunOracle) {
     $memorySmokeCandidates = @(
         (Join-Path $BuildDir "vulkan-memory-smoke.exe"),
         (Join-Path $BuildDir "Release\vulkan-memory-smoke.exe")
@@ -207,6 +211,13 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 if ($RunMemorySmoke) {
     Invoke-Checked -File $memorySmokeExecutable -Arguments @($memorySmokePath)
 }
+if ($RunOracle) {
+    $oracleShader = Join-Path (Split-Path -Parent $memorySmokeExecutable) "oracle.spv"
+    if (-not (Test-Path -LiteralPath $oracleShader -PathType Leaf)) {
+        throw "Built oracle.spv was not found beside vulkan-memory-smoke.exe"
+    }
+    Invoke-Checked -File $memorySmokeExecutable -Arguments @($oraclePath, $oracleShader)
+}
 
 Write-Host ""
 Write-Host "pxvk Mirror's Edge Vulkan hardware preflight"
@@ -224,12 +235,18 @@ Write-Host "Report:       $reportPath"
 if ($RunMemorySmoke) {
     Write-Host "Memory smoke: $memorySmokePath"
 }
+if ($RunOracle) {
+    Write-Host "Oracle:       $oraclePath"
+}
 Write-Host ""
-if ($RunMemorySmoke) {
+if ($RunOracle) {
+    Write-Host "Hardware preflight and standalone Vulkan oracle completed."
+}
+elseif ($RunMemorySmoke) {
     Write-Host "Hardware preflight and integer/global-memory execution completed."
 }
 else {
-    Write-Host "This checks cross-vendor hardware eligibility only; use -RunMemorySmoke to execute generated SPIR-V."
+    Write-Host "This checks cross-vendor hardware eligibility only; use -RunOracle for semantic execution."
 }
 
 if ($eligibleCount -eq 0) {

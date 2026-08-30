@@ -45,6 +45,7 @@ function(pxvk_configure_vulkan_target target)
     target_link_libraries(${target} PRIVATE volk::volk_headers Vulkan::Headers)
     target_compile_definitions(${target} PRIVATE _WIN32_WINNT=0x0601)
     if(MSVC)
+        target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
         target_compile_options(${target} PRIVATE /W4)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra)
@@ -65,3 +66,9 @@ pxvk_configure_vulkan_target(vulkan-memory-smoke)
 if(MINGW)
     target_link_options(vulkan-memory-smoke PRIVATE -static-libstdc++)
 endif()
+add_custom_command(
+    TARGET vulkan-memory-smoke POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/oracle.spv"
+        "$<TARGET_FILE_DIR:vulkan-memory-smoke>/oracle.spv"
+)

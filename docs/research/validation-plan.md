@@ -51,7 +51,7 @@ framework, runtime language, shader compiler, or architecture.
 | `tools/nvcuda-trace/tests/proxy_smoke.c` | `LoadLibrary`, export lookup, `cuInit`, and enumeration | Shape for an out-of-process pxvk facade smoke test |
 | `tools/nvcuda-trace/tests/injected_smoke.c` | Startup-injected `nvcuda.dll` discovery and calls | Shape for launcher/injection validation |
 | `tools/vulkan-probe/main.c` | x86 loader, device features, and quantitative limits | Input to startup-gate tests, not a compute-correctness test |
-| `tools/vulkan-probe/memory_smoke.cpp` | Generated SPIR-V, real 32 MiB buffers, transfer/compute barriers, exact integer output on Intel and RTX | First executable Vulkan semantic and allocation gate; run unchanged on AMD |
+| `tools/vulkan-probe/memory_smoke.cpp` plus `oracle.spv` | Generated SPIR-V, real 32 MiB buffers, f32/FMA/conversion, workgroup barrier, and integer texture output exactly match CUDA on Intel and RTX | Completed reference-system standalone Vulkan semantic gate; preserve for deferred AMD run |
 | 17 local captured PTX modules | Complete corpus accepted by ZLUDA; hashes cataloged | Local parser/compile coverage without committing proprietary PTX |
 | Three native game traces | Fluid, deformable, and confirmed broken-glass execution | Route and workload-presence oracle |
 
@@ -218,6 +218,12 @@ selected launched function reaches them.
 The existing CUDA oracle is the first backend acceptance test. Run the same PTX
 intent through the candidate translator and compare normalized JSON field by
 field.
+
+This differential now passes on the reference system. Every committed math,
+barrier, and integer-texture field matches native CUDA bit-for-bit on Intel and
+RTX. The only observed mismatch was Intel splitting GLSL.std.450 `Fma`; adding
+`NoContraction` to the FMA result made both devices return native
+`0xa8800000`. AMD execution remains a separately tracked deferred gate.
 
 ### Exact fields
 
