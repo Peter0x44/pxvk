@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source_bytes": 3337,
   "ptx_version": "4.1",
   "target": "sm_52",
@@ -7,11 +7,20 @@
   "texture_references": [
     "probe_tex"
   ],
+  "variables": [],
+  "functions": [],
   "entries": [
     {
       "name": "math_probe",
+      "kind": "entry",
+      "linkage": "visible",
       "packed_parameter_bytes": 4,
+      "return_parameter_bytes": 0,
       "static_shared_bytes": 0,
+      "static_local_bytes": 0,
+      "max_threads": [],
+      "minimum_ctas_per_sm": 0,
+      "return_parameters": [],
       "parameters": [
         {
           "name": "math_probe_param_0",
@@ -874,8 +883,15 @@
     },
     {
       "name": "barrier_probe",
+      "kind": "entry",
+      "linkage": "visible",
       "packed_parameter_bytes": 4,
+      "return_parameter_bytes": 0,
       "static_shared_bytes": 256,
+      "static_local_bytes": 0,
+      "max_threads": [],
+      "minimum_ctas_per_sm": 0,
+      "return_parameters": [],
       "parameters": [
         {
           "name": "barrier_probe_param_0",
@@ -1154,8 +1170,15 @@
     },
     {
       "name": "texture_probe",
+      "kind": "entry",
+      "linkage": "visible",
       "packed_parameter_bytes": 4,
+      "return_parameter_bytes": 0,
       "static_shared_bytes": 0,
+      "static_local_bytes": 0,
+      "max_threads": [],
+      "minimum_ctas_per_sm": 0,
+      "return_parameters": [],
       "parameters": [
         {
           "name": "texture_probe_param_0",

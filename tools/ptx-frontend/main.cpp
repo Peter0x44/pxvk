@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -191,10 +192,26 @@ struct Instruction {
 
 struct Entry {
     std::string name;
+    std::string kind = "entry";
+    std::string linkage = "visible";
+    std::vector<Parameter> return_parameters;
     std::vector<Parameter> parameters;
     std::vector<Instruction> instructions;
+    std::vector<std::uint32_t> max_threads;
+    std::uint32_t minimum_ctas_per_sm = 0;
     std::size_t packed_parameter_bytes = 0;
+    std::size_t return_parameter_bytes = 0;
     std::size_t static_shared_bytes = 0;
+    std::size_t static_local_bytes = 0;
+};
+
+struct ModuleVariable {
+    std::string name;
+    std::string space;
+    std::string type;
+    std::size_t size = 0;
+    std::size_t alignment = 0;
+    bool external = false;
 };
 
 struct Module {
@@ -202,6 +219,8 @@ struct Module {
     std::string target;
     std::uint32_t address_size = 0;
     std::vector<std::string> texture_references;
+    std::vector<ModuleVariable> variables;
+    std::vector<Entry> functions;
     std::vector<Entry> entries;
 };
 
@@ -272,14 +291,35 @@ public:
                 finish_header_line();
                 have_address_size = true;
             } else if (match_word(".global")) {
-                expect_text(".texref");
-                const Token name = expect_word("texture reference name");
-                expect_text(";");
-                module.texture_references.push_back(name.text);
-                skip_to_line_end();
+                if (match_word(".texref")) {
+                    const Token name = expect_word("texture reference name");
+                    expect_text(";");
+                    module.texture_references.push_back(name.text);
+                    skip_to_line_end();
+                } else {
+                    module.variables.push_back(parse_module_variable({".global"}));
+                }
+            } else if (match_word(".const")) {
+                module.variables.push_back(parse_module_variable({".const"}));
+            } else if (match_word(".shared")) {
+                module.variables.push_back(parse_module_variable({".shared"}));
+            } else if (match_word(".extern")) {
+                module.variables.push_back(parse_module_variable({".extern"}));
+            } else if (match_word(".weak")) {
+                expect_text(".func");
+                module.functions.push_back(parse_routine("function", "weak"));
             } else if (match_word(".visible")) {
-                expect_text(".entry");
-                module.entries.push_back(parse_entry());
+                if (match_word(".entry")) {
+                    module.entries.push_back(parse_routine("entry", "visible"));
+                } else if (match_word(".func")) {
+                    module.functions.push_back(parse_routine("function", "visible"));
+                } else {
+                    fail(peek(), "expected '.entry' or '.func' after '.visible'");
+                }
+            } else if (match_word(".entry")) {
+                module.entries.push_back(parse_routine("entry", "default"));
+            } else if (match_word(".func")) {
+                module.functions.push_back(parse_routine("function", "default"));
             } else {
                 fail(peek(), "unsupported module declaration '" + peek().text + "'");
             }
@@ -288,8 +328,8 @@ public:
         if (!have_version || !have_target || !have_address_size) {
             fail(peek(), "module is missing version, target, or address size");
         }
-        if (module.entries.empty()) {
-            fail(peek(), "module has no visible entries");
+        if (module.entries.empty() && module.functions.empty() && module.variables.empty()) {
+            fail(peek(), "module has no declarations");
         }
         return module;
     }
@@ -298,18 +338,16 @@ private:
     static const std::set<std::string> &supported_bases()
     {
         static const std::set<std::string> bases = {
-            "add", "and", "bar", "cvt", "div", "fma", "ld", "mad", "max",
-            "min", "mov", "mul", "rcp", "ret", "rsqrt", "shl", "sqrt", "st",
-            "sub", "tex",
+            "abs", "add", "and", "bar", "bfe", "bra", "clz", "cvt", "cvta",
+            "div", "fma", "ld", "mad", "max", "min", "mov", "mul", "neg", "not",
+            "or", "rcp", "ret", "rsqrt", "selp", "setp", "shl", "shr", "sqrt",
+            "st", "sub", "tex", "xor",
         };
         return bases;
     }
 
-    Entry parse_entry()
+    std::size_t parse_parameter_list(std::vector<Parameter> &parameters)
     {
-        Entry entry;
-        entry.name = expect_word("entry name").text;
-        skip_newlines();
         expect_text("(");
         skip_newlines();
         std::size_t parameter_offset = 0;
@@ -328,9 +366,10 @@ private:
                 expect_text("]");
             }
             const std::size_t size = element_size * element_count;
-            const std::size_t alignment = explicit_alignment == 0 ? element_size : explicit_alignment;
+            const std::size_t alignment =
+                explicit_alignment == 0 ? element_size : explicit_alignment;
             parameter_offset = align_up(parameter_offset, alignment);
-            entry.parameters.push_back({name.text, type.text, parameter_offset, size, alignment});
+            parameters.push_back({name.text, type.text, parameter_offset, size, alignment});
             parameter_offset += size;
             skip_newlines();
             if (match_text(")")) {
@@ -339,27 +378,119 @@ private:
             expect_text(",");
             skip_newlines();
         }
-        entry.packed_parameter_bytes = parameter_offset;
+        return parameter_offset;
+    }
+
+    Entry parse_routine(const std::string &kind, const std::string &linkage)
+    {
+        Entry routine;
+        routine.kind = kind;
+        routine.linkage = linkage;
+        if (kind == "function" && peek().text == "(") {
+            routine.return_parameter_bytes = parse_parameter_list(routine.return_parameters);
+            skip_newlines();
+        }
+        routine.name = expect_word(kind + " name").text;
         skip_newlines();
+        routine.packed_parameter_bytes = parse_parameter_list(routine.parameters);
+        skip_newlines();
+        while (peek().text == ".maxntid" || peek().text == ".minnctapersm") {
+            if (match_word(".maxntid")) {
+                routine.max_threads.clear();
+                while (peek().kind != TokenKind::newline && !at_end()) {
+                    if (match_text(",")) {
+                        continue;
+                    }
+                    routine.max_threads.push_back(parse_unsigned(expect_word("thread dimension")));
+                }
+            } else {
+                expect_text(".minnctapersm");
+                routine.minimum_ctas_per_sm = parse_unsigned(expect_word("minimum CTA count"));
+            }
+            skip_newlines();
+        }
         expect_text("{");
         skip_newlines();
         while (!match_text("}")) {
             if (at_end()) {
-                fail(peek(), "unterminated entry body");
+                fail(peek(), "unterminated " + kind + " body");
             }
             if (peek().text == ".reg" || peek().text == ".shared" ||
                 peek().text == ".local" || peek().text == ".extern") {
-                parse_declaration(entry);
+                parse_declaration(routine);
             } else if (peek().kind == TokenKind::word && peek(1).text == ":") {
                 consume();
                 consume();
                 skip_to_line_end();
             } else {
-                entry.instructions.push_back(parse_instruction());
+                routine.instructions.push_back(parse_instruction());
             }
             skip_newlines();
         }
-        return entry;
+        return routine;
+    }
+
+    ModuleVariable parse_module_variable(std::vector<std::string> prefix)
+    {
+        std::vector<Token> declaration;
+        for (const std::string &text : prefix) {
+            declaration.push_back({TokenKind::word, text, peek().line, peek().column});
+        }
+        while (!at_end() && peek().text != ";") {
+            if (peek().kind == TokenKind::newline) {
+                fail(peek(), "module variable declaration is missing ';'");
+            }
+            declaration.push_back(consume());
+        }
+        expect_text(";");
+        ModuleVariable variable;
+        variable.external = std::any_of(
+            declaration.begin(), declaration.end(),
+            [](const Token &token) { return token.text == ".extern"; });
+        for (const Token &token : declaration) {
+            if (token.text == ".const" || token.text == ".shared" || token.text == ".global") {
+                variable.space = token.text.substr(1);
+            }
+        }
+        for (std::size_t index = 0; index + 1 < declaration.size(); ++index) {
+            if (declaration[index].text == ".align") {
+                variable.alignment = parse_unsigned(declaration[index + 1]);
+            }
+        }
+        for (std::size_t index = 0; index < declaration.size(); ++index) {
+            try {
+                const std::size_t element_size = scalar_size(declaration[index]);
+                variable.type = declaration[index].text;
+                if (index + 1 >= declaration.size()) {
+                    fail(declaration[index], "module variable has no name");
+                }
+                variable.name = declaration[index + 1].text;
+                std::size_t count = 1;
+                for (std::size_t cursor = index + 2; cursor < declaration.size(); ++cursor) {
+                    if (declaration[cursor].text == "[") {
+                        if (cursor + 1 < declaration.size() && declaration[cursor + 1].text != "]") {
+                            count = parse_unsigned(declaration[cursor + 1]);
+                        } else {
+                            count = 0;
+                        }
+                        break;
+                    }
+                }
+                variable.size = element_size * count;
+                if (variable.alignment == 0) {
+                    variable.alignment = element_size;
+                }
+                return variable;
+            } catch (const ParseError &) {
+                if (!declaration[index].text.empty() && declaration[index].text[0] == '.' &&
+                    declaration[index].text != ".align" && declaration[index].text != ".extern" &&
+                    declaration[index].text != ".const" && declaration[index].text != ".shared" &&
+                    declaration[index].text != ".global") {
+                    throw;
+                }
+            }
+        }
+        fail(declaration.front(), "module variable has no supported type");
     }
 
     void parse_declaration(Entry &entry)
@@ -378,7 +509,10 @@ private:
         const bool shared = std::any_of(
             declaration.begin(), declaration.end(),
             [](const Token &token) { return token.text == ".shared"; });
-        if (!shared) {
+        const bool local = std::any_of(
+            declaration.begin(), declaration.end(),
+            [](const Token &token) { return token.text == ".local"; });
+        if (!shared && !local) {
             return;
         }
         const bool external = std::any_of(
@@ -408,19 +542,21 @@ private:
                     if (declaration[cursor].text == "[") {
                         count = parse_unsigned(declaration[cursor + 1]);
                         if (declaration[cursor + 2].text != "]") {
-                            fail(declaration[cursor + 2], "malformed shared array");
+                            fail(declaration[cursor + 2], "malformed storage array");
                         }
                         break;
                     }
                 }
                 const std::size_t alignment =
                     explicit_alignment == 0 ? element_size : explicit_alignment;
-                entry.static_shared_bytes = align_up(entry.static_shared_bytes, alignment);
-                entry.static_shared_bytes += element_size * count;
+                std::size_t &storage_bytes =
+                    shared ? entry.static_shared_bytes : entry.static_local_bytes;
+                storage_bytes = align_up(storage_bytes, alignment);
+                storage_bytes += element_size * count;
                 return;
             }
         }
-        fail(declaration.front(), "shared declaration has no supported type");
+        fail(declaration.front(), "storage declaration has no supported type");
     }
 
     Instruction parse_instruction()
@@ -592,53 +728,195 @@ private:
     std::size_t index_ = 0;
 };
 
+Json parameters_to_json(const std::vector<Parameter> &parameters)
+{
+    Json output = Json::array();
+    for (const Parameter &parameter : parameters) {
+        output.push_back({
+            {"name", parameter.name},
+            {"type", parameter.type},
+            {"offset", parameter.offset},
+            {"size", parameter.size},
+            {"alignment", parameter.alignment},
+        });
+    }
+    return output;
+}
+
+Json routine_to_json(const Entry &routine)
+{
+    Json output;
+    output["name"] = routine.name;
+    output["kind"] = routine.kind;
+    output["linkage"] = routine.linkage;
+    output["packed_parameter_bytes"] = routine.packed_parameter_bytes;
+    output["return_parameter_bytes"] = routine.return_parameter_bytes;
+    output["static_shared_bytes"] = routine.static_shared_bytes;
+    output["static_local_bytes"] = routine.static_local_bytes;
+    output["max_threads"] = routine.max_threads;
+    output["minimum_ctas_per_sm"] = routine.minimum_ctas_per_sm;
+    output["return_parameters"] = parameters_to_json(routine.return_parameters);
+    output["parameters"] = parameters_to_json(routine.parameters);
+
+    std::set<std::string> base_families;
+    std::set<std::string> variants;
+    output["instructions"] = Json::array();
+    for (const Instruction &instruction : routine.instructions) {
+        base_families.insert(instruction.base);
+        variants.insert(instruction.variant);
+        output["instructions"].push_back({
+            {"line", instruction.line},
+            {"variant", instruction.variant},
+            {"base", instruction.base},
+            {"modifiers", instruction.modifiers},
+            {"predicate", instruction.predicate},
+            {"operands", instruction.operands},
+        });
+    }
+    output["instruction_count"] = routine.instructions.size();
+    output["base_families"] =
+        std::vector<std::string>(base_families.begin(), base_families.end());
+    output["variants"] = std::vector<std::string>(variants.begin(), variants.end());
+    return output;
+}
+
 Json module_to_json(const Module &module, std::size_t source_bytes)
 {
     Json output;
-    output["schema_version"] = 1;
+    output["schema_version"] = 2;
     output["source_bytes"] = source_bytes;
     output["ptx_version"] = module.version;
     output["target"] = module.target;
     output["address_size"] = module.address_size;
     output["texture_references"] = module.texture_references;
-    output["entries"] = Json::array();
-
-    for (const Entry &entry : module.entries) {
-        Json entry_json;
-        entry_json["name"] = entry.name;
-        entry_json["packed_parameter_bytes"] = entry.packed_parameter_bytes;
-        entry_json["static_shared_bytes"] = entry.static_shared_bytes;
-        entry_json["parameters"] = Json::array();
-        for (const Parameter &parameter : entry.parameters) {
-            entry_json["parameters"].push_back({
-                {"name", parameter.name},
-                {"type", parameter.type},
-                {"offset", parameter.offset},
-                {"size", parameter.size},
-                {"alignment", parameter.alignment},
-            });
-        }
-
-        std::set<std::string> base_families;
-        std::set<std::string> variants;
-        entry_json["instructions"] = Json::array();
-        for (const Instruction &instruction : entry.instructions) {
-            base_families.insert(instruction.base);
-            variants.insert(instruction.variant);
-            entry_json["instructions"].push_back({
-                {"line", instruction.line},
-                {"variant", instruction.variant},
-                {"base", instruction.base},
-                {"modifiers", instruction.modifiers},
-                {"predicate", instruction.predicate},
-                {"operands", instruction.operands},
-            });
-        }
-        entry_json["instruction_count"] = entry.instructions.size();
-        entry_json["base_families"] = std::vector<std::string>(base_families.begin(), base_families.end());
-        entry_json["variants"] = std::vector<std::string>(variants.begin(), variants.end());
-        output["entries"].push_back(std::move(entry_json));
+    output["variables"] = Json::array();
+    for (const ModuleVariable &variable : module.variables) {
+        output["variables"].push_back({
+            {"name", variable.name},
+            {"space", variable.space},
+            {"type", variable.type},
+            {"size", variable.size},
+            {"alignment", variable.alignment},
+            {"external", variable.external},
+        });
     }
+    output["functions"] = Json::array();
+    for (const Entry &function : module.functions) {
+        output["functions"].push_back(routine_to_json(function));
+    }
+    output["entries"] = Json::array();
+    for (const Entry &entry : module.entries) {
+        output["entries"].push_back(routine_to_json(entry));
+    }
+    return output;
+}
+
+Json routine_summary_to_json(const Entry &routine)
+{
+    std::set<std::string> base_families;
+    std::set<std::string> variants;
+    for (const Instruction &instruction : routine.instructions) {
+        base_families.insert(instruction.base);
+        variants.insert(instruction.variant);
+    }
+    return {
+        {"name", routine.name},
+        {"kind", routine.kind},
+        {"linkage", routine.linkage},
+        {"packed_parameter_bytes", routine.packed_parameter_bytes},
+        {"return_parameter_bytes", routine.return_parameter_bytes},
+        {"static_shared_bytes", routine.static_shared_bytes},
+        {"static_local_bytes", routine.static_local_bytes},
+        {"parameters", parameters_to_json(routine.parameters)},
+        {"max_threads", routine.max_threads},
+        {"minimum_ctas_per_sm", routine.minimum_ctas_per_sm},
+        {"instruction_count", routine.instructions.size()},
+        {"base_families", std::vector<std::string>(base_families.begin(), base_families.end())},
+        {"variants", std::vector<std::string>(variants.begin(), variants.end())},
+    };
+}
+
+Json corpus_to_json(
+    const std::vector<std::pair<std::filesystem::path, std::pair<Module, std::size_t>>> &modules)
+{
+    Json output;
+    output["schema_version"] = 1;
+    output["modules"] = Json::array();
+    std::size_t entry_count = 0;
+    std::size_t function_count = 0;
+    std::size_t texture_count = 0;
+    std::size_t constant_count = 0;
+    std::size_t static_shared_count = 0;
+    std::size_t external_shared_count = 0;
+    std::set<std::string> base_families;
+    std::set<std::string> variants;
+
+    for (const auto &item : modules) {
+        const Module &module = item.second.first;
+        Json module_json;
+        module_json["file"] = item.first.filename().string();
+        module_json["source_bytes"] = item.second.second;
+        module_json["ptx_version"] = module.version;
+        module_json["target"] = module.target;
+        module_json["address_size"] = module.address_size;
+        module_json["texture_references"] = module.texture_references;
+        module_json["variables"] = Json::array();
+        std::size_t module_static_shared_bytes = 0;
+        for (const ModuleVariable &variable : module.variables) {
+            module_json["variables"].push_back({
+                {"name", variable.name},
+                {"space", variable.space},
+                {"type", variable.type},
+                {"size", variable.size},
+                {"alignment", variable.alignment},
+                {"external", variable.external},
+            });
+            if (variable.space == "const") {
+                ++constant_count;
+            } else if (variable.space == "shared" && variable.external) {
+                ++external_shared_count;
+            } else if (variable.space == "shared") {
+                ++static_shared_count;
+                module_static_shared_bytes =
+                    align_up(module_static_shared_bytes, variable.alignment);
+                module_static_shared_bytes += variable.size;
+            }
+        }
+        module_json["module_static_shared_bytes"] = module_static_shared_bytes;
+        module_json["function_count"] = module.functions.size();
+        for (const Entry &function : module.functions) {
+            for (const Instruction &instruction : function.instructions) {
+                base_families.insert(instruction.base);
+                variants.insert(instruction.variant);
+            }
+        }
+        module_json["entries"] = Json::array();
+        for (const Entry &entry : module.entries) {
+            Json summary = routine_summary_to_json(entry);
+            summary["effective_static_shared_bytes"] =
+                entry.static_shared_bytes + module_static_shared_bytes;
+            module_json["entries"].push_back(std::move(summary));
+            for (const Instruction &instruction : entry.instructions) {
+                base_families.insert(instruction.base);
+                variants.insert(instruction.variant);
+            }
+        }
+        entry_count += module.entries.size();
+        function_count += module.functions.size();
+        texture_count += module.texture_references.size();
+        output["modules"].push_back(std::move(module_json));
+    }
+    output["totals"] = {
+        {"module_count", modules.size()},
+        {"entry_count", entry_count},
+        {"function_count", function_count},
+        {"texture_reference_count", texture_count},
+        {"constant_count", constant_count},
+        {"module_static_shared_count", static_shared_count},
+        {"external_shared_count", external_shared_count},
+        {"base_families", std::vector<std::string>(base_families.begin(), base_families.end())},
+        {"variants", std::vector<std::string>(variants.begin(), variants.end())},
+    };
     return output;
 }
 
@@ -710,13 +988,48 @@ int main(int argc, char **argv)
     if (argc == 2 && std::string(argv[1]) == "--self-test") {
         return self_test();
     }
-    if (argc != 3) {
+    const bool corpus_requested = argc >= 2 && std::string(argv[1]) == "--corpus";
+    const bool corpus_mode = corpus_requested && argc == 4;
+    if ((corpus_requested && !corpus_mode) || (!corpus_requested && argc != 3)) {
         std::cerr << "usage: ptx-frontend <input.ptx> <output.json>\n"
+                  << "       ptx-frontend --corpus <directory> <output.json>\n"
                   << "       ptx-frontend --self-test\n";
         return 2;
     }
 
     try {
+        if (corpus_mode) {
+            std::vector<std::filesystem::path> paths;
+            for (const std::filesystem::directory_entry &item :
+                 std::filesystem::directory_iterator(argv[2])) {
+                if (item.is_regular_file() && item.path().extension() == ".ptx") {
+                    paths.push_back(item.path());
+                }
+            }
+            std::sort(paths.begin(), paths.end());
+            if (paths.empty()) {
+                throw std::runtime_error("corpus directory contains no PTX files");
+            }
+            std::vector<std::pair<std::filesystem::path, std::pair<Module, std::size_t>>> modules;
+            for (const std::filesystem::path &path : paths) {
+                const std::string source = read_file(path.string());
+                try {
+                    modules.push_back({path, {parse_source(source), source.size()}});
+                } catch (const ParseError &error) {
+                    std::cerr << path.string() << ':' << error.line() << ':' << error.column()
+                              << ": " << error.what() << '\n';
+                    return 1;
+                }
+            }
+            std::ofstream output(argv[3], std::ios::binary);
+            if (!output) {
+                throw std::runtime_error("failed to open output file");
+            }
+            output << corpus_to_json(modules).dump(2) << '\n';
+            std::cout << "Parsed " << modules.size() << " PTX modules from " << argv[2] << '\n';
+            return 0;
+        }
+
         const std::string source = read_file(argv[1]);
         const Module module = parse_source(source);
         std::ofstream output(argv[2], std::ios::binary);

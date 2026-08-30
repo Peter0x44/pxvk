@@ -192,6 +192,13 @@ before pipeline creation. The runtime does not ship or invoke `spirv-val`.
 Direct emission avoids a GLSL/HLSL text round trip and a runtime shader compiler,
 which would obscure PTX operation boundaries and contraction controls.
 
+LLVM was reconsidered after the whole-corpus parser pass and remains excluded.
+It would not remove the PTX grammar/semantic frontend, upstream LLVM does not
+directly supply this Vulkan SPIR-V contract, and an LLVM-to-SPIR-V bridge would
+still need the same FTZ, fusion, barrier-scope, texture-bounds, and u32-offset
+controls. ZLUDA uses LLVM because its destination is AMDGPU/HIP code objects;
+that load-bearing reason does not apply here.
+
 Cache keys include PTX hash, entry name, translator version, device
 vendor/device/driver key, enabled float path, block size, and dynamic shared
 size. Start with an in-memory cache; a disk cache is not required for the oracle
@@ -402,24 +409,39 @@ works.
 1. **Finite PTX frontend:** parse synthetic cases, then all 17 local modules;
    emit the standalone oracle through normalized PTX operations.
 
-The first frontend sub-slice is now complete for project-owned PTX.
-`tools/ptx-frontend` provides a source-located tokenizer, strict module/entry
-parser, packed parameter and static shared-memory layout, typed opcode
-base/modifier normalization, operand structure, deterministic nlohmann/json
-output, and negative self-tests. It parses all three `probe.ptx` entries:
+The strict frontend now covers both project-owned PTX and all 17 local captured
+modules. `tools/ptx-frontend` provides source-located tokenization; weak/visible
+functions and entries; return/launch parameter layout; constant, shared,
+external-shared, local, and texref metadata; entry launch directives; labels,
+predication, structured operands; and finite opcode base/modifier
+normalization.
 
-| Entry | Instructions | Packed parameters | Static shared |
-|---|---:|---:|---:|
-| `math_probe` | 59 | 4 B | 0 |
-| `barrier_probe` | 18 | 4 B | 256 B |
-| `texture_probe` | 7 | 4 B | 0 |
+Whole-corpus output matches the independent static analysis exactly:
 
-The normalized surface contains 20 base families and 27 exact variants. Three
-runs produced byte-identical
-`tools/ptx-frontend/expected/oracle-manifest.json`, SHA-256
-`ddbb737a2423f2da34fb28cbac05d4ab304e6811be9adc76935c4a29dc675d74`.
-This proves strict parsing/metadata normalization only; it does not yet emit
-SPIR-V or accept the proprietary 17-module corpus.
+| Metric | Parsed |
+|---|---:|
+| Modules | 17 |
+| Entry declarations | 70 |
+| Function declarations | 184 |
+| Texture references | 33 |
+| Constant globals | 7 |
+| Base instruction families | 32 |
+| Exact whole-corpus variants | 147 |
+
+All 16 launched entries were cross-checked by module/name. Every packed
+parameter offset/size/alignment, effective static shared size, and static local
+size matches `mirrors-edge-ptx-corpus-analysis.json`. This includes the two
+module-scope shared allocations that contribute to launched entry totals.
+
+The project-owned oracle manifest SHA-256 is
+`eac6cfc4597e47e974411dc7f99a67744419d19178990ee3b862ea321ca49ed5`.
+The redistributable structural corpus manifest is
+`tools/ptx-frontend/expected/corpus-manifest.json`, SHA-256
+`bd39670b3959f888a20333e4bc29260b2c67cc6639f656386d6156994e7336f8`.
+Raw proprietary PTX remains local.
+
+This completes strict grammar and metadata normalization. It does not yet build
+an explicit CFG/dataflow IR or emit SPIR-V from PTX.
 
 Build and run:
 
@@ -429,6 +451,8 @@ cmake --build build/ptx-frontend --config Release
 build/ptx-frontend/Release/ptx-frontend.exe --self-test
 build/ptx-frontend/Release/ptx-frontend.exe `
   tools/cuda-oracle/probe.ptx oracle-manifest.json
+build/ptx-frontend/Release/ptx-frontend.exe --corpus `
+  path/to/extracted/ptx corpus-manifest.json
 ```
 
 The build fetches pinned nlohmann/json commit
@@ -476,10 +500,10 @@ behavior.
 
 ## Architecture gate conclusion
 
-The reference-system standalone Vulkan oracle gate and project-owned PTX parser
-gate are complete. The next gate is expanding the strict frontend to all 17
-local modules and 120 launched variants, then emitting the oracle through the
-normalized operations before compiling proprietary entries.
+The reference-system Vulkan oracle and whole-corpus grammar/metadata gates are
+complete. The next gate is an explicit CFG/dataflow IR and SPIR-V emission of
+the project-owned oracle from parsed PTX. Proprietary entries remain parse-only
+until that emitted oracle matches the existing Vulkan fixture.
 
 The gate is not open for a claim that Mirror's Edge runs on Vulkan, AMD
 generated-SPIR-V execution, AMD game integration, or translated PhysX
