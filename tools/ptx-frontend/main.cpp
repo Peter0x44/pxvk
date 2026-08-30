@@ -190,6 +190,18 @@ struct Instruction {
     std::size_t line = 0;
 };
 
+struct Label {
+    std::string name;
+    std::size_t instruction_index = 0;
+    std::size_t line = 0;
+};
+
+
+struct RegisterBank {
+    std::string prefix;
+    std::string type;
+    std::size_t count = 1;
+};
 struct Entry {
     std::string name;
     std::string kind = "entry";
@@ -197,6 +209,8 @@ struct Entry {
     std::vector<Parameter> return_parameters;
     std::vector<Parameter> parameters;
     std::vector<Instruction> instructions;
+    std::vector<RegisterBank> register_banks;
+    std::vector<Label> labels;
     std::vector<std::uint32_t> max_threads;
     std::uint32_t minimum_ctas_per_sm = 0;
     std::size_t packed_parameter_bytes = 0;
@@ -419,9 +433,10 @@ private:
                 peek().text == ".local" || peek().text == ".extern") {
                 parse_declaration(routine);
             } else if (peek().kind == TokenKind::word && peek(1).text == ":") {
+                const Token label = consume();
                 consume();
-                consume();
-                skip_to_line_end();
+                routine.labels.push_back(
+                    {label.text, routine.instructions.size(), label.line});
             } else {
                 routine.instructions.push_back(parse_instruction());
             }
@@ -505,6 +520,29 @@ private:
         expect_text(";");
         if (declaration.empty()) {
             fail(peek(), "empty declaration");
+        }
+        if (declaration.front().text == ".reg") {
+            for (std::size_t index = 1; index < declaration.size(); ++index) {
+                try {
+                    (void)scalar_size(declaration[index]);
+                    if (index + 1 >= declaration.size()) {
+                        fail(declaration[index], "register declaration has no name");
+                    }
+                    RegisterBank bank;
+                    bank.type = declaration[index].text;
+                    bank.prefix = declaration[index + 1].text;
+                    if (index + 4 < declaration.size() &&
+                        declaration[index + 2].text == "<" &&
+                        declaration[index + 4].text == ">") {
+                        bank.count = parse_unsigned(declaration[index + 3]);
+                    }
+                    entry.register_banks.push_back(std::move(bank));
+                    return;
+                } catch (const ParseError &) {
+                    continue;
+                }
+            }
+            fail(declaration.front(), "register declaration has no supported type");
         }
         const bool shared = std::any_of(
             declaration.begin(), declaration.end(),
@@ -728,6 +766,205 @@ private:
     std::size_t index_ = 0;
 };
 
+std::vector<std::string> registers_in(const std::string &text)
+{
+    std::vector<std::string> registers;
+    std::set<std::string> seen;
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (text[index] != '%') {
+            continue;
+        }
+        std::size_t end = index + 1;
+        while (end < text.size()) {
+            const char value = text[end];
+            if (std::isalnum(static_cast<unsigned char>(value)) == 0 &&
+                value != '_' && value != '.' && value != '$') {
+                break;
+            }
+            ++end;
+        }
+        const std::string name = text.substr(index, end - index);
+        if (seen.insert(name).second) {
+            registers.push_back(name);
+        }
+        index = end == 0 ? end : end - 1;
+    }
+    return registers;
+}
+
+bool instruction_defines_destination(const Instruction &instruction)
+{
+    static const std::set<std::string> defining_bases = {
+        "abs", "add", "and", "bfe", "clz", "cvt", "cvta", "div", "fma", "ld",
+        "mad", "max", "min", "mov", "mul", "neg", "not", "or", "rcp", "rsqrt",
+        "selp", "setp", "shl", "shr", "sqrt", "sub", "tex", "xor",
+    };
+    return defining_bases.count(instruction.base) != 0 && !instruction.operands.empty();
+}
+
+std::pair<std::vector<std::string>, std::vector<std::string>>
+instruction_def_use(const Instruction &instruction)
+{
+    std::vector<std::string> definitions;
+    std::vector<std::string> uses;
+    std::set<std::string> seen_definitions;
+    std::set<std::string> seen_uses;
+    const bool has_destination = instruction_defines_destination(instruction);
+    if (has_destination) {
+        for (const std::string &name : registers_in(instruction.operands.front())) {
+            if (seen_definitions.insert(name).second) {
+                definitions.push_back(name);
+            }
+        }
+    }
+    if (!instruction.predicate.empty()) {
+        for (const std::string &name : registers_in(instruction.predicate)) {
+            if (seen_uses.insert(name).second) {
+                uses.push_back(name);
+            }
+        }
+    }
+    const std::size_t first_use = has_destination ? 1 : 0;
+
+    for (std::size_t index = first_use; index < instruction.operands.size(); ++index) {
+        for (const std::string &name : registers_in(instruction.operands[index])) {
+            if (seen_uses.insert(name).second) {
+                uses.push_back(name);
+            }
+        }
+    }
+    return {definitions, uses};
+}
+bool register_is_declared(const Entry &routine, const std::string &name)
+{
+    static const std::set<std::string> special_registers = {
+        "%tid.x", "%ntid.x", "%ctaid.x", "%nctaid.x",
+    };
+    if (special_registers.count(name) != 0) {
+        return true;
+    }
+    for (const RegisterBank &bank : routine.register_banks) {
+        if (bank.count == 1 && name == bank.prefix) {
+            return true;
+        }
+        if (bank.count > 1 && name.rfind(bank.prefix, 0) == 0) {
+            const std::string suffix = name.substr(bank.prefix.size());
+            if (suffix.empty() ||
+                std::any_of(suffix.begin(), suffix.end(), [](char value) {
+                    return std::isdigit(static_cast<unsigned char>(value)) == 0;
+                })) {
+                continue;
+            }
+            const std::size_t index = static_cast<std::size_t>(std::stoul(suffix));
+            if (index < bank.count) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void validate_routine_dataflow(const Entry &routine)
+{
+    for (const Instruction &instruction : routine.instructions) {
+        const auto def_use = instruction_def_use(instruction);
+        for (const std::string &name : def_use.first) {
+            if (!register_is_declared(routine, name)) {
+                throw std::runtime_error(
+                    routine.name + ": definition of undeclared register '" + name +
+                    "' at line " + std::to_string(instruction.line));
+            }
+        }
+        for (const std::string &name : def_use.second) {
+            if (!register_is_declared(routine, name)) {
+                throw std::runtime_error(
+                    routine.name + ": use of undeclared register '" + name +
+                    "' at line " + std::to_string(instruction.line));
+            }
+        }
+    }
+}
+
+Json cfg_to_json(const Entry &routine)
+{
+    Json output;
+    output["blocks"] = Json::array();
+    output["edge_count"] = 0;
+    if (routine.instructions.empty()) {
+        return output;
+    }
+
+    std::map<std::string, std::size_t> label_indices;
+    std::map<std::size_t, std::vector<std::string>> labels_at;
+    std::set<std::size_t> leaders = {0};
+    for (const Label &label : routine.labels) {
+        if (!label_indices.emplace(label.name, label.instruction_index).second) {
+            throw std::runtime_error(
+                routine.name + ": duplicate label '" + label.name + "'");
+        }
+        if (label.instruction_index >= routine.instructions.size()) {
+            throw std::runtime_error(
+                routine.name + ": label '" + label.name + "' has no instruction");
+        }
+        labels_at[label.instruction_index].push_back(label.name);
+        leaders.insert(label.instruction_index);
+    }
+    for (std::size_t index = 0; index < routine.instructions.size(); ++index) {
+        const Instruction &instruction = routine.instructions[index];
+        if ((instruction.base == "bra" || instruction.base == "ret") &&
+            index + 1 < routine.instructions.size()) {
+            leaders.insert(index + 1);
+        }
+    }
+
+    const std::vector<std::size_t> starts(leaders.begin(), leaders.end());
+    std::map<std::size_t, std::size_t> instruction_to_block;
+    for (std::size_t block = 0; block < starts.size(); ++block) {
+        const std::size_t end =
+            block + 1 < starts.size() ? starts[block + 1] : routine.instructions.size();
+        for (std::size_t instruction = starts[block]; instruction < end; ++instruction) {
+            instruction_to_block[instruction] = block;
+        }
+    }
+
+    std::size_t edge_count = 0;
+    for (std::size_t block = 0; block < starts.size(); ++block) {
+        const std::size_t begin = starts[block];
+        const std::size_t end =
+            block + 1 < starts.size() ? starts[block + 1] : routine.instructions.size();
+        const Instruction &last = routine.instructions[end - 1];
+        std::vector<std::string> successors;
+        if (last.base == "bra") {
+            if (last.operands.empty()) {
+                throw std::runtime_error(routine.name + ": branch has no target");
+            }
+            const std::string &target = last.operands.back();
+            const auto label = label_indices.find(target);
+            if (label == label_indices.end()) {
+                throw std::runtime_error(
+                    routine.name + ": unknown branch target '" + target + "'");
+            }
+            successors.push_back(
+                "b" + std::to_string(instruction_to_block.at(label->second)));
+            if (!last.predicate.empty() && block + 1 < starts.size()) {
+                successors.push_back("b" + std::to_string(block + 1));
+            }
+        } else if (last.base != "ret" && block + 1 < starts.size()) {
+            successors.push_back("b" + std::to_string(block + 1));
+        }
+        edge_count += successors.size();
+        output["blocks"].push_back({
+            {"id", "b" + std::to_string(block)},
+            {"labels", labels_at[begin]},
+            {"instruction_begin", begin},
+            {"instruction_end", end},
+            {"successors", successors},
+        });
+    }
+    output["edge_count"] = edge_count;
+    return output;
+}
+
 Json parameters_to_json(const std::vector<Parameter> &parameters)
 {
     Json output = Json::array();
@@ -745,6 +982,7 @@ Json parameters_to_json(const std::vector<Parameter> &parameters)
 
 Json routine_to_json(const Entry &routine)
 {
+    validate_routine_dataflow(routine);
     Json output;
     output["name"] = routine.name;
     output["kind"] = routine.kind;
@@ -757,6 +995,23 @@ Json routine_to_json(const Entry &routine)
     output["minimum_ctas_per_sm"] = routine.minimum_ctas_per_sm;
     output["return_parameters"] = parameters_to_json(routine.return_parameters);
     output["parameters"] = parameters_to_json(routine.parameters);
+    output["register_banks"] = Json::array();
+    for (const RegisterBank &bank : routine.register_banks) {
+        output["register_banks"].push_back({
+            {"prefix", bank.prefix},
+            {"type", bank.type},
+            {"count", bank.count},
+        });
+    }
+    output["labels"] = Json::array();
+    for (const Label &label : routine.labels) {
+        output["labels"].push_back({
+            {"name", label.name},
+            {"instruction_index", label.instruction_index},
+            {"line", label.line},
+        });
+    }
+    output["cfg"] = cfg_to_json(routine);
 
     std::set<std::string> base_families;
     std::set<std::string> variants;
@@ -764,6 +1019,7 @@ Json routine_to_json(const Entry &routine)
     for (const Instruction &instruction : routine.instructions) {
         base_families.insert(instruction.base);
         variants.insert(instruction.variant);
+        const auto def_use = instruction_def_use(instruction);
         output["instructions"].push_back({
             {"line", instruction.line},
             {"variant", instruction.variant},
@@ -771,6 +1027,8 @@ Json routine_to_json(const Entry &routine)
             {"modifiers", instruction.modifiers},
             {"predicate", instruction.predicate},
             {"operands", instruction.operands},
+            {"definitions", def_use.first},
+            {"uses", def_use.second},
         });
     }
     output["instruction_count"] = routine.instructions.size();
@@ -783,7 +1041,7 @@ Json routine_to_json(const Entry &routine)
 Json module_to_json(const Module &module, std::size_t source_bytes)
 {
     Json output;
-    output["schema_version"] = 2;
+    output["schema_version"] = 3;
     output["source_bytes"] = source_bytes;
     output["ptx_version"] = module.version;
     output["target"] = module.target;
@@ -813,12 +1071,14 @@ Json module_to_json(const Module &module, std::size_t source_bytes)
 
 Json routine_summary_to_json(const Entry &routine)
 {
+    validate_routine_dataflow(routine);
     std::set<std::string> base_families;
     std::set<std::string> variants;
     for (const Instruction &instruction : routine.instructions) {
         base_families.insert(instruction.base);
         variants.insert(instruction.variant);
     }
+    const Json cfg = cfg_to_json(routine);
     return {
         {"name", routine.name},
         {"kind", routine.kind},
@@ -830,7 +1090,10 @@ Json routine_summary_to_json(const Entry &routine)
         {"parameters", parameters_to_json(routine.parameters)},
         {"max_threads", routine.max_threads},
         {"minimum_ctas_per_sm", routine.minimum_ctas_per_sm},
+        {"register_bank_count", routine.register_banks.size()},
         {"instruction_count", routine.instructions.size()},
+        {"block_count", cfg["blocks"].size()},
+        {"edge_count", cfg["edge_count"]},
         {"base_families", std::vector<std::string>(base_families.begin(), base_families.end())},
         {"variants", std::vector<std::string>(variants.begin(), variants.end())},
     };
@@ -840,7 +1103,7 @@ Json corpus_to_json(
     const std::vector<std::pair<std::filesystem::path, std::pair<Module, std::size_t>>> &modules)
 {
     Json output;
-    output["schema_version"] = 1;
+    output["schema_version"] = 2;
     output["modules"] = Json::array();
     std::size_t entry_count = 0;
     std::size_t function_count = 0;
@@ -848,6 +1111,8 @@ Json corpus_to_json(
     std::size_t constant_count = 0;
     std::size_t static_shared_count = 0;
     std::size_t external_shared_count = 0;
+    std::size_t basic_block_count = 0;
+    std::size_t cfg_edge_count = 0;
     std::set<std::string> base_families;
     std::set<std::string> variants;
 
@@ -885,6 +1150,9 @@ Json corpus_to_json(
         module_json["module_static_shared_bytes"] = module_static_shared_bytes;
         module_json["function_count"] = module.functions.size();
         for (const Entry &function : module.functions) {
+            const Json cfg = cfg_to_json(function);
+            basic_block_count += cfg["blocks"].size();
+            cfg_edge_count += cfg["edge_count"].get<std::size_t>();
             for (const Instruction &instruction : function.instructions) {
                 base_families.insert(instruction.base);
                 variants.insert(instruction.variant);
@@ -896,6 +1164,9 @@ Json corpus_to_json(
             summary["effective_static_shared_bytes"] =
                 entry.static_shared_bytes + module_static_shared_bytes;
             module_json["entries"].push_back(std::move(summary));
+            const Json cfg = cfg_to_json(entry);
+            basic_block_count += cfg["blocks"].size();
+            cfg_edge_count += cfg["edge_count"].get<std::size_t>();
             for (const Instruction &instruction : entry.instructions) {
                 base_families.insert(instruction.base);
                 variants.insert(instruction.variant);
@@ -916,6 +1187,8 @@ Json corpus_to_json(
         {"external_shared_count", external_shared_count},
         {"base_families", std::vector<std::string>(base_families.begin(), base_families.end())},
         {"variants", std::vector<std::string>(variants.begin(), variants.end())},
+        {"basic_block_count", basic_block_count},
+        {"cfg_edge_count", cfg_edge_count},
     };
     return output;
 }
@@ -945,15 +1218,29 @@ int self_test()
         "  .param .u32 p0,\n"
         "  .param .align 4 .b8 p1[8]\n"
         ") {\n"
+        "  .reg .pred %p<2>;\n"
+        "  .reg .u32 %r<2>;\n"
         "  .shared .align 4 .u32 values[3];\n"
         "  .shared .align 8 .u64 next;\n"
         "  ld.param.u32 %r1, [p0];\n"
+        "  setp.eq.u32 %p1, %r1, 0;\n"
+        "  @%p1 bra BB0_done;\n"
+        "  add.u32 %r1, %r1, 1;\n"
+        "BB0_done:\n"
         "  ret;\n"
         "}\n";
     const Module module = parse_source(valid);
     if (module.entries.size() != 1 || module.entries[0].packed_parameter_bytes != 12 ||
-        module.entries[0].static_shared_bytes != 24 || module.entries[0].instructions.size() != 2) {
+        module.entries[0].static_shared_bytes != 24 || module.entries[0].instructions.size() != 5) {
         std::cerr << "valid parser self-test produced wrong metadata\n";
+        return 1;
+    }
+    const Json cfg = cfg_to_json(module.entries[0]);
+    const auto setp_dataflow = instruction_def_use(module.entries[0].instructions[1]);
+    if (cfg["blocks"].size() != 3 || cfg["edge_count"] != 3 ||
+        setp_dataflow.first != std::vector<std::string>{"%p1"} ||
+        setp_dataflow.second != std::vector<std::string>{"%r1"}) {
+        std::cerr << "CFG/dataflow self-test produced wrong structure\n";
         return 1;
     }
     const std::string missing_semicolon =

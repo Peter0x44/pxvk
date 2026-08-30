@@ -433,15 +433,18 @@ parameter offset/size/alignment, effective static shared size, and static local
 size matches `mirrors-edge-ptx-corpus-analysis.json`. This includes the two
 module-scope shared allocations that contribute to launched entry totals.
 
-The project-owned oracle manifest SHA-256 is
-`eac6cfc4597e47e974411dc7f99a67744419d19178990ee3b862ea321ca49ed5`.
+The project-owned oracle IR manifest SHA-256 is
+`68a4bcd276d473e7dce26468422b9e3fd2868701bc93dc9c75449ad631aca4dd`.
 The redistributable structural corpus manifest is
 `tools/ptx-frontend/expected/corpus-manifest.json`, SHA-256
-`bd39670b3959f888a20333e4bc29260b2c67cc6639f656386d6156994e7336f8`.
+`b46479bf9a21121b448216eacfa66344551ddfeee60f352f6d9dc536e7682cde`.
 Raw proprietary PTX remains local.
 
-This completes strict grammar and metadata normalization. It does not yet build
-an explicit CFG/dataflow IR or emit SPIR-V from PTX.
+The frontend now preserves labels, builds 4,174 deterministic basic blocks and
+5,935 successor edges, and records register definitions/uses per instruction.
+Every branch target and every register reference resolves across all 17
+modules. It does not yet perform SSA/phi construction, full value-type
+propagation, or SPIR-V emission.
 
 Build and run:
 
@@ -500,10 +503,11 @@ behavior.
 
 ## Architecture gate conclusion
 
-The reference-system Vulkan oracle and whole-corpus grammar/metadata gates are
-complete. The next gate is an explicit CFG/dataflow IR and SPIR-V emission of
-the project-owned oracle from parsed PTX. Proprietary entries remain parse-only
-until that emitted oracle matches the existing Vulkan fixture.
+The reference-system Vulkan oracle and whole-corpus grammar, metadata, CFG, and
+register-dataflow gates are complete. The next gate is value-type propagation
+and SPIR-V emission of the project-owned oracle from this IR. Proprietary
+entries remain parse-only until that emitted oracle matches the existing
+Vulkan fixture.
 
 The gate is not open for a claim that Mirror's Edge runs on Vulkan, AMD
 generated-SPIR-V execution, AMD game integration, or translated PhysX
