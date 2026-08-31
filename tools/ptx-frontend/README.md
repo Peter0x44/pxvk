@@ -31,7 +31,7 @@ PTX bytes
   -> direct SPIR-V binary emission for the project oracle slice
 ```
 
-`ptx-oracle-emitter` consumes schema-4 structured operands. It does not parse
+`ptx-spirv-emitter` consumes schema-4 structured operands. It does not parse
 the retained diagnostic operand strings.
 
 ## Build
@@ -80,10 +80,26 @@ build/ptx-frontend/Release/ptx-frontend.exe `
 Emit the project oracle with explicit float32 RTE control:
 
 ```powershell
-build/ptx-frontend/Release/ptx-oracle-emitter.exe `
+build/ptx-frontend/Release/ptx-spirv-emitter.exe `
   oracle-manifest.json `
   generated-oracle.spv
 ```
+
+Emit one finite PTX entry with a structured control-flow state machine:
+
+```powershell
+build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
+  <entry-name> <local-size-x> `
+  module-manifest.json `
+  generated-kernel.spv
+```
+
+Kernel mode binds the 32-bit CUDA heap at descriptor binding 0 and the packed
+launch-parameter words at binding 1. PTX byte addresses remain `u32` heap
+offsets. The current state-machine lowering stores virtual registers in
+function storage and executes one PTX basic block per structured loop
+iteration. This is intentionally conservative; SSA and native structured CFG
+reconstruction remain later optimizations.
 
 
 Validate and execute the module:
@@ -95,11 +111,12 @@ build/vulkan-probe/Release/vulkan-memory-smoke.exe `
   --ptx-oracle generated-oracle.spv
 ```
 
-The module declares the SPIR-V `RoundingModeRTE` capability and a float32
-`RoundingModeRTE` execution mode. Native float32 RTE is an evidence-backed
-target requirement and is supported by the Intel, NVIDIA, and AMD devices
-already probed. Explicit software FTZ normalization remains necessary because
-native float32 FTZ is not available on every target device.
+The module declares SPIR-V `RoundingModeRTE` and
+`SignedZeroInfNanPreserve` capabilities with corresponding float32 execution
+modes. Both properties are evidence-backed target requirements and are
+supported by the Intel, NVIDIA, and AMD devices already probed. Explicit
+software FTZ normalization remains necessary because native float32 FTZ is not
+available on every target device.
 
 A local directory containing extracted PTX:
 
@@ -195,7 +212,8 @@ The frontend does not yet provide:
 - general type inference beyond declared register banks and the 147 finite
   opcode contracts;
 - reachability or dead-code elimination;
-- SPIR-V emission beyond the three-entry project oracle slice;
+- SPIR-V emission beyond the project oracle and selected
+  `KernelFluidCalcHashPacked` finite slices;
 - shader caching;
 - CUDA module/runtime integration.
 

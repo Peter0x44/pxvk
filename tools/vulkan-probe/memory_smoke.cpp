@@ -20,6 +20,10 @@ namespace {
 constexpr VkDeviceSize kBufferBytes = 32ull * 1024ull * 1024ull;
 constexpr VkDeviceSize kMemoryCopyBytes = 2ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kOracleCopyBytes = 304ull * sizeof(std::uint32_t);
+constexpr VkDeviceSize kKernelFixtureCopyBytes = 512ull * sizeof(std::uint32_t);
+constexpr std::size_t kKernelHashOutputOffset = 64;
+constexpr std::size_t kKernelIndexOutputOffset = 128;
+constexpr std::uint32_t kExpectedKernelHash = 1u + (2u << 6u) + (3u << 12u);
 constexpr std::uint32_t kInput = 0x12345678u;
 constexpr std::uint32_t kMask = 0xa5a55a5au;
 constexpr std::uint32_t kAddend = 0x10203040u;
@@ -345,6 +349,8 @@ struct DeviceResult {
     std::array<std::uint32_t, 14> math = {};
     std::array<std::uint32_t, 64> barrier = {};
     std::array<std::array<std::uint32_t, 4>, 12> texture = {};
+    std::uint32_t kernel_hash = 0;
+    std::uint32_t kernel_index = 0;
     std::string error;
 };
 
@@ -353,7 +359,8 @@ DeviceResult run_device(
     VkPhysicalDevice physical_device,
     const std::vector<std::uint32_t> &shader,
     bool oracle_mode,
-    bool require_memory_result)
+    bool require_memory_result,
+    bool kernel_fixture_mode)
 {
     DeviceResult result;
     result.index = device_index;
@@ -436,14 +443,41 @@ DeviceResult run_device(
         result.device_memory_local = device_buffer.device_local;
         result.staging_coherent = staging_buffer.host_coherent;
 
-        const VkDeviceSize copy_bytes = oracle_mode ? kOracleCopyBytes : kMemoryCopyBytes;
+        const VkDeviceSize copy_bytes = oracle_mode
+            ? kOracleCopyBytes
+            : kernel_fixture_mode ? kKernelFixtureCopyBytes : kMemoryCopyBytes;
         check(
             vkMapMemory(device, staging_buffer.memory, 0, staging_buffer.allocation_size, 0, &mapped),
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        words[0] = kInput;
-        words[1] = 0xdeadbeefu;
+        if (kernel_fixture_mode) {
+            words[0] = 256u;
+            words[1] = 1u;
+            words[2] = 512u;
+            words[3] = 1u;
+            words[4] = 768u;
+            words[5] = 1u;
+            words[6] = 1024u;
+            words[7] = 1u;
+            words[8] = 1280u;
+            words[9] = 1u;
+            words[10] = 1536u;
+            words[11] = 1u;
+            words[12] = 1u;
+            words[kKernelHashOutputOffset] = 0xdeadbeefu;
+            words[kKernelIndexOutputOffset] = 0xdeadbeefu;
+            words[192] = 0x3f800000u;
+            words[193] = 0x40000000u;
+            words[194] = 0x40400000u;
+            words[256] = 0u;
+            words[257] = 1u;
+            words[320] = 1u;
+            words[385] = 0x3f800000u;
+        } else {
+            words[0] = kInput;
+            words[1] = 0xdeadbeefu;
+        }
         if (oracle_mode) {
             for (std::uint32_t row = 0; row < 8; ++row) {
                 for (std::uint32_t component = 0; component < 4; ++component) {
@@ -463,19 +497,25 @@ DeviceResult run_device(
             check(vkFlushMappedMemoryRanges(device, 1, &range), "vkFlushMappedMemoryRanges");
         }
 
-        VkDescriptorSetLayoutBinding binding = {
-            0,
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            1,
-            VK_SHADER_STAGE_COMPUTE_BIT,
-            nullptr,
-        };
+        const std::uint32_t binding_count = kernel_fixture_mode ? 2u : 1u;
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {};
+        for (std::uint32_t binding_index = 0;
+             binding_index < binding_count;
+             ++binding_index) {
+            bindings[binding_index] = {
+                binding_index,
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                1,
+                VK_SHADER_STAGE_COMPUTE_BIT,
+                nullptr,
+            };
+        }
         VkDescriptorSetLayoutCreateInfo descriptor_layout_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
             nullptr,
             0,
-            1,
-            &binding,
+            binding_count,
+            bindings.data(),
         };
         check(
             vkCreateDescriptorSetLayout(
@@ -485,7 +525,9 @@ DeviceResult run_device(
                 &descriptor_layout),
             "vkCreateDescriptorSetLayout");
 
-        VkDescriptorPoolSize pool_size = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1};
+        VkDescriptorPoolSize pool_size = {
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, binding_count,
+        };
         VkDescriptorPoolCreateInfo pool_info = {
             VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             nullptr,
@@ -503,24 +545,31 @@ DeviceResult run_device(
             &descriptor_layout,
         };
         check(vkAllocateDescriptorSets(device, &set_info, &descriptor_set), "vkAllocateDescriptorSets");
-        VkDescriptorBufferInfo descriptor_buffer_info = {
-            device_buffer.buffer,
-            0,
-            kBufferBytes,
-        };
-        VkWriteDescriptorSet descriptor_write = {
-            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            nullptr,
-            descriptor_set,
-            0,
-            0,
-            1,
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            nullptr,
-            &descriptor_buffer_info,
-            nullptr,
-        };
-        vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, nullptr);
+        std::array<VkDescriptorBufferInfo, 2> descriptor_buffer_infos = {};
+        std::array<VkWriteDescriptorSet, 2> descriptor_writes = {};
+        for (std::uint32_t binding_index = 0;
+             binding_index < binding_count;
+             ++binding_index) {
+            descriptor_buffer_infos[binding_index] = {
+                device_buffer.buffer,
+                0,
+                kBufferBytes,
+            };
+            descriptor_writes[binding_index] = {
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                nullptr,
+                descriptor_set,
+                binding_index,
+                0,
+                1,
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                nullptr,
+                &descriptor_buffer_infos[binding_index],
+                nullptr,
+            };
+        }
+        vkUpdateDescriptorSets(
+            device, binding_count, descriptor_writes.data(), 0, nullptr);
 
         VkPipelineLayoutCreateInfo pipeline_layout_info = {
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -682,8 +731,16 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        result.pass = !require_memory_result ||
-            (result.input_after == kInput && result.result == kExpected);
+        if (kernel_fixture_mode) {
+            result.kernel_hash = words[kKernelHashOutputOffset];
+            result.kernel_index = words[kKernelIndexOutputOffset];
+            result.pass =
+                result.kernel_hash == kExpectedKernelHash &&
+                result.kernel_index == 0u;
+        } else {
+            result.pass = !require_memory_result ||
+                (result.input_after == kInput && result.result == kExpected);
+        }
         if (oracle_mode) {
             std::copy_n(words + kMathOffset, result.math.size(), result.math.begin());
             std::copy_n(words + kBarrierOffset, result.barrier.size(), result.barrier.begin());
@@ -714,9 +771,11 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = oracle_mode
-                ? "standalone oracle result mismatch"
-                : "integer/global-memory result mismatch";
+            result.error = kernel_fixture_mode
+                ? "selected kernel fixture result mismatch"
+                : oracle_mode
+                    ? "standalone oracle result mismatch"
+                    : "integer/global-memory result mismatch";
         }
     } catch (const std::exception &error) {
         result.error = error.what();
@@ -772,11 +831,18 @@ int main(int argc, char **argv)
 {
     const bool ptx_oracle_mode =
         argc == 4 && std::string(argv[2]) == "--ptx-oracle";
-    const bool incomplete_ptx_mode =
-        argc == 3 && std::string(argv[2]) == "--ptx-oracle";
-    if ((argc != 2 && argc != 3 && !ptx_oracle_mode) || incomplete_ptx_mode) {
+    const bool kernel_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--kernel-fixture";
+    const bool incomplete_named_mode =
+        argc == 3 &&
+        (std::string(argv[2]) == "--ptx-oracle" ||
+         std::string(argv[2]) == "--kernel-fixture");
+    if ((argc != 2 && argc != 3 &&
+         !ptx_oracle_mode && !kernel_fixture_mode) ||
+        incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
-                  << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n";
+                  << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --kernel-fixture <generated.spv>\n";
         return 2;
     }
 
@@ -817,11 +883,15 @@ int main(int argc, char **argv)
     std::vector<VkPhysicalDevice> devices(device_count);
     check(vkEnumeratePhysicalDevices(instance, &device_count, devices.data()), "vkEnumeratePhysicalDevices");
 
-    const bool oracle_mode = argc >= 3;
-    const bool require_memory_result = !ptx_oracle_mode;
+    const bool oracle_mode =
+        (argc == 3 && !incomplete_named_mode) || ptx_oracle_mode;
+    const bool shader_input_mode = oracle_mode || kernel_fixture_mode;
+    const bool require_memory_result =
+        !ptx_oracle_mode && !kernel_fixture_mode;
     std::vector<std::uint32_t> shader;
-    if (oracle_mode) {
-        const char *shader_path = ptx_oracle_mode ? argv[3] : argv[2];
+    if (shader_input_mode) {
+        const char *shader_path =
+            ptx_oracle_mode || kernel_fixture_mode ? argv[3] : argv[2];
         std::ifstream shader_input(shader_path, std::ios::binary | std::ios::ate);
         if (!shader_input) {
             vkDestroyInstance(instance, nullptr);
@@ -851,7 +921,12 @@ int main(int argc, char **argv)
     bool all_passed = true;
     for (std::uint32_t index = 0; index < device_count; ++index) {
         DeviceResult result = run_device(
-            index, devices[index], shader, oracle_mode, require_memory_result);
+            index,
+            devices[index],
+            shader,
+            oracle_mode,
+            require_memory_result,
+            kernel_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -866,15 +941,24 @@ int main(int argc, char **argv)
            << "  \"schema_version\": 1,\n"
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
            << "  \"test\": \""
-           << (ptx_oracle_mode ? "ptx_generated_oracle" :
+           << (kernel_fixture_mode ? "selected_kernel_fixture" :
+               ptx_oracle_mode ? "ptx_generated_oracle" :
                oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory")
            << "\",\n"
-           << "  \"buffer_bytes\": " << kBufferBytes << ",\n"
-           << "  \"input\": \"" << hex32(kInput) << "\",\n"
-           << "  \"mask\": \"" << hex32(kMask) << "\",\n"
-           << "  \"addend\": \"" << hex32(kAddend) << "\",\n"
-           << "  \"expected\": \"" << hex32(kExpected) << "\",\n"
-           << "  \"spirv_words\": " << shader.size() << ",\n"
+           << "  \"buffer_bytes\": " << kBufferBytes << ",\n";
+    if (kernel_fixture_mode) {
+        output << "  \"kernel\": \"KernelFluidCalcHashPacked\",\n"
+               << "  \"position_bits\": [\"0x3f800000\", \"0x40000000\", "
+                  "\"0x40400000\"],\n"
+               << "  \"cell_divisor_bits\": \"0x3f800000\",\n"
+               << "  \"expected_hash\": \"" << hex32(kExpectedKernelHash) << "\",\n";
+    } else {
+        output << "  \"input\": \"" << hex32(kInput) << "\",\n"
+               << "  \"mask\": \"" << hex32(kMask) << "\",\n"
+               << "  \"addend\": \"" << hex32(kAddend) << "\",\n"
+               << "  \"expected\": \"" << hex32(kExpected) << "\",\n";
+    }
+    output << "  \"spirv_words\": " << shader.size() << ",\n"
            << "  \"devices\": [\n";
     for (std::size_t index = 0; index < results.size(); ++index) {
         const DeviceResult &result = results[index];
@@ -891,9 +975,15 @@ int main(int argc, char **argv)
                << "      \"device_memory_local\": "
                << (result.device_memory_local ? "true" : "false") << ",\n"
                << "      \"staging_host_coherent\": "
-               << (result.staging_coherent ? "true" : "false") << ",\n"
-               << "      \"input_after\": \"" << hex32(result.input_after) << "\",\n"
-               << "      \"result\": \"" << hex32(result.result) << "\",\n";
+               << (result.staging_coherent ? "true" : "false") << ",\n";
+        if (kernel_fixture_mode) {
+            output << "      \"kernel_hash\": \"" << hex32(result.kernel_hash)
+                   << "\",\n"
+                   << "      \"kernel_index\": " << result.kernel_index << ",\n";
+        } else {
+            output << "      \"input_after\": \"" << hex32(result.input_after) << "\",\n"
+                   << "      \"result\": \"" << hex32(result.result) << "\",\n";
+        }
         if (oracle_mode) {
             output << "      \"math\": {\n";
             for (std::size_t math_index = 0; math_index < result.math.size(); ++math_index) {

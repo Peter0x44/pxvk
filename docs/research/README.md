@@ -57,7 +57,7 @@ Open probes are tracked rather than dropped:
 
 | Probe | Status | Required before |
 |---|---|---|
-| Deterministic fluid/deformable kernel outputs | Deferred to `validation-plan.md`; standalone PTX semantics already have an oracle | Accepting the first real translated PhysX kernel |
+| Deterministic fluid/deformable kernel outputs | One-particle `KernelFluidCalcHashPacked` native CUDA fixture now matches PTX-derived Vulkan on Intel/RTX; captured in-game state remains deferred | Accepting additional translated PhysX kernels without focused fixtures |
 | Float legacy-texture fetch bits/OOB | Deferred until a candidate texture lowering exists | Accepting texture lowering |
 | Queried-only CUDA symbol NULL versus stub behavior | Non-blocking; ZLUDA proves non-null not-supported stubs work | Removing conservative export stubs |
 | Minimal non-NVIDIA NVAPI interface set | Deferred to game-integration validation | Running the original PhysX runtime without NVIDIA |
@@ -67,5 +67,5 @@ Open probes are tracked rather than dropped:
 | AMD generated-SPIR-V execution | Hardware preflight passes; full oracle deferred until the AMD machine is available | Claiming cross-vendor execution correctness on AMD |
 
 Each probe blocks only the named acceptance point. None blocks the next local
-slice: selecting and lowering one captured PhysX entry with a deterministic
-fixture.
+slice: lowering the paired reorder kernel against an expanded deterministic
+fluid fixture.

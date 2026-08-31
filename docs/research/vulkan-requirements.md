@@ -100,7 +100,7 @@ RTX both returned native `0xa8800000`. The combined result is
 
 The direct compiler slice now reproduces that result from
 `tools/cuda-oracle/probe.ptx`: the frontend emits schema-4 structured IR and
-the project emitter produces a deterministic 2,599-word SPIR-V 1.5 binary.
+the project emitter produces a deterministic 2,605-word SPIR-V 1.5 binary.
 SDK validation passes, and the generated module matches every math, barrier,
 and texture field on Intel and RTX. The original GLSL/assembly oracle remains
 the independent Vulkan-side reference rather than compiler input.
@@ -148,31 +148,37 @@ the normalized preflight SHA-256 is
 These are observed feasibility results, not portable minimums. Startup must
 still query and reject a device that misses a hard requirement.
 
-## Required and optional Vulkan capabilities
+## Required, preferred, and rejected Vulkan capabilities
 
-| Vulkan capability | Classification | Corpus reason |
+Vulkan 1.2 promotes several named extensions into core. On a 1.2 device the
+runtime uses the core feature/property structs; it does not need to enable the
+legacy extension name. SPIR-V capabilities still require the corresponding
+feature or property to be supported.
+
+| Capability or extension path | Policy | Enablement and workload reason |
 |---|---|---|
-| Vulkan 1.2 | baseline | Provides properties2 and shader float controls in core while retaining broad desktop-driver coverage |
-| Compute queue | required | Every launched entry is a compute dispatch |
-| `shaderInt64` | required | Launched PTX uses `u64`/`s64`, `clz.b64`, 64-bit shifts, comparisons, and arithmetic |
-| `shaderFloat64` | not required | The corpus has no `.f64` |
-| `shaderDenormFlushToZeroFloat32` | preferred, not required | PTX uses `.ftz`, but the reference RTX Vulkan driver reports false |
-| `shaderSignedZeroInfNanPreserveFloat32` | required | Native behavior includes ordered NaN handling and signed floating-point semantics |
-| `shaderRoundingModeRTEFloat32` | required | `fma.rn` and `cvt.rn.f32.u32` require nearest-even behavior |
-| `shaderRoundingModeRTZFloat32` | optional | `cvt.rzi` can use `GLSL.std.450 Trunc` before an exact integral float-to-int conversion, avoiding a conflicting entry-point-wide rounding mode |
-| `shaderFloatControls2` | optional | It refines fast-math permissions; it does not add missing denormal modes |
-| 8/16-bit storage features | optional | Byte and halfword accesses can be packed into a `uint` storage heap |
-| `subgroupSizeControl` | optional for this corpus | No launched or loaded PTX uses subgroup/warp instructions |
-| `vulkanMemoryModel` | not required | Workgroup barriers and ordinary Vulkan buffer dependencies cover observed synchronization |
-| `robustBufferAccess` / `robustBufferAccess2` | not required | Texture OOB behavior needs an explicit zero result; invalid CUDA global accesses are not a robustness contract |
-| Buffer device address | not required | PTX is `.address_size 32`; device values can remain 32-bit offsets into a bound heap |
-| Sampled images / samplers | not required | The two texture instructions are typed linear point fetches with explicit OOB zero |
-| Atomics | not required | No launched kernel contains an atomic operation |
-| Graphics queue or graphics pipeline | not required | Graphics interop is outside the current charter |
+| Vulkan 1.2 compute | required baseline | Supplies SPIR-V 1.5, properties2, storage-buffer storage class, and shader float-control properties |
+| Core `shaderInt64` / SPIR-V `Int64` | required for real kernels | Enable `VkPhysicalDeviceFeatures::shaderInt64`; launched PTX uses `u64`/`s64`, `clz.b64`, 64-bit shifts, comparisons, and arithmetic |
+| `VK_KHR_shader_float_controls` promoted to 1.2 | required properties | Require float32 RTE and signed-zero/Inf/NaN preservation; emit `RoundingModeRTE 32` and `SignedZeroInfNanPreserve 32` |
+| `DenormFlushToZero 32` | preferred per device | Use only where `shaderDenormFlushToZeroFloat32` is true; retain software FTZ because the RTX reports false |
+| `VK_KHR_8bit_storage` promoted to 1.2 | preferred | Enable `storageBuffer8BitAccess` for exact `ld.global.u8`/`ld.const.u8`; packed `u32` extraction is the fallback |
+| `VK_KHR_16bit_storage` promoted to 1.1 | preferred | Enable `storageBuffer16BitAccess` for `ld.global.u16` and vector forms; packed `u32` extraction is the fallback |
+| `VK_KHR_workgroup_memory_explicit_layout` | preferred after feature probing | All three devices advertise the extension. Its 8/16-bit access features can represent the PTX shared byte arena and `ld/st.shared.u8` directly; the probe must record those feature bits before use. Packed `u32` shared storage remains the fallback |
+| `VK_EXT_subgroup_size_control` | conditional | All three devices can request compute subgroup size 32. Use only if a captured kernel gains warp/subgroup operations; the current corpus has none |
+| `VK_KHR_vulkan_memory_model` | optional | All three devices support it, but current workgroup barriers and Vulkan queue dependencies cover the observed workload |
+| `VK_KHR_shader_float_controls2` | optional, currently unused | All three devices support it. Strict PTX lowering uses explicit execution modes and `NoContraction`; enabling fast-math defaults would weaken compatibility |
+| `VK_KHR_shader_fma` | not a baseline | Intel does not advertise it. `GLSL.std.450 Fma` plus `NoContraction` already matches the native oracle |
+| `VK_KHR_synchronization2` and timeline semaphores | optional runtime optimization | Can simplify submission/dependency code later; they do not change PTX shader semantics |
+| `robustBufferAccess2` | not required | Texture OOB needs an explicit zero result; invalid CUDA global accesses are not a robustness contract |
+| Buffer device address | rejected for the first runtime | PTX is `.address_size 32`; device pointers remain 32-bit offsets into one bound heap |
+| Sampled images and samplers | rejected for current textures | The observed one-dimensional point fetch requires explicit OOB zero, implemented by bounded storage-buffer loads |
+| Float64, atomics, graphics queues, external-memory interop | not required | No launched PTX requires them; graphics interop remains outside the charter |
 
-Requiring `shaderInt64` is the smaller first implementation. A two-`u32`
-emulation is possible, but it adds lowering and validation work without helping
-either local target device.
+This is a feature-driven policy, not a vendor allowlist. Intel, RTX, and AMD
+currently support the preferred 8/16-bit storage, subgroup-size, Vulkan-memory-
+model, and float-controls2 paths. A module's cache key must include every
+enabled lowering path because the emitted types, capabilities, and instructions
+can differ.
 
 ## Quantitative limits
 

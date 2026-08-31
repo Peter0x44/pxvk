@@ -204,23 +204,58 @@ implementation path; LLVM is a credible fallback if SSA/legalization grows
 beyond the finite emitter. See the official
 [LLVM SPIR-V backend guide](https://llvm.org/docs/SPIRVUsage.html).
 
-The first vertical slice now emits a 2,599-word SPIR-V 1.5 module directly from
+The first vertical slice now emits a 2,605-word SPIR-V 1.5 module directly from
 the schema-4 structured IR for `tools/cuda-oracle/probe.ptx`. The module uses
 one 64-thread Vulkan entry point to invoke the original one-thread math,
 64-thread barrier, and 12-thread texture routines against the oracle binding
 profile. SDK `spirv-val --target-env vulkan1.2` accepts the binary, and Intel
 UHD plus RTX 3070 executions match every native CUDA math, barrier, and texture
-field. This proves the direct path for the oracle subset only; it does not yet
-compile a proprietary PhysX entry.
+field.
 
-The module declares `RoundingModeRTE` for float32. All three probed target GPUs
-advertise that property. A conversion-only software fallback is possible, but
-would not cover `fma.rn` and the other correctly-rounded float operations; a
-complete fallback would require software floating-point lowering. That added
-backend is not justified while float32 RTE remains an evidence-backed target
-requirement. Storage-buffer 8/16-bit capabilities remain preferred when a
-lowered narrow access benefits from them, but they are unrelated to the
-float32 execution-mode contract.
+The second slice lowers the captured 89-instruction
+`KernelFluidCalcHashPacked` entry from `module_0013_01_05.ptx`. A conservative
+structured state machine stores PTX registers in function storage and dispatches
+14 PTX basic blocks through one SPIR-V loop/switch. Binding 0 is the 32-bit
+CUDA heap and binding 1 is the packed 52-byte launch parameter buffer. The
+3,138-word module is deterministic and passes Vulkan 1.2 validation.
+
+`tools/cuda-physx-fixture` runs a redistributable one-particle input recipe
+against the local proprietary PTX on native CUDA. RTX produced hash
+`0x00003081` and index `0`. The PTX-derived Vulkan module produced those exact
+values on Intel and RTX. The committed evidence hashes are:
+
+- native CUDA: `3604e07bfce743926f81d5df1cffd19003b04582e364a7210a9e62aae13834c6`;
+- translated Vulkan: `ef6aee45b57658fc369521d53a4d16407d364d11e978cee1154ff45417a3818c`.
+
+Reproduce locally without committing proprietary PTX:
+
+```powershell
+cmake -S tools/cuda-physx-fixture -B build/cuda-physx-fixture -A Win32
+cmake --build build/cuda-physx-fixture --config Release
+build/cuda-physx-fixture/Release/cuda-physx-fixture.exe `
+  path/to/module_0013_01_05.ptx native-fluid-hash.json
+
+build/ptx-frontend/Release/ptx-frontend.exe `
+  path/to/module_0013_01_05.ptx module-0013.json
+build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
+  _Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj `
+  64 module-0013.json fluid-calc-hash.spv
+spirv-val.exe --target-env vulkan1.2 fluid-calc-hash.spv
+build/vulkan-probe/Release/vulkan-memory-smoke.exe `
+  translated-fluid-hash.json --kernel-fixture fluid-calc-hash.spv
+```
+
+This proves one real captured PhysX kernel on a synthetic deterministic state.
+It does not yet reproduce a captured in-game memory snapshot.
+
+The emitted modules declare float32 `RoundingModeRTE` and
+`SignedZeroInfNanPreserve`. All three probed target GPUs advertise those
+properties. A conversion-only software fallback would not cover `fma.rn` and
+the other correctly-rounded float operations; a complete fallback would
+require software floating-point lowering. That added backend is not justified
+while the properties remain evidence-backed target requirements. Preferred
+8/16-bit storage paths and their packed-`u32` fallbacks are documented in
+`vulkan-requirements.md`.
 
 Cache keys include PTX hash, entry name, translator version, device
 vendor/device/driver key, enabled float path, block size, and dynamic shared
@@ -477,7 +512,7 @@ cmake --build build/ptx-frontend --config Release
 build/ptx-frontend/Release/ptx-frontend.exe --self-test
 build/ptx-frontend/Release/ptx-frontend.exe `
   tools/cuda-oracle/probe.ptx oracle-manifest.json
-build/ptx-frontend/Release/ptx-oracle-emitter.exe `
+build/ptx-frontend/Release/ptx-spirv-emitter.exe `
   oracle-manifest.json generated-oracle.spv
 build/ptx-frontend/Release/ptx-frontend.exe --corpus `
   path/to/extracted/ptx corpus-manifest.json

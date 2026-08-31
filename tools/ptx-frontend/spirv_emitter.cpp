@@ -40,6 +40,7 @@ public:
     {
         emit(capabilities_, SpvOpCapability, {SpvCapabilityShader});
         emit(capabilities_, SpvOpCapability, {SpvCapabilityRoundingModeRTE});
+        emit(capabilities_, SpvOpCapability, {SpvCapabilitySignedZeroInfNanPreserve});
         glsl_ = allocate_id();
         emit_string(imports_, SpvOpExtInstImport, {glsl_}, "GLSL.std.450");
         emit(memory_model_, SpvOpMemoryModel, {SpvAddressingModelLogical, SpvMemoryModelGLSL450});
@@ -161,6 +162,11 @@ public:
         emit(functions_, operation, operands);
     }
 
+    void function_instruction(SpvOp operation, const std::vector<std::uint32_t> &operands)
+    {
+        emit(functions_, operation, operands);
+    }
+
     void decorate(std::uint32_t id, SpvDecoration decoration)
     {
         emit(annotations_, SpvOpDecorate, {id, static_cast<std::uint32_t>(decoration)});
@@ -190,6 +196,8 @@ public:
              {main_function, SpvExecutionModeLocalSize, 64u, 1u, 1u});
         emit(execution_modes_, SpvOpExecutionMode,
              {main_function, SpvExecutionModeRoundingModeRTE, 32u});
+        emit(execution_modes_, SpvOpExecutionMode,
+             {main_function, SpvExecutionModeSignedZeroInfNanPreserve, 32u});
 
         begin_function(main_function);
         const Value thread = local_invocation_x();
@@ -222,6 +230,73 @@ public:
         function_instruction(SpvOpBranch, {texture_merge});
         function_instruction(SpvOpLabel, {texture_merge});
         end_function();
+    }
+
+    void define_kernel_entry_point(std::uint32_t function, std::uint32_t local_size)
+    {
+        ensure_kernel_globals();
+        emit_entry_point(
+            function, {local_id_, workgroup_id_, buffer_, parameter_buffer_});
+        emit(execution_modes_, SpvOpExecutionMode,
+             {function, SpvExecutionModeLocalSize, local_size, 1u, 1u});
+        emit(execution_modes_, SpvOpExecutionMode,
+             {function, SpvExecutionModeRoundingModeRTE, 32u});
+        emit(execution_modes_, SpvOpExecutionMode,
+             {function, SpvExecutionModeSignedZeroInfNanPreserve, 32u});
+    }
+
+    std::uint32_t function_variable(ValueType type)
+    {
+        std::uint32_t *pointer_type = nullptr;
+        switch (type) {
+        case ValueType::boolean: pointer_type = &type_ptr_function_bool_; break;
+        case ValueType::u32: pointer_type = &type_ptr_function_u32_; break;
+        case ValueType::s32: pointer_type = &type_ptr_function_s32_; break;
+        case ValueType::f32: pointer_type = &type_ptr_function_f32_; break;
+        }
+        if (*pointer_type == 0u) {
+            *pointer_type = allocate_id();
+            emit(declarations_, SpvOpTypePointer,
+                 {*pointer_type, SpvStorageClassFunction, type_id(type)});
+        }
+        const std::uint32_t variable = allocate_id();
+        emit(functions_, SpvOpVariable,
+             {*pointer_type, variable, SpvStorageClassFunction});
+        return variable;
+    }
+
+    Value load_variable(std::uint32_t variable, ValueType type)
+    {
+        return instruction(SpvOpLoad, type, {variable});
+    }
+
+    void store_variable(std::uint32_t variable, Value value, ValueType type)
+    {
+        const Value stored = coerce(value, type);
+        function_instruction(SpvOpStore, {variable, stored.id});
+    }
+
+    Value workgroup_invocation_x()
+    {
+        ensure_kernel_globals();
+        const Value zero = constant(ValueType::u32, 0u);
+        const Value pointer = instruction_with_type(
+            SpvOpAccessChain,
+            type_ptr_input_u32_,
+            {workgroup_id_, zero.id});
+        return instruction(SpvOpLoad, ValueType::u32, {pointer.id});
+    }
+
+    Value load_parameter_word(std::uint32_t word_index)
+    {
+        ensure_kernel_globals();
+        const Value zero = constant(ValueType::u32, 0u);
+        const Value index = constant(ValueType::u32, word_index);
+        const Value pointer = instruction_with_type(
+            SpvOpAccessChain,
+            type_ptr_storage_u32_,
+            {parameter_buffer_, zero.id, index.id});
+        return instruction(SpvOpLoad, ValueType::u32, {pointer.id});
     }
 
     Value local_invocation_x()
@@ -402,6 +477,26 @@ private:
         return {ValueType::u32, result};
     }
 
+    void ensure_kernel_globals()
+    {
+        if (parameter_buffer_ != 0u) {
+            return;
+        }
+        parameter_buffer_ = allocate_id();
+        emit(declarations_, SpvOpVariable,
+             {type_ptr_storage_buffer_, parameter_buffer_, SpvStorageClassStorageBuffer});
+        emit(annotations_, SpvOpDecorate,
+             {parameter_buffer_, SpvDecorationDescriptorSet, 0u});
+        emit(annotations_, SpvOpDecorate,
+             {parameter_buffer_, SpvDecorationBinding, 1u});
+
+        workgroup_id_ = allocate_id();
+        emit(declarations_, SpvOpVariable,
+             {type_ptr_input_v3u32_, workgroup_id_, SpvStorageClassInput});
+        emit(annotations_, SpvOpDecorate,
+             {workgroup_id_, SpvDecorationBuiltIn, SpvBuiltInWorkgroupId});
+    }
+
     void emit_void_call(std::uint32_t function)
     {
         const std::uint32_t result = allocate_id();
@@ -423,12 +518,18 @@ private:
     std::uint32_t type_ptr_storage_u32_ = 0u;
     std::uint32_t type_ptr_input_v3u32_ = 0u;
     std::uint32_t type_ptr_input_u32_ = 0u;
+    std::uint32_t type_ptr_function_bool_ = 0u;
+    std::uint32_t type_ptr_function_u32_ = 0u;
+    std::uint32_t type_ptr_function_s32_ = 0u;
+    std::uint32_t type_ptr_function_f32_ = 0u;
     std::uint32_t type_shared_array_ = 0u;
     std::uint32_t type_ptr_workgroup_array_ = 0u;
     std::uint32_t type_ptr_workgroup_u32_ = 0u;
     std::uint32_t buffer_ = 0u;
     std::uint32_t local_id_ = 0u;
     std::uint32_t shared_ = 0u;
+    std::uint32_t parameter_buffer_ = 0u;
+    std::uint32_t workgroup_id_ = 0u;
     std::map<std::pair<ValueType, std::uint32_t>, std::uint32_t> constants_;
     std::vector<std::uint32_t> capabilities_;
     std::vector<std::uint32_t> imports_;
@@ -856,6 +957,515 @@ private:
     std::map<std::string, Value> registers_;
 };
 
+
+class KernelEntryLowerer {
+public:
+    KernelEntryLowerer(
+        SpirvModule &module,
+        const Json &entry,
+        std::uint32_t function,
+        std::uint32_t local_size)
+        : module_(module),
+          entry_(entry),
+          function_(function),
+          local_size_(local_size)
+    {
+    }
+
+    void lower()
+    {
+        module_.define_kernel_entry_point(function_, local_size_);
+        module_.begin_function(function_);
+        declare_registers();
+        const std::uint32_t pc = module_.function_variable(ValueType::u32);
+        const Json &blocks = entry_.at("cfg").at("blocks");
+        const std::uint32_t exit_pc = static_cast<std::uint32_t>(blocks.size());
+        module_.store_variable(
+            pc, module_.constant(ValueType::u32, 0u), ValueType::u32);
+
+        const std::uint32_t loop_header = module_.allocate_id();
+        const std::uint32_t dispatch = module_.allocate_id();
+        const std::uint32_t switch_merge = module_.allocate_id();
+        const std::uint32_t loop_continue = module_.allocate_id();
+        const std::uint32_t loop_merge = module_.allocate_id();
+        const std::uint32_t invalid_case = module_.allocate_id();
+        std::vector<std::uint32_t> case_labels(blocks.size());
+        for (std::uint32_t &label : case_labels) {
+            label = module_.allocate_id();
+        }
+
+        module_.function_instruction(SpvOpBranch, {loop_header});
+        module_.function_instruction(SpvOpLabel, {loop_header});
+        module_.function_instruction(
+            SpvOpLoopMerge,
+            {loop_merge, loop_continue, SpvLoopControlMaskNone});
+        module_.function_instruction(SpvOpBranch, {dispatch});
+        module_.function_instruction(SpvOpLabel, {dispatch});
+        const Value selector = module_.load_variable(pc, ValueType::u32);
+        module_.function_instruction(
+            SpvOpSelectionMerge,
+            {switch_merge, SpvSelectionControlMaskNone});
+        std::vector<std::uint32_t> switch_operands = {
+            selector.id, invalid_case,
+        };
+        for (std::uint32_t block = 0u; block < case_labels.size(); ++block) {
+            switch_operands.push_back(block);
+            switch_operands.push_back(case_labels[block]);
+        }
+        module_.function_instruction(SpvOpSwitch, switch_operands);
+
+        const Json &instructions = entry_.at("instructions");
+        for (std::uint32_t block = 0u; block < case_labels.size(); ++block) {
+            module_.function_instruction(SpvOpLabel, {case_labels[block]});
+            const Json &description = blocks.at(block);
+            const std::size_t begin =
+                description.at("instruction_begin").get<std::size_t>();
+            const std::size_t end =
+                description.at("instruction_end").get<std::size_t>();
+            for (std::size_t index = begin; index < end; ++index) {
+                const Json &instruction = instructions.at(index);
+                const std::string base =
+                    instruction.at("base").get<std::string>();
+                if (base != "bra" && base != "ret") {
+                    lower_instruction(instruction);
+                }
+            }
+            const Value next = next_block(
+                block, instructions.at(end - 1u), exit_pc);
+            module_.store_variable(pc, next, ValueType::u32);
+            module_.function_instruction(SpvOpBranch, {switch_merge});
+        }
+
+        module_.function_instruction(SpvOpLabel, {invalid_case});
+        module_.store_variable(
+            pc, module_.constant(ValueType::u32, exit_pc), ValueType::u32);
+        module_.function_instruction(SpvOpBranch, {switch_merge});
+
+        module_.function_instruction(SpvOpLabel, {switch_merge});
+        const Value current = module_.load_variable(pc, ValueType::u32);
+        const Value finished = module_.instruction(
+            SpvOpIEqual,
+            ValueType::boolean,
+            {current.id, module_.constant(ValueType::u32, exit_pc).id});
+        module_.function_instruction(
+            SpvOpBranchConditional,
+            {finished.id, loop_merge, loop_continue});
+        module_.function_instruction(SpvOpLabel, {loop_continue});
+        module_.function_instruction(SpvOpBranch, {loop_header});
+        module_.function_instruction(SpvOpLabel, {loop_merge});
+        module_.end_function();
+    }
+
+private:
+    struct RegisterVariable {
+        ValueType type;
+        std::uint32_t id;
+    };
+
+    [[noreturn]] void unsupported(
+        const Json &instruction, const std::string &detail) const
+    {
+        throw std::runtime_error(
+            entry_.at("name").get<std::string>() + ": " + detail + " for '" +
+            instruction.at("variant").get<std::string>() + "' at PTX line " +
+            std::to_string(instruction.at("line").get<std::size_t>()));
+    }
+
+    void declare_registers()
+    {
+        for (const Json &bank : entry_.at("register_banks")) {
+            const std::string prefix = bank.at("prefix").get<std::string>();
+            const ValueType type =
+                parse_type(bank.at("type").get<std::string>());
+            const std::size_t count = bank.at("count").get<std::size_t>();
+            if (count == 1u) {
+                variables_.emplace(
+                    prefix, RegisterVariable{type, module_.function_variable(type)});
+                continue;
+            }
+            for (std::size_t index = 0u; index < count; ++index) {
+                variables_.emplace(
+                    prefix + std::to_string(index),
+                    RegisterVariable{type, module_.function_variable(type)});
+            }
+        }
+    }
+
+    RegisterVariable variable(const std::string &name) const
+    {
+        const auto found = variables_.find(name);
+        if (found == variables_.end()) {
+            throw std::runtime_error(
+                entry_.at("name").get<std::string>() +
+                ": undeclared register '" + name + "'");
+        }
+        return found->second;
+    }
+
+    Value read_register(const std::string &name)
+    {
+        if (name == "%tid.x") {
+            return module_.local_invocation_x();
+        }
+        if (name == "%ntid.x") {
+            return module_.constant(ValueType::u32, local_size_);
+        }
+        if (name == "%ctaid.x") {
+            return module_.workgroup_invocation_x();
+        }
+        const RegisterVariable source = variable(name);
+        return module_.load_variable(source.id, source.type);
+    }
+
+    void define(const Json &operand, Value value)
+    {
+        const RegisterVariable destination =
+            variable(register_operand_name(operand));
+        module_.store_variable(destination.id, value, destination.type);
+    }
+
+    Value scalar_operand(const Json &operand, ValueType desired)
+    {
+        const std::string kind = operand.at("kind").get<std::string>();
+        if (kind == "register") {
+            return module_.coerce(
+                read_register(register_operand_name(operand)), desired);
+        }
+        if (kind == "float_bits") {
+            return module_.coerce(
+                module_.constant(
+                    ValueType::f32, operand.at("bits").get<std::uint32_t>()),
+                desired);
+        }
+        if (kind == "integer") {
+            return module_.constant(
+                desired,
+                static_cast<std::uint32_t>(
+                    operand.at("value").get<std::int64_t>()));
+        }
+        throw std::runtime_error(
+            "unsupported selected-kernel scalar operand kind '" + kind + "'");
+    }
+
+    Value address_expression(const Json &expression)
+    {
+        if (expression.at("kind").get<std::string>() != "add") {
+            return scalar_operand(expression, ValueType::u32);
+        }
+        const Value left = address_expression(expression.at("left"));
+        const Value right = address_expression(expression.at("right"));
+        return module_.instruction(
+            SpvOpIAdd, ValueType::u32, {left.id, right.id});
+    }
+
+    Value address_operand(const Json &operand)
+    {
+        if (operand.at("kind").get<std::string>() != "memory" ||
+            operand.at("values").size() != 1u) {
+            throw std::runtime_error(
+                "invalid selected-kernel structured address");
+        }
+        return address_expression(operand.at("values").at(0));
+    }
+
+    void parameter_address(
+        const Json &expression,
+        std::string &name,
+        std::uint32_t &offset) const
+    {
+        const std::string kind = expression.at("kind").get<std::string>();
+        if (kind == "symbol") {
+            name = expression.at("name").get<std::string>();
+            return;
+        }
+        if (kind != "add") {
+            throw std::runtime_error(
+                "unsupported selected-kernel parameter address");
+        }
+        parameter_address(expression.at("left"), name, offset);
+        const Json &right = expression.at("right");
+        if (right.at("kind").get<std::string>() != "integer") {
+            throw std::runtime_error(
+                "non-constant selected-kernel parameter offset");
+        }
+        offset += static_cast<std::uint32_t>(
+            right.at("value").get<std::int64_t>());
+    }
+
+    Value load_parameter(const Json &operand)
+    {
+        if (operand.at("kind").get<std::string>() != "memory" ||
+            operand.at("values").size() != 1u) {
+            throw std::runtime_error(
+                "invalid selected-kernel parameter operand");
+        }
+        std::string name;
+        std::uint32_t inner_offset = 0u;
+        parameter_address(
+            operand.at("values").at(0), name, inner_offset);
+        for (const Json &parameter : entry_.at("parameters")) {
+            if (parameter.at("name").get<std::string>() == name) {
+                const std::uint32_t byte_offset =
+                    parameter.at("offset").get<std::uint32_t>() + inner_offset;
+                if ((byte_offset & 3u) != 0u) {
+                    throw std::runtime_error(
+                        "unaligned selected-kernel u32 parameter load");
+                }
+                return module_.load_parameter_word(byte_offset / 4u);
+            }
+        }
+        throw std::runtime_error(
+            "unknown selected-kernel parameter '" + name + "'");
+    }
+
+    Value word_index(Value byte_address)
+    {
+        const Value address =
+            module_.coerce(byte_address, ValueType::u32);
+        return module_.instruction(
+            SpvOpShiftRightLogical,
+            ValueType::u32,
+            {address.id, module_.constant(ValueType::u32, 2u).id});
+    }
+
+    bool has_modifier(
+        const Json &instruction, const std::string &modifier) const
+    {
+        const auto &modifiers = instruction.at("modifiers");
+        return std::find(
+            modifiers.begin(), modifiers.end(), modifier) != modifiers.end();
+    }
+
+    Value float_input(const Json &operand, bool ftz)
+    {
+        Value value = scalar_operand(operand, ValueType::f32);
+        return ftz ? module_.flush_ftz(value) : value;
+    }
+
+    Value float_output(Value value, bool ftz)
+    {
+        return ftz ? module_.flush_ftz(value) : value;
+    }
+
+    Value predicate_value(const std::string &predicate)
+    {
+        const std::string normalized =
+            !predicate.empty() && predicate.front() == '@'
+                ? predicate.substr(1u)
+                : predicate;
+        const bool inverted =
+            !normalized.empty() && normalized.front() == '!';
+        const std::string name =
+            inverted ? normalized.substr(1u) : normalized;
+        Value value = read_register(name);
+        if (value.type != ValueType::boolean) {
+            throw std::runtime_error(
+                "selected-kernel branch predicate is not boolean");
+        }
+        if (inverted) {
+            value = module_.instruction(
+                SpvOpLogicalNot, ValueType::boolean, {value.id});
+        }
+        return value;
+    }
+
+    std::uint32_t block_number(const std::string &id) const
+    {
+        if (id.size() < 2u || id.front() != 'b') {
+            throw std::runtime_error("invalid CFG block id '" + id + "'");
+        }
+        return static_cast<std::uint32_t>(std::stoul(id.substr(1u)));
+    }
+
+    Value next_block(
+        std::uint32_t block,
+        const Json &terminal,
+        std::uint32_t exit_pc)
+    {
+        const std::string base = terminal.at("base").get<std::string>();
+        const Json &successors =
+            entry_.at("cfg").at("blocks").at(block).at("successors");
+        if (base == "ret" || successors.empty()) {
+            return module_.constant(ValueType::u32, exit_pc);
+        }
+        const Value target = module_.constant(
+            ValueType::u32,
+            block_number(successors.at(0).get<std::string>()));
+        const std::string predicate =
+            terminal.at("predicate").get<std::string>();
+        if (predicate.empty()) {
+            return target;
+        }
+        if (successors.size() != 2u) {
+            throw std::runtime_error(
+                "predicated branch does not have two CFG successors");
+        }
+        const Value fallthrough = module_.constant(
+            ValueType::u32,
+            block_number(successors.at(1).get<std::string>()));
+        const Value condition = predicate_value(predicate);
+        return module_.instruction(
+            SpvOpSelect,
+            ValueType::u32,
+            {condition.id, target.id, fallthrough.id});
+    }
+
+    void lower_instruction(const Json &instruction)
+    {
+        const std::string base =
+            instruction.at("base").get<std::string>();
+        const std::string variant =
+            instruction.at("variant").get<std::string>();
+        const Json &operands = instruction.at("structured_operands");
+        if (!instruction.at("predicate").get<std::string>().empty()) {
+            unsupported(
+                instruction, "non-branch predication is outside this slice");
+        }
+
+        if (base == "ld" && has_modifier(instruction, "param")) {
+            define(operands.at(0), load_parameter(operands.at(1)));
+            return;
+        }
+        if (base == "ld" && has_modifier(instruction, "global")) {
+            const Value loaded =
+                module_.load_buffer(word_index(address_operand(operands.at(1))));
+            define(
+                operands.at(0),
+                has_modifier(instruction, "f32")
+                    ? module_.coerce(loaded, ValueType::f32)
+                    : loaded);
+            return;
+        }
+        if (base == "st" && has_modifier(instruction, "global")) {
+            module_.store_buffer(
+                word_index(address_operand(operands.at(0))),
+                scalar_operand(
+                    operands.at(1),
+                    has_modifier(instruction, "f32")
+                        ? ValueType::f32
+                        : ValueType::u32));
+            return;
+        }
+        if (base == "mov" || base == "cvta") {
+            const ValueType type =
+                has_modifier(instruction, "f32")
+                    ? ValueType::f32
+                    : ValueType::u32;
+            define(operands.at(0), scalar_operand(operands.at(1), type));
+            return;
+        }
+        if (base == "add" || base == "sub" || base == "mad") {
+            const Value a =
+                scalar_operand(operands.at(1), ValueType::s32);
+            const Value b =
+                scalar_operand(operands.at(2), ValueType::s32);
+            if (base == "add" || base == "sub") {
+                define(
+                    operands.at(0),
+                    module_.instruction(
+                        base == "add" ? SpvOpIAdd : SpvOpISub,
+                        ValueType::s32,
+                        {a.id, b.id}));
+                return;
+            }
+            const Value c =
+                scalar_operand(operands.at(3), ValueType::s32);
+            const Value product = module_.instruction(
+                SpvOpIMul, ValueType::s32, {a.id, b.id});
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpIAdd, ValueType::s32, {product.id, c.id}));
+            return;
+        }
+        if (base == "and" || base == "or" ||
+            base == "shl" || base == "shr") {
+            const Value a =
+                scalar_operand(operands.at(1), ValueType::u32);
+            const Value b =
+                scalar_operand(operands.at(2), ValueType::u32);
+            const SpvOp operation =
+                base == "and" ? SpvOpBitwiseAnd :
+                base == "or" ? SpvOpBitwiseOr :
+                base == "shl" ? SpvOpShiftLeftLogical :
+                SpvOpShiftRightLogical;
+            define(
+                operands.at(0),
+                module_.instruction(
+                    operation, ValueType::u32, {a.id, b.id}));
+            return;
+        }
+        if (base == "setp") {
+            const bool unsigned_compare = has_modifier(instruction, "u32");
+            const ValueType type =
+                unsigned_compare ? ValueType::u32 : ValueType::s32;
+            const Value a = scalar_operand(operands.at(1), type);
+            const Value b = scalar_operand(operands.at(2), type);
+            SpvOp operation = SpvOpNop;
+            if (variant == "setp.ge.u32") operation = SpvOpUGreaterThanEqual;
+            if (variant == "setp.gt.u32") operation = SpvOpUGreaterThan;
+            if (variant == "setp.le.u32") operation = SpvOpULessThanEqual;
+            if (operation == SpvOpNop) {
+                unsupported(instruction, "unsupported comparison");
+            }
+            define(
+                operands.at(0),
+                module_.instruction(
+                    operation, ValueType::boolean, {a.id, b.id}));
+            return;
+        }
+        if (base == "div") {
+            const bool ftz = has_modifier(instruction, "ftz");
+            const Value a = float_input(operands.at(1), ftz);
+            const Value b = float_input(operands.at(2), ftz);
+            Value result = module_.instruction(
+                SpvOpFDiv, ValueType::f32, {a.id, b.id});
+            module_.decorate(result.id, SpvDecorationNoContraction);
+            define(operands.at(0), float_output(result, ftz));
+            return;
+        }
+        if (variant == "cvt.rmi.ftz.f32.f32") {
+            const Value input = float_input(operands.at(1), true);
+            define(
+                operands.at(0),
+                float_output(
+                    module_.ext_instruction(
+                        ValueType::f32, GLSLstd450Floor, {input.id}),
+                    true));
+            return;
+        }
+        if (variant == "cvt.rzi.ftz.s32.f32") {
+            const Value input = float_input(operands.at(1), true);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpConvertFToS,
+                    ValueType::s32,
+                    {input.id}));
+            return;
+        }
+        if (base == "min" || base == "max") {
+            const Value a =
+                scalar_operand(operands.at(1), ValueType::s32);
+            const Value b =
+                scalar_operand(operands.at(2), ValueType::s32);
+            define(
+                operands.at(0),
+                module_.ext_instruction(
+                    ValueType::s32,
+                    base == "min" ? GLSLstd450SMin : GLSLstd450SMax,
+                    {a.id, b.id}));
+            return;
+        }
+        unsupported(instruction, "unsupported selected-kernel instruction");
+    }
+
+    SpirvModule &module_;
+    const Json &entry_;
+    std::uint32_t function_;
+    std::uint32_t local_size_;
+    std::map<std::string, RegisterVariable> variables_;
+};
 const Json &find_entry(const Json &manifest, const std::string &name)
 {
     for (const Json &entry : manifest.at("entries")) {
@@ -885,6 +1495,27 @@ std::vector<std::uint32_t> emit_oracle(const Json &manifest)
     return module.finish();
 }
 
+std::vector<std::uint32_t> emit_kernel_entry(
+    const Json &manifest,
+    const std::string &entry_name,
+    std::uint32_t local_size)
+{
+    if (manifest.at("schema_version").get<std::uint32_t>() != 4u) {
+        throw std::runtime_error("kernel emitter requires typed manifest schema 4");
+    }
+    if (manifest.at("address_size").get<std::uint32_t>() != 32u) {
+        throw std::runtime_error("kernel emitter requires 32-bit PTX addresses");
+    }
+    if (local_size == 0u) {
+        throw std::runtime_error("kernel emitter local size must be nonzero");
+    }
+    SpirvModule module;
+    const std::uint32_t function = module.allocate_id();
+    KernelEntryLowerer(
+        module, find_entry(manifest, entry_name), function, local_size).lower();
+    return module.finish();
+}
+
 Json read_json(const char *path)
 {
     std::ifstream input(path, std::ios::binary);
@@ -907,19 +1538,28 @@ void write_spirv(const char *path, const std::vector<std::uint32_t> &words)
 
 int main(int argc, char **argv)
 {
-    if (argc != 3) {
-        std::cerr << "usage: ptx-oracle-emitter "
+    const bool kernel_mode = argc == 6 && std::string(argv[1]) == "--entry";
+    if (argc != 3 && !kernel_mode) {
+        std::cerr << "usage: ptx-spirv-emitter <typed-manifest.json> <output.spv>\n"
+                  << "       ptx-spirv-emitter --entry <name> <local-size> "
                      "<typed-manifest.json> <output.spv>\n";
         return 2;
     }
     try {
-        const std::vector<std::uint32_t> words = emit_oracle(read_json(argv[1]));
-        write_spirv(argv[2], words);
+        const char *input_path = kernel_mode ? argv[4] : argv[1];
+        const char *output_path = kernel_mode ? argv[5] : argv[2];
+        const std::vector<std::uint32_t> words = kernel_mode
+            ? emit_kernel_entry(
+                  read_json(input_path),
+                  argv[2],
+                  static_cast<std::uint32_t>(std::stoul(argv[3])))
+            : emit_oracle(read_json(input_path));
+        write_spirv(output_path, words);
         std::cout << "Emitted " << words.size() << " SPIR-V words from "
-                  << argv[1] << '\n';
+                  << input_path << '\n';
         return 0;
     } catch (const std::exception &error) {
-        std::cerr << "ptx-oracle-emitter: " << error.what() << '\n';
+        std::cerr << "ptx-spirv-emitter: " << error.what() << '\n';
         return 1;
     }
 }

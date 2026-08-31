@@ -25,28 +25,42 @@ add_executable(ptx-frontend main.cpp)
 target_compile_features(ptx-frontend PRIVATE cxx_std_17)
 target_link_libraries(ptx-frontend PRIVATE nlohmann_json::nlohmann_json)
 
-add_executable(ptx-oracle-emitter oracle_emitter.cpp)
-target_compile_features(ptx-oracle-emitter PRIVATE cxx_std_17)
+add_executable(ptx-spirv-emitter spirv_emitter.cpp)
+target_compile_features(ptx-spirv-emitter PRIVATE cxx_std_17)
 target_link_libraries(
-    ptx-oracle-emitter
+    ptx-spirv-emitter
     PRIVATE nlohmann_json::nlohmann_json SPIRV-Headers::SPIRV-Headers
 )
 
 enable_testing()
 add_test(NAME ptx-frontend-self-test COMMAND ptx-frontend --self-test)
 add_test(
-    NAME ptx-oracle-emitter
-    COMMAND ptx-oracle-emitter
+    NAME ptx-spirv-emitter-oracle
+    COMMAND ptx-spirv-emitter
         "${CMAKE_CURRENT_SOURCE_DIR}/expected/oracle-manifest.json"
         "${CMAKE_CURRENT_BINARY_DIR}/oracle-explicit-rte.spv"
 )
+add_test(
+    NAME ptx-cfg-frontend
+    COMMAND ptx-frontend
+        "${CMAKE_CURRENT_SOURCE_DIR}/cfg_probe.ptx"
+        "${CMAKE_CURRENT_BINARY_DIR}/cfg-probe-manifest.json"
+)
+add_test(
+    NAME ptx-cfg-emitter
+    COMMAND ptx-spirv-emitter
+        --entry cfg_probe 8
+        "${CMAKE_CURRENT_BINARY_DIR}/cfg-probe-manifest.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/cfg-probe.spv"
+)
+set_tests_properties(ptx-cfg-emitter PROPERTIES DEPENDS ptx-cfg-frontend)
 if(MSVC)
-    foreach(target ptx-frontend ptx-oracle-emitter)
+    foreach(target ptx-frontend ptx-spirv-emitter)
         target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
         target_compile_options(${target} PRIVATE /W4 /permissive-)
     endforeach()
 else()
-    foreach(target ptx-frontend ptx-oracle-emitter)
+    foreach(target ptx-frontend ptx-spirv-emitter)
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
         if(MINGW)
             target_link_options(${target} PRIVATE -static-libgcc -static-libstdc++)
