@@ -9,6 +9,7 @@
 {
     .reg .pred %p<3>;
     .reg .u32 %r<8>;
+    .reg .s64 %rd<4>;
 
     ld.param.u32 %r1, [cfg_probe_param_0];
     ld.param.u32 %r2, [cfg_probe_param_1];

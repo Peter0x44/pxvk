@@ -1428,11 +1428,32 @@ private:
 
     void declare_registers()
     {
+        std::map<std::string, bool> referenced;
+        for (const Json &instruction : entry_.at("instructions")) {
+            for (const char *field : {"definitions", "uses"}) {
+                for (const Json &name : instruction.at(field)) {
+                    referenced.emplace(name.get<std::string>(), true);
+                }
+            }
+        }
         for (const Json &bank : entry_.at("register_banks")) {
             const std::string prefix = bank.at("prefix").get<std::string>();
-            const ValueType type =
-                parse_type(bank.at("type").get<std::string>());
+            const std::string type_name = bank.at("type").get<std::string>();
             const std::size_t count = bank.at("count").get<std::size_t>();
+            const bool supported =
+                type_name == ".pred" || type_name == ".u32" ||
+                type_name == ".s32" || type_name == ".b32" ||
+                type_name == ".f32";
+            bool bank_referenced = false;
+            for (std::size_t index = 0u; index < count && !bank_referenced; ++index) {
+                const std::string name =
+                    count == 1u ? prefix : prefix + std::to_string(index);
+                bank_referenced = referenced.find(name) != referenced.end();
+            }
+            if (!supported && !bank_referenced) {
+                continue;
+            }
+            const ValueType type = parse_type(type_name);
             if (count == 1u) {
                 variables_.emplace(
                     prefix, RegisterVariable{type, module_.function_variable(type)});

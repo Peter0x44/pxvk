@@ -104,6 +104,11 @@ with module/routine static shared layouts to size the Workgroup arena. Named
 symbols resolve to aligned byte offsets in a per-invocation Function array.
 Named `.const` symbols resolve to aligned byte offsets in binding 2.
 
+Kernel lowering discards an unsupported register bank only when no instruction
+defines or uses any register in that bank. A referenced unsupported type remains
+a deterministic error. This avoids enabling 64-bit SPIR-V solely for
+`KernelFluidDensity`'s declared but unused `.s64` bank.
+
 The current state-machine lowering stores virtual registers in function storage
 and executes one PTX basic block per structured loop iteration. A finite prelude
 structurizes the paired reorder kernel's divergent shared-memory setup so all

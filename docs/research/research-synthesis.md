@@ -258,6 +258,13 @@ fixture is
 SHA-256
 `b00dfe683ae265e8569be15aa05a2dabfd0ca4633d2b8c500f34dee5753620da`.
 
+`KernelFluidDensity` declares `.reg .s64 %rd<35>` but has zero definitions or
+uses of those registers. Kernel lowering now discards an unsupported register
+bank only when it is unreferenced; the CFG fixture includes an unused `.s64`
+bank to lock that behavior. No `Int64` capability or 64-bit arithmetic was
+added. The density compile now advances to its first texture fetch at PTX line
+119, making texture metadata/binding the next blocker.
+
 `tools/cuda-physx-fixture` runs both kernels as a one-particle pipeline against
 the local proprietary PTX. Native RTX and PTX-derived Vulkan on Intel/RTX all
 produce:
