@@ -6,12 +6,12 @@ Validation is split into independently useful gates. No game run can substitute
 for a failed API, PTX, or workload-output gate, and no screenshot can establish
 numerical correctness.
 
-The project already has a committed native NVIDIA semantic oracle for f32,
-`bar.sync 0`, and unsigned linear textures. The missing correctness evidence is
-one repeatable real fluid-kernel fixture and one repeatable real
-deformable-kernel fixture. Those fixtures are required before accepting the
-first translated PhysX kernel, but they do not block a disposable Vulkan
-microkernel or CUDA-facade experiment.
+The project has a committed native NVIDIA semantic oracle for f32,
+`bar.sync 0`, invocation-private local memory, and signed-coordinate `u32`/`f32`
+linear textures. A repeatable real fluid hash/reorder pair also passes natively
+and through Vulkan on Intel/RTX. The remaining family-level correctness gap is
+a repeatable real deformable-kernel fixture; captured in-game state remains a
+later sequence/integration gate.
 
 This document defines pass/fail evidence. It does not select the permanent test
 framework, runtime language, shader compiler, or architecture.
@@ -44,22 +44,22 @@ framework, runtime language, shader compiler, or architecture.
 
 | Asset | Current evidence | Role in the plan |
 |---|---|---|
-| `tools/cuda-oracle/probe.ptx` | Native PTX microkernels for f32, barrier, and texture behavior | Run unchanged through native CUDA and the Vulkan translator |
+| `tools/cuda-oracle/probe.ptx` | Native PTX microkernels for f32, barrier, aligned local memory, and `u32`/`f32` texture behavior | Run unchanged through native CUDA and the Vulkan translator |
 | `tools/cuda-oracle/expected/rtx3070-driver610.88.json` | Committed exact NVIDIA result bits | Primary standalone semantic fixture |
 | `tools/cuda-oracle/main.c` | PE32/i386 Driver API launcher | Native reference runner and shape for a backend runner |
 | `tools/nvcuda-trace/tests/launch_params_test.c` | Standard/reversed packed launch tokens and malformed/unreadable inputs | Preserve `pxvk_parse_launch_extra` behavior; extend only when the launch ABI changes |
 | `tools/nvcuda-trace/tests/proxy_smoke.c` | `LoadLibrary`, export lookup, `cuInit`, and enumeration | Shape for an out-of-process pxvk facade smoke test |
 | `tools/nvcuda-trace/tests/injected_smoke.c` | Startup-injected `nvcuda.dll` discovery and calls | Shape for launcher/injection validation |
 | `tools/vulkan-probe/main.c` | x86 loader, device features, and quantitative limits | Input to startup-gate tests, not a compute-correctness test |
-| `tools/vulkan-probe/memory_smoke.cpp` plus `oracle.spv` | Generated SPIR-V, real 32 MiB buffers, f32/FMA/conversion, workgroup barrier, and integer texture output exactly match CUDA on Intel and RTX | Completed reference-system standalone Vulkan semantic gate; preserve for deferred AMD run |
-| `tools/ptx-frontend/main.cpp` | Strict parser validates all 17 modules, 4,174 blocks, 5,935 edges, all label/register references, and finite result/use-type contracts for all 147 variants; all 16 launched layouts match independent analysis | Completed whole-corpus grammar/metadata/CFG/dataflow/type gate; next emit SPIR-V |
+| `tools/vulkan-probe/memory_smoke.cpp` plus generated SPIR-V | Real 32 MiB buffers; f32/FMA/conversion, workgroup barrier, invocation-private local storage, and integer/float texture output exactly match CUDA on Intel and RTX | Completed reference-system standalone Vulkan semantic gate; preserve for deferred AMD run |
+| `tools/ptx-frontend/main.cpp` | Strict parser validates all 17 modules, 4,174 blocks, 5,935 edges, all label/register references, routine storage-symbol layouts, and finite result/use-type contracts for all 147 variants; all 16 launched layouts match independent analysis | Completed whole-corpus grammar/metadata/CFG/dataflow/type gate; selected kernels emit SPIR-V |
 | 17 local captured PTX modules | Complete corpus accepted by both ZLUDA and the project frontend; hashes remain local/cataloged | Local parse/normalization coverage without committing proprietary PTX |
 | Three native game traces | Fluid, deformable, and confirmed broken-glass execution | Route and workload-presence oracle |
 
-The committed CUDA oracle SHA-256 remains
-`a69570c48f5361afafbcca15408a350f19b9782730f613b35695692ce20141f9`.
-Its JSON contains 14 named f32 results, a 64-element barrier result, and 12
-texture-coordinate rows.
+The committed CUDA oracle SHA-256 is
+`02dcd524f09a0578906a27d68b3892066dfcfbaf94c83fef061b6719765374e1`.
+Its JSON contains 14 named f32 results, 64-element barrier and local-memory
+results, and 12 signed-coordinate rows for each integer and float texture.
 
 ## Validation layers
 
@@ -212,6 +212,7 @@ shallow test per spelling:
 | Addressing and memory | `u8/u16/u32/u64/f32`, scalar/v2/v4, 32-bit offset arithmetic, global/constant/local/shared spaces, volatile shared `u32` |
 | Launch built-ins | `%tid.x`, `%ntid.x`, `%ctaid.x`, `%nctaid.x` at observed block sizes and multi-block grids |
 | Shared memory | static alignment, dynamic base alignment, and static-plus-dynamic sizes used by radix, reorder, and deformable solver entries |
+| Local memory | aligned routine symbols and 64 independent per-invocation store/load results |
 | Floating point | every field in the committed CUDA oracle, including fused versus separate operations and NaN operand behavior |
 | Barrier | all 64 workgroup invocations observe neighbor writes after `bar.sync 0` |
 | Texture | signed coordinates, in-range four-component bit preservation, and negative/high zero results for both `u32` and `f32` |
@@ -221,8 +222,10 @@ built-ins, predicated exit, a back-edge loop, global address calculation, and
 storage through the conservative loop/switch CFG lowering.
 `barrier_cfg_probe.ptx` covers divergent shared-memory setup, predicate
 conjunction, structured reconvergence, and one dynamically uniform workgroup
-barrier. CTest emits both manifests and SPIR-V modules; SDK validation remains
-part of the explicit compiler verification command.
+barrier. The project oracle additionally covers a 16-byte-aligned `.local`
+symbol with independent state for all 64 invocations. CTest emits both CFG
+manifests and SPIR-V modules; SDK validation and Intel/RTX execution remain
+explicit compiler verification commands.
 
 Parser-only cases may use dead code to cover the 27 whole-corpus variants absent
 from launched entries. They do not become execution requirements unless a
@@ -498,8 +501,7 @@ The smallest useful slice after research synthesis is:
 
 1. reuse the CUDA oracle inputs as a backend-independent expected schema;
 2. create a Vulkan runner for one integer/global-memory microkernel;
-3. add f32, barrier, and integer-texture cases without changing their expected
-   JSON fields;
+3. add f32, barrier, aligned local-memory, and integer/float-texture cases;
 4. run on RTX and Intel Vulkan; preserve the identical command/output for the
    deferred AMD run;
 5. classify differences before capturing proprietary real-kernel fixtures.

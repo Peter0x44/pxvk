@@ -31,8 +31,8 @@ PTX bytes
   -> direct SPIR-V binary emission for the project oracle slice
 ```
 
-`ptx-spirv-emitter` consumes schema-4 structured operands. It does not parse
-the retained diagnostic operand strings.
+`ptx-spirv-emitter` consumes schema-5 structured operands and routine storage
+symbols. It does not parse the retained diagnostic operand strings.
 
 ## Build
 
@@ -89,19 +89,25 @@ Emit one finite PTX entry with a structured control-flow state machine:
 
 ```powershell
 build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
-  <entry-name> <local-size-x> `
+  <entry-name> <local-size-x> <dynamic-shared-bytes> `
   module-manifest.json `
   generated-kernel.spv
 ```
 
 Kernel mode binds the 32-bit CUDA heap at descriptor binding 0 and the packed
 launch-parameter words at binding 1. PTX byte addresses remain `u32` heap
-offsets. The current state-machine lowering stores virtual registers in
-function storage and executes one PTX basic block per structured loop
-iteration. A finite prelude structurizes the paired reorder kernel's divergent
-shared-memory setup so all invocations reconverge before its workgroup barrier.
-This is intentionally conservative; SSA and general structured CFG
-reconstruction remain later optimizations.
+offsets. The dynamic-shared byte count is explicit pipeline input; the emitter
+combines it with module/routine static shared layouts to size the Workgroup
+arena. Named `.shared` symbols resolve to aligned byte offsets in that arena.
+Named `.local` symbols resolve to aligned byte offsets in a per-invocation
+Function array.
+
+The current state-machine lowering stores virtual registers in function storage
+and executes one PTX basic block per structured loop iteration. A finite prelude
+structurizes the paired reorder kernel's divergent shared-memory setup so all
+invocations reconverge before its sole workgroup barrier. This is intentionally
+conservative; SSA and general structured CFG reconstruction remain later
+optimizations.
 
 
 Validate and execute the module:
@@ -157,6 +163,8 @@ Validated failures include:
 - module metadata;
 - parameter and storage layouts;
 - register banks and types;
+- routine-local `.local`/`.shared` names, spaces, aligned offsets, sizes, and
+  external status;
 - labels;
 - normalized diagnostic operands and backend-consumed structured operands;
 - normalized instruction base/modifiers;
@@ -166,7 +174,7 @@ Validated failures include:
 SHA-256:
 
 ```text
-1bfd086046f864b938db84d2898e2e9f283a4b37e1b23715253af88c82390358
+611d93f54c373bfbf9f7915e0d1a75165d1e7af59ea6e1dcfdf834a3578c8c6b
 ```
 
 ### Corpus manifest
@@ -178,7 +186,7 @@ storage layouts, exact variant sets, and aggregate CFG counts.
 SHA-256:
 
 ```text
-b46479bf9a21121b448216eacfa66344551ddfeee60f352f6d9dc536e7682cde
+d49317aaeaf1f39f080d0cfdaa5c56b96dba8fa71ea06d76c672792b831e02ee
 ```
 
 Observed aggregate structure:
@@ -197,7 +205,8 @@ Observed aggregate structure:
 
 All 16 launched entries match the independent captured analysis for packed
 parameter offsets/sizes/alignments, effective static shared memory, and static
-local memory.
+local memory. Schema 3 additionally retains every routine storage symbol and
+its aligned offset without redistributing proprietary instructions.
 
 Every result-producing instruction records an inferred finite PTX result type.
 Definitions are checked against declared register-bank widths/categories,

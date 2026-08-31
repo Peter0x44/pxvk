@@ -11,6 +11,7 @@
 
 #define MATH_RESULT_COUNT 14
 #define BARRIER_THREAD_COUNT 64
+#define LOCAL_THREAD_COUNT 64
 #define TEXTURE_ELEMENT_COUNT 8
 #define TEXTURE_PROBE_COUNT 12
 
@@ -209,18 +210,21 @@ int main(int argc, char **argv)
     CUmodule module = NULL;
     CUfunction math_function = NULL;
     CUfunction barrier_function = NULL;
+    CUfunction local_function = NULL;
     CUfunction texture_function = NULL;
     CUfunction texture_float_function = NULL;
     CUtexref texture = NULL;
     CUtexref texture_float = NULL;
     CUdeviceptr math_device = 0;
     CUdeviceptr barrier_device = 0;
+    CUdeviceptr local_device = 0;
     CUdeviceptr texture_input_device = 0;
     CUdeviceptr texture_output_device = 0;
     CUdeviceptr texture_float_input_device = 0;
     CUdeviceptr texture_float_output_device = 0;
     uint32_t math_results[MATH_RESULT_COUNT] = {0};
     uint32_t barrier_results[BARRIER_THREAD_COUNT] = {0};
+    uint32_t local_results[LOCAL_THREAD_COUNT] = {0};
     uint32_t texture_input[TEXTURE_ELEMENT_COUNT][4];
     uint32_t texture_results[TEXTURE_PROBE_COUNT][4] = {{0}};
     const uint32_t texture_float_input[TEXTURE_ELEMENT_COUNT][4] = {
@@ -297,6 +301,7 @@ int main(int argc, char **argv)
     }
     CUDA_TRY(&api, api.cuModuleGetFunction(&math_function, module, "math_probe"));
     CUDA_TRY(&api, api.cuModuleGetFunction(&barrier_function, module, "barrier_probe"));
+    CUDA_TRY(&api, api.cuModuleGetFunction(&local_function, module, "local_probe"));
     CUDA_TRY(&api, api.cuModuleGetFunction(&texture_function, module, "texture_probe"));
     CUDA_TRY(&api,
              api.cuModuleGetFunction(
@@ -307,6 +312,7 @@ int main(int argc, char **argv)
 
     CUDA_TRY(&api, api.cuMemAlloc_v2(&math_device, sizeof(math_results)));
     CUDA_TRY(&api, api.cuMemAlloc_v2(&barrier_device, sizeof(barrier_results)));
+    CUDA_TRY(&api, api.cuMemAlloc_v2(&local_device, sizeof(local_results)));
     CUDA_TRY(&api, api.cuMemAlloc_v2(&texture_input_device, sizeof(texture_input)));
     CUDA_TRY(&api, api.cuMemAlloc_v2(&texture_output_device, sizeof(texture_results)));
     CUDA_TRY(&api,
@@ -367,6 +373,9 @@ int main(int argc, char **argv)
                  &api, barrier_function, 1, BARRIER_THREAD_COUNT, 0, barrier_device));
     CUDA_TRY(&api,
              launch_one_pointer(
+                 &api, local_function, 1, LOCAL_THREAD_COUNT, 0, local_device));
+    CUDA_TRY(&api,
+             launch_one_pointer(
                  &api, texture_function, 1, TEXTURE_PROBE_COUNT, 0, texture_output_device));
     CUDA_TRY(&api,
              launch_one_pointer(
@@ -381,6 +390,8 @@ int main(int argc, char **argv)
     CUDA_TRY(&api, api.cuMemcpyDtoH_v2(math_results, math_device, sizeof(math_results)));
     CUDA_TRY(&api,
              api.cuMemcpyDtoH_v2(barrier_results, barrier_device, sizeof(barrier_results)));
+    CUDA_TRY(&api,
+             api.cuMemcpyDtoH_v2(local_results, local_device, sizeof(local_results)));
     CUDA_TRY(&api,
              api.cuMemcpyDtoH_v2(
                  texture_results, texture_output_device, sizeof(texture_results)));
@@ -399,6 +410,13 @@ int main(int argc, char **argv)
     fprintf(output, "  },\n  \"barrier\": {\n    \"values\": [");
     for (index = 0; index < BARRIER_THREAD_COUNT; ++index) {
         fprintf(output, "%s%u", index == 0 ? "" : ", ", barrier_results[index]);
+    }
+    fprintf(output, "]\n  },\n  \"local\": {\n    \"values\": [");
+    for (index = 0; index < LOCAL_THREAD_COUNT; ++index) {
+        if (index != 0) {
+            fputs(", ", output);
+        }
+        write_hex(output, local_results[index]);
     }
     fprintf(output, "]\n  },\n  \"texture\": {\n    \"rows\": [\n");
     for (index = 0; index < TEXTURE_PROBE_COUNT; ++index) {
@@ -439,6 +457,9 @@ cleanup:
     }
     if (texture_input_device != 0) {
         api.cuMemFree_v2(texture_input_device);
+    }
+    if (local_device != 0) {
+        api.cuMemFree_v2(local_device);
     }
     if (barrier_device != 0) {
         api.cuMemFree_v2(barrier_device);

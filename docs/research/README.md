@@ -10,10 +10,10 @@ Architecture work begins only after this sequence is complete:
 | 3 | [`cuda-driver-contract.md`](cuda-driver-contract.md) | **Complete for captured workloads.** The 196 queried exports, 35 executed exports, six Dark API tables, x86 ABI, lifecycle, native device responses, memory/copy ordering, texture binding, packed launches, NVAPI gate, and remaining probes are documented. |
 | 4 | [`zluda-runtime.md`](zluda-runtime.md) | **Complete for the observed runtime surface.** ZLUDA's x86 facade, shared-memory/event server boundary, public/Dark APIs, virtual pointers and handles, module metadata, packed launches, texture simplifications, NVAPI gate, reusable ideas, and deliberately excluded HIP/server machinery are documented. |
 | 5 | [`zluda-ptx.md`](zluda-ptx.md) | **Complete for the captured corpus.** Parser coverage, normalization order, dead-code removal, 32-bit offset conversion, module metadata, arithmetic/FP behavior, memory spaces, predication, barriers, textures, backend helpers, reusable frontend ideas, and HIP/LLVM-specific exclusions are documented. |
-| 6 | [`native-oracle-probes.md`](native-oracle-probes.md) | **Core PTX semantic probes complete; workload-output/runtime probes remain.** A MinGW x86 tool and committed RTX 3070 fixture define native FTZ, FMA, approximate math, conversion, `bar.sync`, and legacy linear-texture bounds behavior. |
+| 6 | [`native-oracle-probes.md`](native-oracle-probes.md) | **Core PTX semantic probes complete; captured workload/runtime probes remain.** An x86 tool and committed RTX 3070 fixture define native FTZ, FMA, approximate math, conversion, `bar.sync`, aligned invocation-private local memory, and integer/float legacy linear-texture bounds behavior. |
 | 7 | [`vulkan-requirements.md`](vulkan-requirements.md) | **Complete for the captured corpus and observed Intel, NVIDIA, and AMD x86 devices.** Vulkan 1.2, integer/float-control features, quantitative limits, storage/workgroup mappings, dispatch barriers, software-FTZ risk, texture bounds, and the non-requirement for subgroup size 32 are documented without selecting a permanent wrapper or runtime architecture. |
 | 8 | [`validation-plan.md`](validation-plan.md) | **Complete for the captured target.** Layered x86 facade, CUDA state, PTX corpus, standalone Vulkan differential, real-kernel replay, fluid/deformable sequence, and three-route game checks now have explicit artifacts, pass criteria, comparison policy, and acceptance gates. |
-| 9 | [`research-synthesis.md`](research-synthesis.md) | **Complete; standalone Vulkan oracle and all 17 PTX modules passed strict grammar, metadata, CFG, register-dataflow, and finite type-contract validation, opening direct SPIR-V emission.** The minimum C++17/Volk in-process design, finite PTX-to-SPIR-V path, memory/command model, cross-vendor device selection, exclusions, blockers, risks, and subsequent independently testable slices are fixed. |
+| 9 | [`research-synthesis.md`](research-synthesis.md) | **Complete; standalone Vulkan oracle, schema-5 storage IR, two captured fluid kernels, and all 17 PTX modules have evidence-backed validation.** The minimum in-process design, finite PTX-to-SPIR-V path, memory/command model, cross-vendor device selection, exclusions, blockers, risks, and independently testable slices are fixed. |
 
 ## Evidence rules
 
@@ -57,15 +57,15 @@ Open probes are tracked rather than dropped:
 
 | Probe | Status | Required before |
 |---|---|---|
-| Deterministic fluid/deformable kernel outputs | One-particle calc-hash/reorder pipeline matches native CUDA on PTX-derived Intel/RTX Vulkan; captured in-game state remains deferred | Accepting additional translated PhysX kernels without focused fixtures |
+| Deterministic fluid/deformable kernel outputs | Fluid calc-hash/reorder matches native CUDA on PTX-derived Intel/RTX Vulkan; deformable output and captured in-game state remain deferred | Accepting a translated workload family without focused fixtures |
 | Float legacy-texture fetch bits/OOB | Complete on native RTX and PTX-derived Intel/RTX Vulkan: in-range bits preserved, signed OOB returns four positive zeros | Accepting current `tex.1d.v4.f32.s32` lowering |
 | Queried-only CUDA symbol NULL versus stub behavior | Non-blocking; ZLUDA proves non-null not-supported stubs work | Removing conservative export stubs |
 | Minimal non-NVIDIA NVAPI interface set | Deferred to game-integration validation | Running the original PhysX runtime without NVIDIA |
 | CUDA host-call thread IDs | Deferred runtime-hardening evidence | Claiming observed single-thread assumptions or optimizing locking |
 | PhysX-off server-room control | Deferred attribution check | Claiming individual particle launches represent only glass |
-| Vulkan differential against committed CUDA oracle | Complete on Intel/RTX from PTX-derived SPIR-V: every f32, conversion, barrier, and integer-texture field matches bit-for-bit | Accepting reference-system standalone PTX semantic lowering |
+| Vulkan differential against committed CUDA oracle | Complete on Intel/RTX from PTX-derived SPIR-V: every f32, conversion, barrier, aligned local-memory, and integer/float-texture field matches bit-for-bit | Accepting reference-system standalone PTX semantic lowering |
 | AMD generated-SPIR-V execution | Hardware preflight passes; full oracle deferred until the AMD machine is available | Claiming cross-vendor execution correctness on AMD |
 
 Each probe blocks only the named acceptance point. None blocks the next local
-slice: selecting the next launched fluid kernel that can reuse this
-deterministic state.
+slice: module constant storage and the remaining finite lowering required by
+trace-ordered `KernelFluidDensity`.

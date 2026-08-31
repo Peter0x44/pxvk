@@ -3,8 +3,9 @@
 ## Status
 
 A project-owned x86 CUDA Driver API probe now records exact NVIDIA results for
-the PTX floating-point, workgroup-barrier, and legacy linear-texture semantics
-that are most backend-sensitive in the Mirror's Edge corpus.
+the PTX floating-point, workgroup-barrier, invocation-private local-memory, and
+legacy integer/float linear-texture semantics that are most backend-sensitive
+in the Mirror's Edge corpus.
 
 Implemented at:
 
@@ -19,7 +20,7 @@ tools/cuda-oracle/
 The committed result fixture has SHA-256:
 
 ```text
-a69570c48f5361afafbcca15408a350f19b9782730f613b35695692ce20141f9
+02dcd524f09a0578906a27d68b3892066dfcfbaf94c83fef061b6719765374e1
 ```
 
 Three native executions produced byte-identical JSON.
@@ -151,9 +152,19 @@ storage-buffer implementation therefore needs an explicit signed bounds check
 and zero result. Mapping directly to a sampled image with edge clamp would be
 incorrect for this observed path.
 
-The probe currently validates raw unsigned-integer reads. The corpus also uses
-`tex.1d.v4.f32.s32`; its component bits and the same bounds rule should be
-verified when the first Vulkan texture lowering exists.
+The float texture probe covers the same signed coordinate range with signed
+zero, subnormals, infinities, NaNs, and ordinary values. Every in-range
+component preserves its original 32-bit payload; negative and high coordinates
+return four positive-zero components.
+
+## Invocation-private local result
+
+The 64-thread local probe declares one `.u32` at offset 0 and a second
+16-byte-aligned `.u32` at offset 16. Every invocation stores and reloads only
+the aligned symbol before writing `0x5a000000 + tid` to global output. Native
+CUDA returns the complete `0x5a000000` through `0x5a00003f` sequence. This
+establishes the concrete private-storage and alignment contract needed by
+`KernelFluidDensity`'s 108-byte local depot.
 
 ## Decisions enabled
 
@@ -176,6 +187,12 @@ The only required barrier is full-workgroup `bar.sync 0` with workgroup-memory
 visibility. No subgroup or device-scope memory primitive is justified by this
 probe/corpus.
 
+### Local storage
+
+Routine `.local` declarations require an aligned, invocation-private arena.
+They do not justify a descriptor, workgroup allocation, or cross-invocation
+synchronization.
+
 ### Texture
 
 The two legacy 1D texture operations can be modeled as typed linear range
@@ -189,6 +206,7 @@ on Intel UHD and RTX 3070 Vulkan:
 
 - all 14 f32/conversion results;
 - the 64-thread shared-memory barrier sequence;
+- the 64-thread invocation-private local-memory sequence;
 - all 12 integer texture rows including signed OOB zero;
 - all 12 float texture rows, including signed zero, subnormals, infinities, and
   NaN payload preservation.
@@ -198,11 +216,11 @@ without `NoContraction` may be split. Decorating the FMA result explicitly
 restored native `0xa8800000`; the separate multiply/add remained zero on both
 devices. Native CUDA evidence is
 `tools/cuda-oracle/expected/rtx3070-driver610.88.json`, SHA-256
-`729ca715fa38fcf7da8f4d0d72a0d067c1d65056357752a9a300f96c2ee1f53b`.
+`02dcd524f09a0578906a27d68b3892066dfcfbaf94c83fef061b6719765374e1`.
 The PTX-generated Vulkan result is
 `tools/vulkan-probe/expected/reference-workstation/ptx-generated-oracle.json`,
 SHA-256
-`e1d4a6dbf54acd08978ce999112e868e291c9ab11a1e40fc64701b9cc05aecf7`.
+`3460af5a20b6754a1e1fed3e11f5d348402d3f44faec933266649585d93702a7`.
 
 ## Remaining native probes
 

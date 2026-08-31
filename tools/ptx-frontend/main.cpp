@@ -202,6 +202,16 @@ struct RegisterBank {
     std::string type;
     std::size_t count = 1;
 };
+struct RoutineVariable {
+    std::string name;
+    std::string space;
+    std::string type;
+    std::size_t offset = 0;
+    std::size_t size = 0;
+    std::size_t alignment = 0;
+    bool external = false;
+};
+
 struct Entry {
     std::string name;
     std::string kind = "entry";
@@ -210,6 +220,7 @@ struct Entry {
     std::vector<Parameter> parameters;
     std::vector<Instruction> instructions;
     std::vector<RegisterBank> register_banks;
+    std::vector<RoutineVariable> variables;
     std::vector<Label> labels;
     std::vector<std::uint32_t> max_threads;
     std::uint32_t minimum_ctas_per_sm = 0;
@@ -223,6 +234,7 @@ struct ModuleVariable {
     std::string name;
     std::string space;
     std::string type;
+    std::size_t offset = 0;
     std::size_t size = 0;
     std::size_t alignment = 0;
     bool external = false;
@@ -345,6 +357,21 @@ public:
         if (module.entries.empty() && module.functions.empty() && module.variables.empty()) {
             fail(peek(), "module has no declarations");
         }
+        std::map<std::string, std::size_t> storage_bytes;
+        for (ModuleVariable &variable : module.variables) {
+            if (variable.external) {
+                continue;
+            }
+            std::size_t &bytes = storage_bytes[variable.space];
+            bytes = align_up(bytes, variable.alignment);
+            variable.offset = bytes;
+            bytes += variable.size;
+        }
+        for (ModuleVariable &variable : module.variables) {
+            if (variable.external) {
+                variable.offset = storage_bytes[variable.space];
+            }
+        }
         return module;
     }
 
@@ -441,6 +468,13 @@ private:
                 routine.instructions.push_back(parse_instruction());
             }
             skip_newlines();
+        }
+        for (RoutineVariable &variable : routine.variables) {
+            if (variable.external) {
+                variable.offset = variable.space == "shared"
+                    ? routine.static_shared_bytes
+                    : routine.static_local_bytes;
+            }
         }
         return routine;
     }
@@ -556,9 +590,6 @@ private:
         const bool external = std::any_of(
             declaration.begin(), declaration.end(),
             [](const Token &token) { return token.text == ".extern"; });
-        if (external) {
-            return;
-        }
         std::size_t explicit_alignment = 0;
         for (std::size_t index = 0; index + 1 < declaration.size(); ++index) {
             if (declaration[index].text == ".align") {
@@ -566,33 +597,57 @@ private:
                 break;
             }
         }
+        static const std::set<std::string> storage_types = {
+            ".u8", ".u16", ".u32", ".u64",
+            ".s8", ".s16", ".s32", ".s64",
+            ".b8", ".b16", ".b32", ".b64",
+            ".f32",
+        };
         for (std::size_t index = 0; index < declaration.size(); ++index) {
-            if (declaration[index].text == ".u8" || declaration[index].text == ".u16" ||
-                declaration[index].text == ".u32" || declaration[index].text == ".u64" ||
-                declaration[index].text == ".s8" || declaration[index].text == ".s16" ||
-                declaration[index].text == ".s32" || declaration[index].text == ".s64" ||
-                declaration[index].text == ".b8" || declaration[index].text == ".b16" ||
-                declaration[index].text == ".b32" || declaration[index].text == ".b64" ||
-                declaration[index].text == ".f32") {
-                const std::size_t element_size = scalar_size(declaration[index]);
-                std::size_t count = 1;
-                for (std::size_t cursor = index + 1; cursor + 2 < declaration.size(); ++cursor) {
-                    if (declaration[cursor].text == "[") {
-                        count = parse_unsigned(declaration[cursor + 1]);
-                        if (declaration[cursor + 2].text != "]") {
-                            fail(declaration[cursor + 2], "malformed storage array");
-                        }
-                        break;
-                    }
-                }
-                const std::size_t alignment =
-                    explicit_alignment == 0 ? element_size : explicit_alignment;
-                std::size_t &storage_bytes =
-                    shared ? entry.static_shared_bytes : entry.static_local_bytes;
-                storage_bytes = align_up(storage_bytes, alignment);
-                storage_bytes += element_size * count;
-                return;
+            if (storage_types.count(declaration[index].text) == 0) {
+                continue;
             }
+            const std::size_t element_size = scalar_size(declaration[index]);
+            if (index + 1 >= declaration.size()) {
+                fail(declaration[index], "storage declaration has no name");
+            }
+            std::size_t count = 1;
+            for (std::size_t cursor = index + 2; cursor < declaration.size(); ++cursor) {
+                if (declaration[cursor].text != "[") {
+                    continue;
+                }
+                if (cursor + 1 >= declaration.size()) {
+                    fail(declaration[cursor], "malformed storage array");
+                }
+                if (declaration[cursor + 1].text == "]") {
+                    count = 0;
+                } else {
+                    if (cursor + 2 >= declaration.size() ||
+                        declaration[cursor + 2].text != "]") {
+                        fail(declaration[cursor + 1], "malformed storage array");
+                    }
+                    count = parse_unsigned(declaration[cursor + 1]);
+                }
+                break;
+            }
+            const std::size_t alignment =
+                explicit_alignment == 0 ? element_size : explicit_alignment;
+            std::size_t &storage_bytes =
+                shared ? entry.static_shared_bytes : entry.static_local_bytes;
+            const std::size_t offset = align_up(storage_bytes, alignment);
+            entry.variables.push_back({
+                declaration[index + 1].text,
+                shared ? "shared" : "local",
+                declaration[index].text,
+                offset,
+                element_size * count,
+                alignment,
+                external,
+            });
+            if (!external) {
+                storage_bytes = offset + element_size * count;
+            }
+            return;
         }
         fail(declaration.front(), "storage declaration has no supported type");
     }
@@ -1320,6 +1375,23 @@ Json structured_operands_to_json(const std::vector<std::string> &operands)
     return output;
 }
 
+Json routine_variables_to_json(const std::vector<RoutineVariable> &variables)
+{
+    Json output = Json::array();
+    for (const RoutineVariable &variable : variables) {
+        output.push_back({
+            {"name", variable.name},
+            {"space", variable.space},
+            {"type", variable.type},
+            {"offset", variable.offset},
+            {"size", variable.size},
+            {"alignment", variable.alignment},
+            {"external", variable.external},
+        });
+    }
+    return output;
+}
+
 Json routine_to_json(const Entry &routine)
 {
     validate_routine_dataflow(routine);
@@ -1335,6 +1407,7 @@ Json routine_to_json(const Entry &routine)
     output["minimum_ctas_per_sm"] = routine.minimum_ctas_per_sm;
     output["return_parameters"] = parameters_to_json(routine.return_parameters);
     output["parameters"] = parameters_to_json(routine.parameters);
+    output["variables"] = routine_variables_to_json(routine.variables);
     output["register_banks"] = Json::array();
     for (const RegisterBank &bank : routine.register_banks) {
         output["register_banks"].push_back({
@@ -1383,7 +1456,7 @@ Json routine_to_json(const Entry &routine)
 Json module_to_json(const Module &module, std::size_t source_bytes)
 {
     Json output;
-    output["schema_version"] = 4;
+    output["schema_version"] = 5;
     output["source_bytes"] = source_bytes;
     output["ptx_version"] = module.version;
     output["target"] = module.target;
@@ -1395,6 +1468,7 @@ Json module_to_json(const Module &module, std::size_t source_bytes)
             {"name", variable.name},
             {"space", variable.space},
             {"type", variable.type},
+            {"offset", variable.offset},
             {"size", variable.size},
             {"alignment", variable.alignment},
             {"external", variable.external},
@@ -1430,6 +1504,7 @@ Json routine_summary_to_json(const Entry &routine)
         {"static_shared_bytes", routine.static_shared_bytes},
         {"static_local_bytes", routine.static_local_bytes},
         {"parameters", parameters_to_json(routine.parameters)},
+        {"variables", routine_variables_to_json(routine.variables)},
         {"max_threads", routine.max_threads},
         {"minimum_ctas_per_sm", routine.minimum_ctas_per_sm},
         {"register_bank_count", routine.register_banks.size()},
@@ -1445,7 +1520,7 @@ Json corpus_to_json(
     const std::vector<std::pair<std::filesystem::path, std::pair<Module, std::size_t>>> &modules)
 {
     Json output;
-    output["schema_version"] = 2;
+    output["schema_version"] = 3;
     output["modules"] = Json::array();
     std::size_t entry_count = 0;
     std::size_t function_count = 0;
@@ -1474,6 +1549,7 @@ Json corpus_to_json(
                 {"name", variable.name},
                 {"space", variable.space},
                 {"type", variable.type},
+                {"offset", variable.offset},
                 {"size", variable.size},
                 {"alignment", variable.alignment},
                 {"external", variable.external},
@@ -1564,6 +1640,7 @@ int self_test()
         "  .reg .u32 %r<2>;\n"
         "  .shared .align 4 .u32 values[3];\n"
         "  .shared .align 8 .u64 next;\n"
+        "  .local .align 4 .b8 scratch[5];\n"
         "  ld.param.u32 %r1, [p0];\n"
         "  setp.eq.u32 %p1, %r1, 0;\n"
         "  @%p1 bra BB0_done;\n"
@@ -1573,7 +1650,17 @@ int self_test()
         "}\n";
     const Module module = parse_source(valid);
     if (module.entries.size() != 1 || module.entries[0].packed_parameter_bytes != 12 ||
-        module.entries[0].static_shared_bytes != 24 || module.entries[0].instructions.size() != 5) {
+        module.entries[0].static_shared_bytes != 24 ||
+        module.entries[0].static_local_bytes != 5 ||
+        module.entries[0].variables.size() != 3 ||
+        module.entries[0].variables[0].name != "values" ||
+        module.entries[0].variables[0].offset != 0 ||
+        module.entries[0].variables[1].name != "next" ||
+        module.entries[0].variables[1].offset != 16 ||
+        module.entries[0].variables[2].name != "scratch" ||
+        module.entries[0].variables[2].space != "local" ||
+        module.entries[0].variables[2].offset != 0 ||
+        module.entries[0].instructions.size() != 5) {
         std::cerr << "valid parser self-test produced wrong metadata\n";
         return 1;
     }

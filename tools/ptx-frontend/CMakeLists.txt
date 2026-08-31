@@ -49,7 +49,7 @@ add_test(
 add_test(
     NAME ptx-cfg-emitter
     COMMAND ptx-spirv-emitter
-        --entry cfg_probe 8
+        --entry cfg_probe 8 0
         "${CMAKE_CURRENT_BINARY_DIR}/cfg-probe-manifest.json"
         "${CMAKE_CURRENT_BINARY_DIR}/cfg-probe.spv"
 )
@@ -63,7 +63,7 @@ add_test(
 add_test(
     NAME ptx-barrier-cfg-emitter
     COMMAND ptx-spirv-emitter
-        --entry barrier_cfg_probe 8
+        --entry barrier_cfg_probe 8 8
         "${CMAKE_CURRENT_BINARY_DIR}/barrier-cfg-probe-manifest.json"
         "${CMAKE_CURRENT_BINARY_DIR}/barrier-cfg-probe.spv"
 )

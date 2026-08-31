@@ -122,6 +122,30 @@
     ret;
 }
 
+.visible .entry local_probe(
+    .param .u32 local_probe_param_0
+)
+{
+    .local .align 4 .u32 first;
+    .local .align 16 .u32 aligned;
+    .reg .u32 %out;
+    .reg .u32 %thread;
+    .reg .u32 %address;
+    .reg .u32 %offset;
+    .reg .u32 %value;
+
+    ld.param.u32 %out, [local_probe_param_0];
+    mov.u32 %thread, %tid.x;
+    mov.u32 %address, aligned;
+    add.u32 %value, %thread, 1509949440;
+    st.local.u32 [%address], %value;
+    ld.local.u32 %value, [%address];
+    shl.b32 %offset, %thread, 2;
+    add.u32 %address, %out, %offset;
+    st.global.u32 [%address], %value;
+    ret;
+}
+
 .visible .entry texture_probe(
     .param .u32 texture_probe_param_0
 )

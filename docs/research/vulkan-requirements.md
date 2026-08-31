@@ -99,11 +99,12 @@ RTX both returned native `0xa8800000`. The combined result is
 `42a8778edb77a7a74429e30fc2ec68c87c677ac0b9ca51a604539b07a8953968`.
 
 The direct compiler slice now reproduces that result from
-`tools/cuda-oracle/probe.ptx`: the frontend emits schema-4 structured IR and
-the project emitter produces a deterministic 2,609-word SPIR-V 1.5 binary.
-SDK validation passes, and the generated module matches every math, barrier,
-and texture field on Intel and RTX. The original GLSL/assembly oracle remains
-the independent Vulkan-side reference rather than compiler input.
+`tools/cuda-oracle/probe.ptx`: the frontend emits schema-5 structured IR and
+routine storage layouts, and the project emitter produces a deterministic
+2,967-word SPIR-V 1.5 binary. SDK validation passes, and the generated module
+matches every math, barrier, invocation-private local-memory, and integer/float
+texture field on Intel and RTX. The original GLSL/assembly oracle remains the
+independent Vulkan-side reference rather than compiler input.
 
 ### Observed device results
 
@@ -200,15 +201,19 @@ attribute or a declaration's maximum. A device below 512 must reject an
 unobserved launch above its real limit; supporting such a launch would first
 promote the 512 value into the hard gate.
 
-The 108-byte maximum PTX `.local` declaration maps to function-private shader
-storage and is not a Vulkan device-limit gate. Descriptor offset alignment is
-also not a heap-address gate when the 32 MiB descriptor is bound at offset zero
-and CUDA addresses remain shader-side byte offsets.
+The 108-byte maximum PTX `.local` declaration maps to an aligned
+invocation-private SPIR-V Function array and is not a Vulkan device-limit gate.
+The 64-thread native/Intel/RTX oracle proves independent store/load state at a
+16-byte-aligned routine symbol. Descriptor offset alignment is also not a heap
+address gate when the 32 MiB descriptor is bound at offset zero and CUDA
+addresses remain shader-side byte offsets.
 
 The observed shared-memory maxima are per entry. They must not be summed across
-kernels. Dynamic shared memory can be represented by a specialization-sized
-Workgroup array or another validated per-pipeline scheme; that choice remains
-implementation design.
+kernels. Kernel emission takes the captured dynamic-shared byte count as
+explicit pipeline input, combines it with aligned module/routine static
+allocations, and sizes one Workgroup `u32` arena for that entry. This is the
+validated per-pipeline representation; no runtime-sized Workgroup array or
+additional shader synchronization is required.
 
 ## PTX-to-Vulkan mapping constraints
 

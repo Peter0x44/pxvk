@@ -19,7 +19,7 @@ namespace {
 
 constexpr VkDeviceSize kBufferBytes = 32ull * 1024ull * 1024ull;
 constexpr VkDeviceSize kMemoryCopyBytes = 2ull * sizeof(std::uint32_t);
-constexpr VkDeviceSize kOracleCopyBytes = 432ull * sizeof(std::uint32_t);
+constexpr VkDeviceSize kOracleCopyBytes = 512ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kKernelFixtureCopyBytes = 512ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kReorderFixtureCopyBytes =
     32768ull * sizeof(std::uint32_t);
@@ -46,6 +46,7 @@ constexpr std::size_t kTextureInputOffset = 160;
 constexpr std::size_t kTextureOutputOffset = 256;
 constexpr std::size_t kTextureFloatInputOffset = 320;
 constexpr std::size_t kTextureFloatOutputOffset = 384;
+constexpr std::size_t kLocalOffset = 448;
 constexpr std::array<std::array<std::uint32_t, 4>, 8>
     kExpectedFloatTextureInput = {{
         {0x3f800000u, 0x80000000u, 0x00000001u, 0x7fc12345u},
@@ -373,6 +374,7 @@ struct DeviceResult {
     std::uint32_t result = 0;
     std::array<std::uint32_t, 14> math = {};
     std::array<std::uint32_t, 64> barrier = {};
+    std::array<std::uint32_t, 64> local = {};
     std::array<std::array<std::uint32_t, 4>, 12> texture = {};
     std::array<std::array<std::uint32_t, 4>, 12> texture_float = {};
     std::uint32_t kernel_hash = 0;
@@ -827,6 +829,7 @@ DeviceResult run_device(
         if (oracle_mode) {
             std::copy_n(words + kMathOffset, result.math.size(), result.math.begin());
             std::copy_n(words + kBarrierOffset, result.barrier.size(), result.barrier.begin());
+            std::copy_n(words + kLocalOffset, result.local.size(), result.local.begin());
             for (std::size_t row = 0; row < result.texture.size(); ++row) {
                 std::copy_n(
                     words + kTextureOutputOffset + row * 4u,
@@ -846,6 +849,12 @@ DeviceResult run_device(
                     index + 1u == result.barrier.size() ? 1u :
                     static_cast<std::uint32_t>(index + 2u);
                 result.pass = result.pass && result.barrier[index] == expected;
+            }
+            for (std::size_t index = 0; index < result.local.size(); ++index) {
+                result.pass =
+                    result.pass &&
+                    result.local[index] ==
+                        0x5a000000u + static_cast<std::uint32_t>(index);
             }
             for (std::size_t row = 0; row < result.texture.size(); ++row) {
                 const int coordinate = static_cast<int>(row) - 2;
@@ -1134,6 +1143,14 @@ int main(int argc, char **argv)
                    << "      \"barrier\": {\"values\": [";
             for (std::size_t barrier_index = 0; barrier_index < result.barrier.size(); ++barrier_index) {
                 output << (barrier_index == 0 ? "" : ", ") << result.barrier[barrier_index];
+            }
+            output << "]},\n"
+                   << "      \"local\": {\"values\": [";
+            for (std::size_t local_index = 0;
+                 local_index < result.local.size();
+                 ++local_index) {
+                output << (local_index == 0 ? "" : ", ")
+                       << "\"" << hex32(result.local[local_index]) << "\"";
             }
             output << "]},\n"
                    << "      \"texture\": {\"rows\": [\n";

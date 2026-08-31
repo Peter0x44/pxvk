@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "modules": [
     {
       "file": "module_0001_01_05.ptx",
@@ -41,6 +41,71 @@
               "offset": 16,
               "size": 4,
               "alignment": 4
+            }
+          ],
+          "variables": [
+            {
+              "name": "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384513_32_non_const_parameters_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 160,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384514_32_non_const_startAddrs_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 160,
+              "size": 80,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384515_32_non_const_wu_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 240,
+              "size": 16,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384516_32_non_const_convex_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 256,
+              "size": 2560,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384517_32_non_const_planes_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 2816,
+              "size": 1024,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384557_32_non_const_sharedAabbs_float2",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 3840,
+              "size": 384,
+              "alignment": 8,
+              "external": false
+            },
+            {
+              "name": "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384559_30_non_const_sSomeParticleOverlaps",
+              "space": "shared",
+              "type": ".u8",
+              "offset": 4224,
+              "size": 1,
+              "alignment": 1,
+              "external": false
             }
           ],
           "max_threads": [],
@@ -187,6 +252,62 @@
               "offset": 16,
               "size": 4,
               "alignment": 4
+            }
+          ],
+          "variables": [
+            {
+              "name": "_Z36PxgCudaFluidCollisionTrianglesBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK29PxgFluidCollisionWorkUnitMeshEPi$__cuda_local_var_383975_32_non_const_tri_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 3072,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaFluidCollisionTrianglesBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK29PxgFluidCollisionWorkUnitMeshEPi$__cuda_local_var_383976_32_non_const_parameters_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 3072,
+              "size": 160,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaFluidCollisionTrianglesBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK29PxgFluidCollisionWorkUnitMeshEPi$__cuda_local_var_383978_32_non_const_startAddrs_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 3232,
+              "size": 128,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaFluidCollisionTrianglesBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK29PxgFluidCollisionWorkUnitMeshEPi$__cuda_local_var_383980_32_non_const_wu_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 3360,
+              "size": 16,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaFluidCollisionTrianglesBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK29PxgFluidCollisionWorkUnitMeshEPi$__cuda_local_var_384017_38_non_const_sharedNewPos",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 3376,
+              "size": 768,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaFluidCollisionTrianglesBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK29PxgFluidCollisionWorkUnitMeshEPi$__cuda_local_var_384018_38_non_const_sharedOldPos",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 4144,
+              "size": 768,
+              "alignment": 4,
+              "external": false
             }
           ],
           "max_threads": [],
@@ -343,6 +464,44 @@
               "alignment": 4
             }
           ],
+          "variables": [
+            {
+              "name": "_Z40PxgCudaFluidCollisionCapsuleShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384215_32_non_const_parameters_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 160,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z40PxgCudaFluidCollisionCapsuleShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384216_32_non_const_startAddrs_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 160,
+              "size": 80,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z40PxgCudaFluidCollisionCapsuleShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384217_32_non_const_wu_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 240,
+              "size": 16,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z40PxgCudaFluidCollisionCapsuleShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384218_32_non_const_capsule_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 256,
+              "size": 2560,
+              "alignment": 16,
+              "external": false
+            }
+          ],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -453,6 +612,7 @@
           "name": "ptr",
           "space": "shared",
           "type": ".b8",
+          "offset": 4,
           "size": 0,
           "alignment": 4,
           "external": true
@@ -461,6 +621,7 @@
           "name": "sMem1",
           "space": "shared",
           "type": ".b8",
+          "offset": 4,
           "size": 0,
           "alignment": 4,
           "external": true
@@ -469,6 +630,7 @@
           "name": "_Z5rank4ILi256EE5uint4S0_$__cuda_local_var_356282_33_non_const_numtrue",
           "space": "shared",
           "type": ".u32",
+          "offset": 0,
           "size": 4,
           "alignment": 4,
           "external": false
@@ -477,6 +639,7 @@
           "name": "temp",
           "space": "shared",
           "type": ".b8",
+          "offset": 4,
           "size": 0,
           "alignment": 4,
           "external": true
@@ -485,6 +648,7 @@
           "name": "sMem2",
           "space": "shared",
           "type": ".b8",
+          "offset": 4,
           "size": 0,
           "alignment": 4,
           "external": true
@@ -531,6 +695,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -621,6 +786,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -711,6 +877,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -796,6 +963,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -873,6 +1041,17 @@
               "offset": 16,
               "size": 4,
               "alignment": 4
+            }
+          ],
+          "variables": [
+            {
+              "name": "_Z17vectorAddUniform4ILi8EEv11PxgGpuArrayIjES0_IKjEi$__cuda_local_var_356067_34_non_const_uni",
+              "space": "shared",
+              "type": ".u32",
+              "offset": 0,
+              "size": 4,
+              "alignment": 4,
+              "external": false
             }
           ],
           "max_threads": [],
@@ -962,6 +1141,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1058,6 +1238,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1143,6 +1324,35 @@
               "alignment": 4
             }
           ],
+          "variables": [
+            {
+              "name": "_Z19radixSortSingleWarpPjS_j$__cuda_local_var_356736_33_non_const_sKeys",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 128,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z19radixSortSingleWarpPjS_j$__cuda_local_var_356737_33_non_const_sValues",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 128,
+              "size": 128,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z19radixSortSingleWarpPjS_j$__cuda_local_var_356738_33_non_const_sFlags",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 256,
+              "size": 128,
+              "alignment": 4,
+              "external": false
+            }
+          ],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1225,6 +1435,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1314,6 +1525,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1425,6 +1637,53 @@
               "alignment": 4
             }
           ],
+          "variables": [
+            {
+              "name": "_Z20radixSortReorderDataILb1EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356565_34_non_const_sKeys2",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 2048,
+              "alignment": 8,
+              "external": false
+            },
+            {
+              "name": "_Z20radixSortReorderDataILb1EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356566_34_non_const_sValues2",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 2048,
+              "size": 2048,
+              "alignment": 8,
+              "external": false
+            },
+            {
+              "name": "_Z20radixSortReorderDataILb1EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356567_33_non_const_sOffsets",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 4096,
+              "size": 64,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z20radixSortReorderDataILb1EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356568_33_non_const_sBlockOffsets",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 4160,
+              "size": 64,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z20radixSortReorderDataILb1EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356569_33_non_const_sSizes",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 4224,
+              "size": 64,
+              "alignment": 4,
+              "external": false
+            }
+          ],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1523,6 +1782,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1615,6 +1875,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1727,6 +1988,53 @@
               "alignment": 4
             }
           ],
+          "variables": [
+            {
+              "name": "_Z20radixSortReorderDataILb0EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356565_34_non_const_sKeys2",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 2048,
+              "alignment": 8,
+              "external": false
+            },
+            {
+              "name": "_Z20radixSortReorderDataILb0EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356566_34_non_const_sValues2",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 2048,
+              "size": 2048,
+              "alignment": 8,
+              "external": false
+            },
+            {
+              "name": "_Z20radixSortReorderDataILb0EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356567_33_non_const_sOffsets",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 4096,
+              "size": 64,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z20radixSortReorderDataILb0EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356568_33_non_const_sBlockOffsets",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 4160,
+              "size": 64,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z20radixSortReorderDataILb0EEvPjS0_P5uint2S2_S0_S0_S0_j$__cuda_local_var_356569_33_non_const_sSizes",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 4224,
+              "size": 64,
+              "alignment": 4,
+              "external": false
+            }
+          ],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1825,6 +2133,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -1914,6 +2223,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2004,6 +2314,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2096,6 +2407,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2187,6 +2499,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2276,6 +2589,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2366,6 +2680,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2458,6 +2773,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2549,6 +2865,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2638,6 +2955,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2728,6 +3046,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2820,6 +3139,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -2911,6 +3231,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3000,6 +3321,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3090,6 +3412,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3182,6 +3505,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3273,6 +3597,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3362,6 +3687,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3452,6 +3778,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3544,6 +3871,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3635,6 +3963,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3724,6 +4053,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3814,6 +4144,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3906,6 +4237,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -3997,6 +4329,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -4086,6 +4419,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -4176,6 +4510,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -4268,6 +4603,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -4356,6 +4692,44 @@
               "offset": 16,
               "size": 4,
               "alignment": 4
+            }
+          ],
+          "variables": [
+            {
+              "name": "_Z38PxgCudaFluidCollisionConstraintsBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384457_32_non_const_inPos_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 1536,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z38PxgCudaFluidCollisionConstraintsBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384458_32_non_const_parameters_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 1536,
+              "size": 160,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z38PxgCudaFluidCollisionConstraintsBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384460_32_non_const_startAddrs_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 1696,
+              "size": 128,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z38PxgCudaFluidCollisionConstraintsBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384462_32_non_const_wu_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 1824,
+              "size": 16,
+              "alignment": 16,
+              "external": false
             }
           ],
           "max_threads": [],
@@ -4456,6 +4830,7 @@
           "name": "cCollisionParameters",
           "space": "const",
           "type": ".b8",
+          "offset": 0,
           "size": 160,
           "alignment": 4,
           "external": false
@@ -4505,6 +4880,35 @@
               "offset": 16,
               "size": 4,
               "alignment": 4
+            }
+          ],
+          "variables": [
+            {
+              "name": "_Z42PxgCudaFluidCollisionDynamicResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384461_32_non_const_parameters_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 160,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z42PxgCudaFluidCollisionDynamicResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384463_32_non_const_startAddrs_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 160,
+              "size": 128,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z42PxgCudaFluidCollisionDynamicResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384465_32_non_const_wu_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 288,
+              "size": 16,
+              "alignment": 16,
+              "external": false
             }
           ],
           "max_threads": [],
@@ -4593,6 +4997,7 @@
           "name": "updateInstanceData",
           "space": "const",
           "type": ".b8",
+          "offset": 0,
           "size": 7168,
           "alignment": 4,
           "external": false
@@ -4632,6 +5037,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -4727,6 +5133,35 @@
               "offset": 16,
               "size": 4,
               "alignment": 4
+            }
+          ],
+          "variables": [
+            {
+              "name": "_Z41PxgCudaFluidCollisionStaticResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384460_32_non_const_parameters_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 160,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z41PxgCudaFluidCollisionStaticResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384462_32_non_const_startAddrs_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 160,
+              "size": 128,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z41PxgCudaFluidCollisionStaticResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384464_32_non_const_wu_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 288,
+              "size": 16,
+              "alignment": 16,
+              "external": false
             }
           ],
           "max_threads": [],
@@ -4826,6 +5261,7 @@
           "name": "parameters_cmem",
           "space": "const",
           "type": ".b8",
+          "offset": 0,
           "size": 10240,
           "alignment": 4,
           "external": false
@@ -4905,6 +5341,17 @@
               "offset": 76,
               "size": 8,
               "alignment": 4
+            }
+          ],
+          "variables": [
+            {
+              "name": "__local_depot5",
+              "space": "local",
+              "type": ".b8",
+              "offset": 0,
+              "size": 108,
+              "alignment": 4,
+              "external": false
             }
           ],
           "max_threads": [],
@@ -4999,6 +5446,7 @@
           "name": "gDeformableCollisionInstanceData",
           "space": "const",
           "type": ".b8",
+          "offset": 0,
           "size": 17920,
           "alignment": 4,
           "external": false
@@ -5007,6 +5455,7 @@
           "name": "gDeformableCollisionBatchedData",
           "space": "const",
           "type": ".b8",
+          "offset": 17920,
           "size": 72,
           "alignment": 4,
           "external": false
@@ -5015,6 +5464,7 @@
           "name": "_Z39PxgDeformableCollisionDetectionParticleI17AnyShapeCollisionEvjj$__cuda_local_var_363646_31_non_const_sIntersectingShapeIndices",
           "space": "shared",
           "type": ".b8",
+          "offset": 0,
           "size": 4096,
           "alignment": 4,
           "external": false
@@ -5023,6 +5473,7 @@
           "name": "_Z39PxgDeformableCollisionDetectionParticleI17AnyShapeCollisionEvjj$__cuda_local_var_363647_30_non_const_sSomeThreadsStillBusy",
           "space": "shared",
           "type": ".u8",
+          "offset": 4096,
           "size": 1,
           "alignment": 1,
           "external": false
@@ -5048,6 +5499,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 5,
@@ -5173,6 +5625,7 @@
           "name": "solverGpuData",
           "space": "const",
           "type": ".b8",
+          "offset": 0,
           "size": 5888,
           "alignment": 4,
           "external": false
@@ -5181,6 +5634,7 @@
           "name": "lclParticles",
           "space": "shared",
           "type": ".b8",
+          "offset": 0,
           "size": 0,
           "alignment": 4,
           "external": true
@@ -5220,6 +5674,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 4,
@@ -5312,6 +5767,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -5392,6 +5848,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -5470,6 +5927,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [
             768,
             1,
@@ -5614,6 +6072,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [
             512,
             1,
@@ -5751,6 +6210,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [
             768,
             1,
@@ -5888,6 +6348,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [
             512,
             1,
@@ -6008,6 +6469,7 @@
           "name": "sharedHash",
           "space": "shared",
           "type": ".b8",
+          "offset": 0,
           "size": 0,
           "alignment": 4,
           "external": true
@@ -6061,6 +6523,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -6174,6 +6637,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -6278,6 +6742,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -6412,6 +6877,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -6526,6 +6992,35 @@
               "alignment": 4
             }
           ],
+          "variables": [
+            {
+              "name": "_Z26KernelFluidSimpleParticleD17PxgFixedSizeArrayI12PxcVectorPadES_IKS0_E11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj$__cuda_local_var_367116_32_non_const_parameters_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 10240,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z26KernelFluidSimpleParticleD17PxgFixedSizeArrayI12PxcVectorPadES_IKS0_E11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj$__cuda_local_var_367117_31_non_const_fluidStartIndices_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 10240,
+              "size": 260,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z26KernelFluidSimpleParticleD17PxgFixedSizeArrayI12PxcVectorPadES_IKS0_E11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj$__cuda_local_var_367118_31_non_const_fluidSizes_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 10500,
+              "size": 256,
+              "alignment": 4,
+              "external": false
+            }
+          ],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -6637,6 +7132,53 @@
               "offset": 16,
               "size": 4,
               "alignment": 4
+            }
+          ],
+          "variables": [
+            {
+              "name": "_Z36PxgCudaFluidCollisionBoxShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384158_32_non_const_parameters_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 160,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaFluidCollisionBoxShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384159_32_non_const_startAddrs_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 160,
+              "size": 80,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaFluidCollisionBoxShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384160_32_non_const_wu_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 240,
+              "size": 16,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaFluidCollisionBoxShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384161_32_non_const_box_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 256,
+              "size": 6400,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaFluidCollisionBoxShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi$__cuda_local_var_384162_32_non_const_box_planes_smem",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 6656,
+              "size": 96,
+              "alignment": 16,
+              "external": false
             }
           ],
           "max_threads": [],
@@ -6753,6 +7295,7 @@
           "name": "parameters_cmem",
           "space": "const",
           "type": ".b8",
+          "offset": 0,
           "size": 10240,
           "alignment": 4,
           "external": false
@@ -6839,6 +7382,17 @@
               "offset": 92,
               "size": 8,
               "alignment": 4
+            }
+          ],
+          "variables": [
+            {
+              "name": "__local_depot10",
+              "space": "local",
+              "type": ".b8",
+              "offset": 0,
+              "size": 108,
+              "alignment": 4,
+              "external": false
             }
           ],
           "max_threads": [],
@@ -7007,6 +7561,53 @@
               "alignment": 4
             }
           ],
+          "variables": [
+            {
+              "name": "_Z36PxgCudaDeformableSelfCollisionBruteD11PxgGpuArrayI12PxcVectorPadES_IKS0_ES3_S_IKfES_IKjEjffPi$__cuda_local_var_363127_35_non_const_sEvilOriginalPositions",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 0,
+              "size": 4096,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaDeformableSelfCollisionBruteD11PxgGpuArrayI12PxcVectorPadES_IKS0_ES3_S_IKfES_IKjEjffPi$__cuda_local_var_363128_35_non_const_sEvilPositions",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 4096,
+              "size": 4096,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaDeformableSelfCollisionBruteD11PxgGpuArrayI12PxcVectorPadES_IKS0_ES3_S_IKfES_IKjEjffPi$__cuda_local_var_363129_35_non_const_sEvilNewPositions",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 8192,
+              "size": 4096,
+              "alignment": 16,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaDeformableSelfCollisionBruteD11PxgGpuArrayI12PxcVectorPadES_IKS0_ES3_S_IKfES_IKjEjffPi$__cuda_local_var_363130_36_non_const_sInvMasses",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 12288,
+              "size": 1024,
+              "alignment": 4,
+              "external": false
+            },
+            {
+              "name": "_Z36PxgCudaDeformableSelfCollisionBruteD11PxgGpuArrayI12PxcVectorPadES_IKS0_ES3_S_IKfES_IKjEjffPi$__cuda_local_var_363131_34_non_const_sFlags",
+              "space": "shared",
+              "type": ".b8",
+              "offset": 13312,
+              "size": 1024,
+              "alignment": 4,
+              "external": false
+            }
+          ],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -7128,6 +7729,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 4,
@@ -7208,6 +7810,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 2,
@@ -7330,6 +7933,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 3,
@@ -7464,6 +8068,7 @@
               "alignment": 4
             }
           ],
+          "variables": [],
           "max_threads": [],
           "minimum_ctas_per_sm": 0,
           "register_bank_count": 4,

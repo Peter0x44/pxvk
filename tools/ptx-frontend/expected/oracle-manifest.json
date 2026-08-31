@@ -1,6 +1,6 @@
 {
-  "schema_version": 4,
-  "source_bytes": 3865,
+  "schema_version": 5,
+  "source_bytes": 4455,
   "ptx_version": "4.1",
   "target": "sm_52",
   "address_size": 32,
@@ -31,6 +31,7 @@
           "alignment": 4
         }
       ],
+      "variables": [],
       "register_banks": [
         {
           "prefix": "%out",
@@ -2119,6 +2120,17 @@
           "alignment": 4
         }
       ],
+      "variables": [
+        {
+          "name": "values",
+          "space": "shared",
+          "type": ".u32",
+          "offset": 0,
+          "size": 256,
+          "alignment": 4,
+          "external": false
+        }
+      ],
       "register_banks": [
         {
           "prefix": "%out",
@@ -2768,6 +2780,424 @@
       ]
     },
     {
+      "name": "local_probe",
+      "kind": "entry",
+      "linkage": "visible",
+      "packed_parameter_bytes": 4,
+      "return_parameter_bytes": 0,
+      "static_shared_bytes": 0,
+      "static_local_bytes": 20,
+      "max_threads": [],
+      "minimum_ctas_per_sm": 0,
+      "return_parameters": [],
+      "parameters": [
+        {
+          "name": "local_probe_param_0",
+          "type": ".u32",
+          "offset": 0,
+          "size": 4,
+          "alignment": 4
+        }
+      ],
+      "variables": [
+        {
+          "name": "first",
+          "space": "local",
+          "type": ".u32",
+          "offset": 0,
+          "size": 4,
+          "alignment": 4,
+          "external": false
+        },
+        {
+          "name": "aligned",
+          "space": "local",
+          "type": ".u32",
+          "offset": 16,
+          "size": 4,
+          "alignment": 16,
+          "external": false
+        }
+      ],
+      "register_banks": [
+        {
+          "prefix": "%out",
+          "type": ".u32",
+          "count": 1
+        },
+        {
+          "prefix": "%thread",
+          "type": ".u32",
+          "count": 1
+        },
+        {
+          "prefix": "%address",
+          "type": ".u32",
+          "count": 1
+        },
+        {
+          "prefix": "%offset",
+          "type": ".u32",
+          "count": 1
+        },
+        {
+          "prefix": "%value",
+          "type": ".u32",
+          "count": 1
+        }
+      ],
+      "labels": [],
+      "cfg": {
+        "blocks": [
+          {
+            "id": "b0",
+            "labels": [],
+            "instruction_begin": 0,
+            "instruction_end": 10,
+            "successors": []
+          }
+        ],
+        "edge_count": 0
+      },
+      "instructions": [
+        {
+          "line": 137,
+          "variant": "ld.param.u32",
+          "base": "ld",
+          "modifiers": [
+            "param",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%out",
+            "[local_probe_param_0]"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%out"
+            },
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "symbol",
+                  "name": "local_probe_param_0"
+                }
+              ]
+            }
+          ],
+          "result_type": "u32",
+          "definitions": [
+            "%out"
+          ],
+          "uses": []
+        },
+        {
+          "line": 138,
+          "variant": "mov.u32",
+          "base": "mov",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%thread",
+            "%tid.x"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "register",
+              "name": "%tid.x"
+            }
+          ],
+          "result_type": "u32",
+          "definitions": [
+            "%thread"
+          ],
+          "uses": [
+            "%tid.x"
+          ]
+        },
+        {
+          "line": 139,
+          "variant": "mov.u32",
+          "base": "mov",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%address",
+            "aligned"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "symbol",
+              "name": "aligned"
+            }
+          ],
+          "result_type": "u32",
+          "definitions": [
+            "%address"
+          ],
+          "uses": []
+        },
+        {
+          "line": 140,
+          "variant": "add.u32",
+          "base": "add",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%value",
+            "%thread",
+            "1509949440"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%value"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 1509949440
+            }
+          ],
+          "result_type": "u32",
+          "definitions": [
+            "%value"
+          ],
+          "uses": [
+            "%thread"
+          ]
+        },
+        {
+          "line": 141,
+          "variant": "st.local.u32",
+          "base": "st",
+          "modifiers": [
+            "local",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%address]",
+            "%value"
+          ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%address"
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%value"
+            }
+          ],
+          "result_type": "",
+          "definitions": [],
+          "uses": [
+            "%address",
+            "%value"
+          ]
+        },
+        {
+          "line": 142,
+          "variant": "ld.local.u32",
+          "base": "ld",
+          "modifiers": [
+            "local",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%value",
+            "[%address]"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%value"
+            },
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%address"
+                }
+              ]
+            }
+          ],
+          "result_type": "u32",
+          "definitions": [
+            "%value"
+          ],
+          "uses": [
+            "%address"
+          ]
+        },
+        {
+          "line": 143,
+          "variant": "shl.b32",
+          "base": "shl",
+          "modifiers": [
+            "b32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%offset",
+            "%thread",
+            "2"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%offset"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ],
+          "result_type": "b32",
+          "definitions": [
+            "%offset"
+          ],
+          "uses": [
+            "%thread"
+          ]
+        },
+        {
+          "line": 144,
+          "variant": "add.u32",
+          "base": "add",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%address",
+            "%out",
+            "%offset"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "register",
+              "name": "%out"
+            },
+            {
+              "kind": "register",
+              "name": "%offset"
+            }
+          ],
+          "result_type": "u32",
+          "definitions": [
+            "%address"
+          ],
+          "uses": [
+            "%out",
+            "%offset"
+          ]
+        },
+        {
+          "line": 145,
+          "variant": "st.global.u32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%address]",
+            "%value"
+          ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%address"
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%value"
+            }
+          ],
+          "result_type": "",
+          "definitions": [],
+          "uses": [
+            "%address",
+            "%value"
+          ]
+        },
+        {
+          "line": 146,
+          "variant": "ret",
+          "base": "ret",
+          "modifiers": [],
+          "predicate": "",
+          "operands": [],
+          "structured_operands": [],
+          "result_type": "",
+          "definitions": [],
+          "uses": []
+        }
+      ],
+      "instruction_count": 10,
+      "base_families": [
+        "add",
+        "ld",
+        "mov",
+        "ret",
+        "shl",
+        "st"
+      ],
+      "variants": [
+        "add.u32",
+        "ld.local.u32",
+        "ld.param.u32",
+        "mov.u32",
+        "ret",
+        "shl.b32",
+        "st.global.u32",
+        "st.local.u32"
+      ]
+    },
+    {
       "name": "texture_probe",
       "kind": "entry",
       "linkage": "visible",
@@ -2787,6 +3217,7 @@
           "alignment": 4
         }
       ],
+      "variables": [],
       "register_banks": [
         {
           "prefix": "%out",
@@ -2829,7 +3260,7 @@
       },
       "instructions": [
         {
-          "line": 135,
+          "line": 159,
           "variant": "ld.param.u32",
           "base": "ld",
           "modifiers": [
@@ -2863,7 +3294,7 @@
           "uses": []
         },
         {
-          "line": 136,
+          "line": 160,
           "variant": "mov.u32",
           "base": "mov",
           "modifiers": [
@@ -2893,7 +3324,7 @@
           ]
         },
         {
-          "line": 137,
+          "line": 161,
           "variant": "sub.s32",
           "base": "sub",
           "modifiers": [
@@ -2928,7 +3359,7 @@
           ]
         },
         {
-          "line": 138,
+          "line": 162,
           "variant": "tex.1d.v4.u32.s32",
           "base": "tex",
           "modifiers": [
@@ -2995,7 +3426,7 @@
           ]
         },
         {
-          "line": 139,
+          "line": 163,
           "variant": "mad.lo.s32",
           "base": "mad",
           "modifiers": [
@@ -3037,7 +3468,7 @@
           ]
         },
         {
-          "line": 140,
+          "line": 164,
           "variant": "st.global.v4.u32",
           "base": "st",
           "modifiers": [
@@ -3093,7 +3524,7 @@
           ]
         },
         {
-          "line": 141,
+          "line": 165,
           "variant": "ret",
           "base": "ret",
           "modifiers": [],
@@ -3145,6 +3576,7 @@
           "alignment": 4
         }
       ],
+      "variables": [],
       "register_banks": [
         {
           "prefix": "%out",
@@ -3187,7 +3619,7 @@
       },
       "instructions": [
         {
-          "line": 154,
+          "line": 178,
           "variant": "ld.param.u32",
           "base": "ld",
           "modifiers": [
@@ -3221,7 +3653,7 @@
           "uses": []
         },
         {
-          "line": 155,
+          "line": 179,
           "variant": "mov.u32",
           "base": "mov",
           "modifiers": [
@@ -3251,7 +3683,7 @@
           ]
         },
         {
-          "line": 156,
+          "line": 180,
           "variant": "sub.s32",
           "base": "sub",
           "modifiers": [
@@ -3286,7 +3718,7 @@
           ]
         },
         {
-          "line": 157,
+          "line": 181,
           "variant": "tex.1d.v4.f32.s32",
           "base": "tex",
           "modifiers": [
@@ -3353,7 +3785,7 @@
           ]
         },
         {
-          "line": 158,
+          "line": 182,
           "variant": "mad.lo.s32",
           "base": "mad",
           "modifiers": [
@@ -3395,7 +3827,7 @@
           ]
         },
         {
-          "line": 159,
+          "line": 183,
           "variant": "st.global.v4.f32",
           "base": "st",
           "modifiers": [
@@ -3451,7 +3883,7 @@
           ]
         },
         {
-          "line": 160,
+          "line": 184,
           "variant": "ret",
           "base": "ret",
           "modifiers": [],

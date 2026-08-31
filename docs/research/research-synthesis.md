@@ -204,20 +204,21 @@ implementation path; LLVM is a credible fallback if SSA/legalization grows
 beyond the finite emitter. See the official
 [LLVM SPIR-V backend guide](https://llvm.org/docs/SPIRVUsage.html).
 
-The first vertical slice now emits a 2,865-word SPIR-V 1.5 module directly from
-the schema-4 structured IR for `tools/cuda-oracle/probe.ptx`. The module uses
+The first vertical slice now emits a 2,967-word SPIR-V 1.5 module directly from
+the schema-5 structured IR for `tools/cuda-oracle/probe.ptx`. The module uses
 one 64-thread Vulkan entry point to invoke the original one-thread math,
-64-thread barrier, and 12-thread integer and float texture routines against the
-oracle binding profile. SDK `spirv-val --target-env vulkan1.2` accepts the
-binary, and Intel UHD plus RTX 3070 executions match every native CUDA math,
-barrier, and texture field.
+64-thread barrier, 64-thread invocation-private local-memory, and 12-thread
+integer and float texture routines against the oracle binding profile. SDK
+`spirv-val --target-env vulkan1.2` accepts the binary, and Intel UHD plus RTX
+3070 executions match every native CUDA math, barrier, local-memory, and texture
+field.
 
 The second slice lowers the captured 89-instruction
 `KernelFluidCalcHashPacked` entry from `module_0013_01_05.ptx`. A conservative
 structured state machine stores PTX registers in function storage and dispatches
 14 PTX basic blocks through one SPIR-V loop/switch. Binding 0 is the 32-bit
 CUDA heap and binding 1 is the packed 52-byte launch parameter buffer. The
-3,143-word module is deterministic and passes Vulkan 1.2 validation.
+3,139-word module is deterministic and passes Vulkan 1.2 validation.
 
 The paired third slice lowers the captured 116-instruction
 `KernelReorderPosVelAndFindCellStartPacked` entry. It adds shared `u32`
@@ -227,6 +228,18 @@ pre-barrier diamond is emitted as structured selections that reconverge before
 one dynamically uniform `OpControlBarrier`; the remaining 12 blocks use the
 state machine. The deterministic 3,863-word module passes Vulkan 1.2
 validation.
+
+Schema 5 retains every routine `.local`/`.shared` symbol with space, type,
+aligned byte offset, size, alignment, and external status. Kernel emission now
+uses those symbols rather than the former `sharedHash` special case, allocates
+`.local` storage per invocation, and takes the captured dynamic-shared byte
+count explicitly when sizing each Workgroup arena. The standalone local probe
+stores and reloads the aligned symbol at byte offset 16; native RTX and
+translated Intel/RTX return `0x5a000000 + tid` for all 64 invocations.
+
+This closes the local-storage prerequisite for trace-ordered
+`KernelFluidDensity`. Its remaining structural work is module constant storage
+and the finite instruction/helper subset used by that captured entry.
 
 `tools/cuda-physx-fixture` runs both kernels as a one-particle pipeline against
 the local proprietary PTX. Native RTX and PTX-derived Vulkan on Intel/RTX all
@@ -240,7 +253,7 @@ produce:
 The committed evidence hashes are:
 
 - paired native CUDA: `ff29f41035678f0fa4c829676baa5c7f43eaa2b5008f44b2ae100be24a0a1543`;
-- translated calc-hash Vulkan: `f31c88b1785ca0cb78341e2f4c4aa2905f9f64bcf683aa2d6de04d7494d4c373`;
+- translated calc-hash Vulkan: `ffec75c749d458b61c71712375300ab21aee723755ffbcb403273c038b953b1c`;
 - translated reorder Vulkan: `a048d9dc1467761ae2c39b5d53e3b3c38351cfc3428e844b898b94965a5e847d`.
 
 Reproduce locally without committing proprietary PTX:
@@ -255,10 +268,10 @@ build/ptx-frontend/Release/ptx-frontend.exe `
   path/to/module_0013_01_05.ptx module-0013.json
 build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
   _Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj `
-  64 module-0013.json fluid-calc-hash.spv
+  64 0 module-0013.json fluid-calc-hash.spv
 build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
   _Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej `
-  64 module-0013.json fluid-reorder.spv
+  64 260 module-0013.json fluid-reorder.spv
 spirv-val.exe --target-env vulkan1.2 fluid-calc-hash.spv
 spirv-val.exe --target-env vulkan1.2 fluid-reorder.spv
 build/vulkan-probe/Release/vulkan-memory-smoke.exe `
@@ -516,11 +529,11 @@ parameter offset/size/alignment, effective static shared size, and static local
 size matches `mirrors-edge-ptx-corpus-analysis.json`. This includes the two
 module-scope shared allocations that contribute to launched entry totals.
 
-The project-owned structured, value-typed oracle IR manifest SHA-256 is
-`1bfd086046f864b938db84d2898e2e9f283a4b37e1b23715253af88c82390358`.
-The redistributable structural corpus manifest is
+The project-owned schema-5 structured, value-typed oracle IR manifest SHA-256
+is `611d93f54c373bfbf9f7915e0d1a75165d1e7af59ea6e1dcfdf834a3578c8c6b`.
+The schema-3 redistributable structural corpus manifest is
 `tools/ptx-frontend/expected/corpus-manifest.json`, SHA-256
-`b46479bf9a21121b448216eacfa66344551ddfeee60f352f6d9dc536e7682cde`.
+`d49317aaeaf1f39f080d0cfdaa5c56b96dba8fa71ea06d76c672792b831e02ee`.
 Raw proprietary PTX remains local.
 
 The frontend now preserves labels, builds 4,174 deterministic basic blocks and
