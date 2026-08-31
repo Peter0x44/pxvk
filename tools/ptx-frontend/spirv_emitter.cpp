@@ -2035,15 +2035,30 @@ private:
                     operation, ValueType::u32, {a.id, b.id}));
             return;
         }
-        if (variant == "setp.gt.ftz.f32") {
-            const Value a = float_input(operands.at(1), true);
-            const Value b = float_input(operands.at(2), true);
+        if (base == "setp" && has_modifier(instruction, "f32")) {
+            const bool ftz = has_modifier(instruction, "ftz");
+            const Value a = float_input(operands.at(1), ftz);
+            const Value b = float_input(operands.at(2), ftz);
+            SpvOp operation = SpvOpNop;
+            if (variant == "setp.gt.ftz.f32") {
+                operation = SpvOpFOrdGreaterThan;
+            }
+            if (variant == "setp.lt.ftz.f32") {
+                operation = SpvOpFOrdLessThan;
+            }
+            if (variant == "setp.leu.ftz.f32") {
+                operation = SpvOpFUnordLessThanEqual;
+            }
+            if (variant == "setp.neu.ftz.f32") {
+                operation = SpvOpFUnordNotEqual;
+            }
+            if (operation == SpvOpNop) {
+                unsupported(instruction, "unsupported float comparison");
+            }
             define(
                 operands.at(0),
                 module_.instruction(
-                    SpvOpFOrdGreaterThan,
-                    ValueType::boolean,
-                    {a.id, b.id}));
+                    operation, ValueType::boolean, {a.id, b.id}));
             return;
         }
         if (base == "setp") {
@@ -2101,6 +2116,49 @@ private:
                 SpvOpFDiv, ValueType::f32, {a.id, b.id});
             module_.decorate(result.id, SpvDecorationNoContraction);
             define(operands.at(0), float_output(result, ftz));
+            return;
+        }
+        if (base == "rcp") {
+            const bool ftz = has_modifier(instruction, "ftz");
+            const Value input = float_input(operands.at(1), ftz);
+            Value result = module_.instruction(
+                SpvOpFDiv,
+                ValueType::f32,
+                {module_.constant(ValueType::f32, 0x3f800000u).id, input.id});
+            module_.decorate(result.id, SpvDecorationNoContraction);
+            define(operands.at(0), float_output(result, ftz));
+            return;
+        }
+        if (base == "sqrt") {
+            const bool ftz = has_modifier(instruction, "ftz");
+            const Value input = float_input(operands.at(1), ftz);
+            define(
+                operands.at(0),
+                float_output(
+                    module_.ext_instruction(
+                        ValueType::f32, GLSLstd450Sqrt, {input.id}),
+                    ftz));
+            return;
+        }
+        if (base == "max" && has_modifier(instruction, "f32")) {
+            const bool ftz = has_modifier(instruction, "ftz");
+            const Value left = float_input(operands.at(1), ftz);
+            const Value right = float_input(operands.at(2), ftz);
+            const Value arithmetic = module_.ext_instruction(
+                ValueType::f32, GLSLstd450FMax, {left.id, right.id});
+            const Value left_nan = module_.instruction(
+                SpvOpIsNan, ValueType::boolean, {left.id});
+            const Value right_nan = module_.instruction(
+                SpvOpIsNan, ValueType::boolean, {right.id});
+            const Value right_checked = module_.instruction(
+                SpvOpSelect,
+                ValueType::f32,
+                {right_nan.id, left.id, arithmetic.id});
+            const Value selected = module_.instruction(
+                SpvOpSelect,
+                ValueType::f32,
+                {left_nan.id, right.id, right_checked.id});
+            define(operands.at(0), float_output(selected, ftz));
             return;
         }
         if (variant == "cvt.rmi.ftz.f32.f32") {

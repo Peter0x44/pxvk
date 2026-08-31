@@ -90,6 +90,21 @@ add_test(
 )
 set_tests_properties(
     ptx-barrier-cfg-emitter PROPERTIES DEPENDS ptx-barrier-cfg-frontend)
+add_test(
+    NAME ptx-force-math-frontend
+    COMMAND ptx-frontend
+        "${CMAKE_CURRENT_SOURCE_DIR}/force_math_probe.ptx"
+        "${CMAKE_CURRENT_BINARY_DIR}/force-math-probe-manifest.json"
+)
+add_test(
+    NAME ptx-force-math-emitter
+    COMMAND ptx-spirv-emitter
+        --entry force_math_probe 1 0
+        "${CMAKE_CURRENT_BINARY_DIR}/force-math-probe-manifest.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/force-math-probe.spv"
+)
+set_tests_properties(
+    ptx-force-math-emitter PROPERTIES DEPENDS ptx-force-math-frontend)
 if(MSVC)
     foreach(target ptx-frontend ptx-spirv-emitter)
         target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)

@@ -128,6 +128,15 @@ invocations reconverge before its sole workgroup barrier. This is intentionally
 conservative; SSA and general structured CFG reconstruction remain later
 optimizations.
 
+`KernelFluidForce` extends selected-entry lowering with the finite
+`setp.lt.ftz.f32`, `setp.leu.ftz.f32`, `setp.neu.ftz.f32`,
+`max.ftz.f32`, `rcp.approx.ftz.f32`, `sqrt.approx.ftz.f32`, and
+`div.full.ftz.f32` forms. Its 499 PTX instructions lower to a deterministic
+30,375-word module with local size 128, 108 bytes of invocation-local storage,
+module constants, and six texture metadata records. The redistributable
+`force_math_probe.ptx` exercises these added forms; local captured module 0016
+execution is available through `run-tests.ps1 -CapturedPtxDir`.
+
 
 Validate and execute the module:
 
@@ -243,8 +252,8 @@ The frontend does not yet provide:
   opcode contracts;
 - reachability or dead-code elimination;
 - SPIR-V emission beyond the project oracle and the selected finite
-  `KernelFluidCalcHashPacked`, `KernelReorderPosVelAndFindCellStartPacked`, and
-  `KernelFluidDensity` slices;
+  `KernelFluidCalcHashPacked`, `KernelReorderPosVelAndFindCellStartPacked`,
+  `KernelFluidDensity`, and `KernelFluidForce` slices;
 - shader caching;
 - CUDA module/runtime integration.
 

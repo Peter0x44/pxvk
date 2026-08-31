@@ -66,6 +66,9 @@ pxvk_configure_vulkan_target(vulkan-memory-smoke)
 if(MINGW)
     target_link_options(vulkan-memory-smoke PRIVATE -static-libstdc++)
 endif()
+set_property(
+    TARGET vulkan-memory-smoke
+    APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/oracle.spv")
 add_custom_command(
     TARGET vulkan-memory-smoke POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

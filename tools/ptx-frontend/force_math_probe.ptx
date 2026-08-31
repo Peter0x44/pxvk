@@ -1,0 +1,31 @@
+.version 4.1
+.target sm_52
+.address_size 32
+
+.visible .entry force_math_probe(
+    .param .u32 force_math_probe_param_0
+)
+{
+    .reg .pred %p<4>;
+    .reg .u32 %r<2>;
+    .reg .f32 %f<16>;
+
+    ld.param.u32 %r1, [force_math_probe_param_0];
+    mov.f32 %f1, 0f3F800000;
+    mov.f32 %f2, 0f40000000;
+    mov.f32 %f3, 0f40800000;
+    mov.f32 %f4, 0f7FC12345;
+    rcp.approx.ftz.f32 %f5, %f2;
+    sqrt.approx.ftz.f32 %f6, %f3;
+    div.full.ftz.f32 %f7, %f1, %f2;
+    max.ftz.f32 %f8, %f4, %f2;
+    setp.lt.ftz.f32 %p1, %f1, %f2;
+    setp.leu.ftz.f32 %p2, %f4, %f2;
+    setp.neu.ftz.f32 %p3, %f4, %f4;
+    selp.f32 %f9, %f1, %f2, %p1;
+    selp.f32 %f10, %f2, %f1, %p2;
+    selp.f32 %f11, %f3, %f1, %p3;
+    st.global.v4.f32 [%r1], {%f5, %f6, %f7, %f8};
+    st.global.v4.f32 [%r1+16], {%f9, %f10, %f11, %f1};
+    ret;
+}

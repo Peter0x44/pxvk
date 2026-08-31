@@ -15,12 +15,15 @@
     "_Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej"
 #define DENSITY_KERNEL_NAME \
     "_Z19KernelFluidDensityD17PxgFixedSizeArrayIfES0_15DensityDebugGPUPiS_IK6float4ES_IKjES7_S7_S7_"
+#define FORCE_KERNEL_NAME \
+    "_Z17KernelFluidForceD17PxgFixedSizeArrayI12PxcVectorPadE13ForceDebugGPUPiS_IK6float4ES6_S_IKfES_IKjESA_SA_SA_"
 #define TEXTURE_PARTICLE_COUNT 64u
 #define CELL_TEXTURE_COUNT 524288u
 #define SORTED_POSITION_BYTES (TEXTURE_PARTICLE_COUNT * 4u * sizeof(uint32_t))
 #define PARTICLE_HASH_BYTES (TEXTURE_PARTICLE_COUNT * sizeof(uint32_t))
 #define DENSITY_CONSTANT_COPY_BYTES 1024u
 #define EXPECTED_DENSITY_BITS 0x40000000u
+#define FORCE_CONSTANT_COPY_BYTES 1024u
 #define EXPECTED_HASH (1u + (2u << 6u) + (3u << 12u))
 
 typedef struct cuda_api {
@@ -137,6 +140,21 @@ static void report_cuda_error(cuda_api *api, const char *operation, CUresult res
         }                                                        \
     } while (0)
 
+#define BIND_LINEAR_TEXTURE(api, texture, offset, pointer, byte_count, format, components, flags) \
+    do {                                                                                          \
+        CUDA_TRY((api), (api)->cuTexRefSetFormat((texture), (format), (components)));             \
+        CUDA_TRY((api), (api)->cuTexRefSetFlags((texture), (flags)));                              \
+        CUDA_TRY((api),                                                                            \
+                 (api)->cuTexRefSetFilterMode(                                                     \
+                     (texture), CU_TR_FILTER_MODE_POINT));                                         \
+        CUDA_TRY((api),                                                                            \
+                 (api)->cuTexRefSetAddressMode(                                                    \
+                     (texture), 0, CU_TR_ADDRESS_MODE_CLAMP));                                     \
+        CUDA_TRY((api),                                                                            \
+                 (api)->cuTexRefSetAddress_v2(                                                     \
+                     &(offset), (texture), (pointer), (byte_count)));                              \
+    } while (0)
+
 static char *read_text_file(const char *path)
 {
     FILE *file = fopen(path, "rb");
@@ -185,19 +203,30 @@ int main(int argc, char **argv)
     cuda_api api;
     char *ptx = NULL;
     char *density_ptx = NULL;
+    char *force_ptx = NULL;
     CUdevice device = 0;
     CUcontext context = NULL;
     CUmodule module = NULL;
     CUmodule density_module = NULL;
+    CUmodule force_module = NULL;
     CUfunction calc_hash_function = NULL;
     CUfunction reorder_function = NULL;
     CUfunction density_function = NULL;
+    CUfunction force_function = NULL;
     CUtexref sorted_positions_texture = NULL;
     CUtexref particle_hash_texture = NULL;
     CUtexref cell_start_texture = NULL;
     CUtexref cell_end_texture = NULL;
     CUdeviceptr density_constant_symbol = 0;
     size_t density_constant_bytes = 0;
+    CUdeviceptr force_constant_symbol = 0;
+    size_t force_constant_bytes = 0;
+    CUtexref force_positions_texture = NULL;
+    CUtexref force_velocities_texture = NULL;
+    CUtexref force_densities_texture = NULL;
+    CUtexref force_hash_texture = NULL;
+    CUtexref force_cell_start_texture = NULL;
+    CUtexref force_cell_end_texture = NULL;
     CUdeviceptr output_hash_device = 0;
     CUdeviceptr output_index_device = 0;
     CUdeviceptr positions_device = 0;
@@ -212,6 +241,7 @@ int main(int argc, char **argv)
     CUdeviceptr mapping_device = 0;
     CUdeviceptr density_device = 0;
     CUdeviceptr remapped_density_device = 0;
+    CUdeviceptr force_device = 0;
     uint32_t output_hash = 0xdeadbeefu;
     uint32_t output_index = 0xdeadbeefu;
     const uint32_t position_bits[4] = {
@@ -222,6 +252,7 @@ int main(int argc, char **argv)
     };
     uint32_t reordered_position_bits[4] = {0};
     uint32_t reordered_velocity_bits[4] = {0};
+    uint32_t force_bits[4] = {0};
     uint32_t output_cell_start = 0xdeadbeefu;
     uint32_t output_cell_end = 0xdeadbeefu;
     const uint32_t search_starts[2] = {0u, 1u};
@@ -232,6 +263,8 @@ int main(int argc, char **argv)
         DENSITY_CONSTANT_COPY_BYTES / sizeof(uint32_t)] = {0};
     uint32_t density_bits = 0xdeadbeefu;
     uint32_t remapped_density_bits = 0xdeadbeefu;
+    uint32_t force_constant_words[
+        FORCE_CONSTANT_COPY_BYTES / sizeof(uint32_t)] = {0};
     uint32_t output_hash_arg[2] = {0};
     uint32_t output_index_arg[2] = {0};
     uint32_t positions_arg[2] = {0};
@@ -246,6 +279,9 @@ int main(int argc, char **argv)
     uint32_t mapping_arg[2] = {0};
     uint32_t density_arg[2] = {0};
     uint32_t remapped_density_arg[2] = {0};
+    uint32_t force_arg[2] = {0};
+    uint32_t force_debug[8] = {0};
+    uint32_t force_debug_pointer = 0;
     uint32_t density_debug[6] = {0};
     uint32_t density_debug_pointer = 0;
     uint32_t particle_count = 1u;
@@ -255,15 +291,21 @@ int main(int argc, char **argv)
     size_t particle_hash_texture_offset = ~(size_t)0;
     size_t cell_start_texture_offset = ~(size_t)0;
     size_t cell_end_texture_offset = ~(size_t)0;
+    size_t force_positions_texture_offset = ~(size_t)0;
+    size_t force_velocities_texture_offset = ~(size_t)0;
+    size_t force_densities_texture_offset = ~(size_t)0;
+    size_t force_hash_texture_offset = ~(size_t)0;
+    size_t force_cell_start_texture_offset = ~(size_t)0;
+    size_t force_cell_end_texture_offset = ~(size_t)0;
     FILE *output = NULL;
     int exit_code = 1;
     bool pass = false;
 
-    if (argc != 4) {
+    if (argc != 5) {
         fprintf(
             stderr,
             "usage: cuda-physx-fixture <module-0013.ptx> <module-0010.ptx> "
-            "<output.json>\n");
+            "<module-0016.ptx> <output.json>\n");
         return 2;
     }
     if (!load_cuda(&api)) {
@@ -277,6 +319,10 @@ int main(int argc, char **argv)
     if (density_ptx == NULL) {
         goto cleanup;
     }
+    force_ptx = read_text_file(argv[3]);
+    if (force_ptx == NULL) {
+        goto cleanup;
+    }
 
     CUDA_TRY(&api, api.cuInit(0));
     CUDA_TRY(&api, api.cuDeviceGet(&device, 0));
@@ -284,6 +330,7 @@ int main(int argc, char **argv)
     CUDA_TRY(&api, api.cuCtxCreate_v2(&context, 0, device));
     CUDA_TRY(&api, api.cuModuleLoadData(&module, ptx));
     CUDA_TRY(&api, api.cuModuleLoadData(&density_module, density_ptx));
+    CUDA_TRY(&api, api.cuModuleLoadData(&force_module, force_ptx));
     CUDA_TRY(&api,
              api.cuModuleGetFunction(
                  &calc_hash_function, module, CALC_HASH_KERNEL_NAME));
@@ -294,6 +341,9 @@ int main(int argc, char **argv)
              api.cuModuleGetFunction(
                  &density_function, density_module, DENSITY_KERNEL_NAME));
     CUDA_TRY(&api,
+             api.cuModuleGetFunction(
+                 &force_function, force_module, FORCE_KERNEL_NAME));
+    CUDA_TRY(&api,
              api.cuModuleGetGlobal_v2(
                  &density_constant_symbol,
                  &density_constant_bytes,
@@ -301,6 +351,16 @@ int main(int argc, char **argv)
                  "parameters_cmem"));
     if (density_constant_bytes < DENSITY_CONSTANT_COPY_BYTES) {
         fprintf(stderr, "density constant symbol is too small\n");
+        goto cleanup;
+    }
+    CUDA_TRY(&api,
+             api.cuModuleGetGlobal_v2(
+                 &force_constant_symbol,
+                 &force_constant_bytes,
+                 force_module,
+                 "parameters_cmem"));
+    if (force_constant_bytes < FORCE_CONSTANT_COPY_BYTES) {
+        fprintf(stderr, "force constant symbol is too small\n");
         goto cleanup;
     }
     CUDA_TRY(&api,
@@ -323,6 +383,36 @@ int main(int argc, char **argv)
                  &cell_end_texture,
                  density_module,
                  "inputCellEndTex"));
+    CUDA_TRY(&api,
+             api.cuModuleGetTexRef(
+                 &force_positions_texture,
+                 force_module,
+                 "inputSortedPositionsTex"));
+    CUDA_TRY(&api,
+             api.cuModuleGetTexRef(
+                 &force_velocities_texture,
+                 force_module,
+                 "inputSortedVelocitiesTex"));
+    CUDA_TRY(&api,
+             api.cuModuleGetTexRef(
+                 &force_densities_texture,
+                 force_module,
+                 "inputSortedDensitiesTex"));
+    CUDA_TRY(&api,
+             api.cuModuleGetTexRef(
+                 &force_hash_texture,
+                 force_module,
+                 "inputParticleHashKeyTex"));
+    CUDA_TRY(&api,
+             api.cuModuleGetTexRef(
+                 &force_cell_start_texture,
+                 force_module,
+                 "inputCellStartTex"));
+    CUDA_TRY(&api,
+             api.cuModuleGetTexRef(
+                 &force_cell_end_texture,
+                 force_module,
+                 "inputCellEndTex"));
 
     CUDA_TRY(&api, api.cuMemAlloc_v2(&output_hash_device, PARTICLE_HASH_BYTES));
     CUDA_TRY(&api, api.cuMemAlloc_v2(&output_index_device, sizeof(output_index)));
@@ -336,7 +426,7 @@ int main(int argc, char **argv)
                  &reordered_positions_device, SORTED_POSITION_BYTES));
     CUDA_TRY(&api,
              api.cuMemAlloc_v2(
-                 &reordered_velocities_device, sizeof(reordered_velocity_bits)));
+                 &reordered_velocities_device, SORTED_POSITION_BYTES));
     CUDA_TRY(&api,
              api.cuMemAlloc_v2(
                  &output_cell_starts_device,
@@ -346,10 +436,11 @@ int main(int argc, char **argv)
                  &output_cell_ends_device,
                  cell_output_count * sizeof(uint32_t)));
     CUDA_TRY(&api, api.cuMemAlloc_v2(&mapping_device, sizeof(mapping)));
-    CUDA_TRY(&api, api.cuMemAlloc_v2(&density_device, sizeof(density_bits)));
+    CUDA_TRY(&api, api.cuMemAlloc_v2(&density_device, PARTICLE_HASH_BYTES));
     CUDA_TRY(&api,
              api.cuMemAlloc_v2(
-                 &remapped_density_device, sizeof(remapped_density_bits)));
+                 &remapped_density_device, PARTICLE_HASH_BYTES));
+    CUDA_TRY(&api, api.cuMemAlloc_v2(&force_device, sizeof(force_bits)));
 
     if (!pointer32(output_hash_device, &output_hash_arg[0]) ||
         !pointer32(output_index_device, &output_index_arg[0]) ||
@@ -364,7 +455,8 @@ int main(int argc, char **argv)
         !pointer32(output_cell_ends_device, &output_cell_ends_arg[0]) ||
         !pointer32(mapping_device, &mapping_arg[0]) ||
         !pointer32(density_device, &density_arg[0]) ||
-        !pointer32(remapped_density_device, &remapped_density_arg[0])) {
+        !pointer32(remapped_density_device, &remapped_density_arg[0]) ||
+        !pointer32(force_device, &force_arg[0])) {
         goto cleanup;
     }
     output_hash_arg[1] = 1u;
@@ -381,10 +473,17 @@ int main(int argc, char **argv)
     mapping_arg[1] = 1u;
     density_arg[1] = 1u;
     remapped_density_arg[1] = 1u;
+    force_arg[1] = 1u;
     parameter_words[1] = 0x3f800000u;
     density_constant_words[13] = 0x40000000u;
     density_constant_words[18] = 0x3f800000u;
     density_constant_words[21] = 0x3f800000u;
+    force_constant_words[0] = 0x3f800000u;
+    force_constant_words[10] = 0x3f800000u;
+    force_constant_words[12] = 0x3f800000u;
+    force_constant_words[16] = 0x42c80000u;
+    force_constant_words[18] = 0x3f800000u;
+    force_constant_words[21] = 0x3f800000u;
 
     CUDA_TRY(&api,
              api.cuMemsetD32_v2(
@@ -402,10 +501,26 @@ int main(int argc, char **argv)
                  0u,
                  SORTED_POSITION_BYTES / sizeof(uint32_t)));
     CUDA_TRY(&api,
+             api.cuMemsetD32_v2(
+                 reordered_velocities_device,
+                 0u,
+                 SORTED_POSITION_BYTES / sizeof(uint32_t)));
+    CUDA_TRY(&api,
              api.cuMemcpyHtoD_v2(
                  density_constant_symbol,
                  density_constant_words,
                  DENSITY_CONSTANT_COPY_BYTES));
+    CUDA_TRY(&api,
+             api.cuMemcpyHtoD_v2(
+                 force_constant_symbol,
+                 force_constant_words,
+                 FORCE_CONSTANT_COPY_BYTES));
+    CUDA_TRY(&api,
+             api.cuMemsetD32_v2(
+                 density_device, 0u, TEXTURE_PARTICLE_COUNT));
+    CUDA_TRY(&api,
+             api.cuMemsetD32_v2(
+                 remapped_density_device, 0u, TEXTURE_PARTICLE_COUNT));
     CUDA_TRY(&api,
              api.cuMemcpyHtoD_v2(
                  density_device, &density_bits, sizeof(density_bits)));
@@ -414,6 +529,9 @@ int main(int argc, char **argv)
                  remapped_density_device,
                  &remapped_density_bits,
                  sizeof(remapped_density_bits)));
+    CUDA_TRY(&api,
+             api.cuMemsetD32_v2(
+                 force_device, 0xdeadbeefu, 4u));
     CUDA_TRY(&api,
              api.cuMemsetD32_v2(
                  output_cell_starts_device, 0xffffffffu, cell_output_count));
@@ -498,6 +616,69 @@ int main(int argc, char **argv)
         fprintf(stderr, "density texture binding returned a nonzero byte offset\n");
         goto cleanup;
     }
+    BIND_LINEAR_TEXTURE(
+        &api,
+        force_positions_texture,
+        force_positions_texture_offset,
+        reordered_positions_device,
+        SORTED_POSITION_BYTES,
+        CU_AD_FORMAT_FLOAT,
+        4,
+        0);
+    BIND_LINEAR_TEXTURE(
+        &api,
+        force_velocities_texture,
+        force_velocities_texture_offset,
+        reordered_velocities_device,
+        SORTED_POSITION_BYTES,
+        CU_AD_FORMAT_FLOAT,
+        4,
+        0);
+    BIND_LINEAR_TEXTURE(
+        &api,
+        force_densities_texture,
+        force_densities_texture_offset,
+        density_device,
+        PARTICLE_HASH_BYTES,
+        CU_AD_FORMAT_FLOAT,
+        1,
+        0);
+    BIND_LINEAR_TEXTURE(
+        &api,
+        force_hash_texture,
+        force_hash_texture_offset,
+        output_hash_device,
+        PARTICLE_HASH_BYTES,
+        CU_AD_FORMAT_UNSIGNED_INT32,
+        1,
+        CU_TRSF_READ_AS_INTEGER);
+    BIND_LINEAR_TEXTURE(
+        &api,
+        force_cell_start_texture,
+        force_cell_start_texture_offset,
+        output_cell_starts_device,
+        cell_output_count * sizeof(uint32_t),
+        CU_AD_FORMAT_UNSIGNED_INT32,
+        1,
+        CU_TRSF_READ_AS_INTEGER);
+    BIND_LINEAR_TEXTURE(
+        &api,
+        force_cell_end_texture,
+        force_cell_end_texture_offset,
+        output_cell_ends_device,
+        cell_output_count * sizeof(uint32_t),
+        CU_AD_FORMAT_UNSIGNED_INT32,
+        1,
+        CU_TRSF_READ_AS_INTEGER);
+    if (force_positions_texture_offset != 0u ||
+        force_velocities_texture_offset != 0u ||
+        force_densities_texture_offset != 0u ||
+        force_hash_texture_offset != 0u ||
+        force_cell_start_texture_offset != 0u ||
+        force_cell_end_texture_offset != 0u) {
+        fprintf(stderr, "force texture binding returned a nonzero byte offset\n");
+        goto cleanup;
+    }
 
     {
         void *calc_parameters[] = {
@@ -558,6 +739,27 @@ int main(int argc, char **argv)
                                           density_parameters,
                                           NULL));
     }
+    {
+        void *force_parameters[] = {
+            force_arg,
+            force_debug,
+            &force_debug_pointer,
+            reordered_positions_arg,
+            reordered_velocities_arg,
+            remapped_density_arg,
+            output_hash_arg,
+            mapping_arg,
+            output_cell_starts_arg,
+            output_cell_ends_arg,
+        };
+        CUDA_TRY(&api, api.cuLaunchKernel(force_function,
+                                          1, 1, 1,
+                                          128, 1, 1,
+                                          0,
+                                          NULL,
+                                          force_parameters,
+                                          NULL));
+    }
     CUDA_TRY(&api, api.cuCtxSynchronize());
     CUDA_TRY(&api, api.cuMemcpyDtoH_v2(&output_hash, output_hash_device, sizeof(output_hash)));
     CUDA_TRY(&api, api.cuMemcpyDtoH_v2(&output_index, output_index_device, sizeof(output_index)));
@@ -591,6 +793,9 @@ int main(int argc, char **argv)
                  &remapped_density_bits,
                  remapped_density_device,
                  sizeof(remapped_density_bits)));
+    CUDA_TRY(&api,
+             api.cuMemcpyDtoH_v2(
+                 force_bits, force_device, sizeof(force_bits)));
 
     pass =
         output_hash == EXPECTED_HASH &&
@@ -600,26 +805,33 @@ int main(int argc, char **argv)
         output_cell_start == 0u &&
         output_cell_end == 1u &&
         density_bits == EXPECTED_DENSITY_BITS &&
-        remapped_density_bits == EXPECTED_DENSITY_BITS;
+        remapped_density_bits == EXPECTED_DENSITY_BITS &&
+        force_bits[0] == velocity_bits[0] &&
+        force_bits[1] == velocity_bits[1] &&
+        force_bits[2] == velocity_bits[2] &&
+        force_bits[3] == 0u;
 
-    output = fopen(argv[3], "wb");
+    output = fopen(argv[4], "wb");
     if (output == NULL) {
-        fprintf(stderr, "failed to open output file: %s\n", argv[3]);
+        fprintf(stderr, "failed to open output file: %s\n", argv[4]);
         goto cleanup;
     }
     fprintf(output,
             "{\n"
-            "  \"schema_version\": 3,\n"
+            "  \"schema_version\": 4,\n"
             "  \"device\": \"%s\",\n"
             "  \"kernels\": [\"KernelFluidCalcHashPacked\", "
                 "\"KernelReorderPosVelAndFindCellStartPacked\", "
-                "\"KernelFluidDensity\"],\n"
+                "\"KernelFluidDensity\", \"KernelFluidForce\"],\n"
             "  \"position_bits\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n"
             "  \"velocity_bits\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n"
             "  \"cell_divisor_bits\": \"0x3f800000\",\n"
             "  \"density_constants\": {\"radius_term\": \"0x3f800000\", "
                 "\"distance_scale\": \"0x3f800000\", "
                 "\"normalization\": \"0x40000000\"},\n"
+            "  \"force_constants\": {\"time_step\": \"0x3f800000\", "
+                "\"damping\": \"0x00000000\", "
+                "\"maximum_velocity\": \"0x42c80000\"},\n"
             "  \"hash\": \"0x%08x\",\n"
             "  \"index\": %u,\n"
             "  \"reordered_position_bits\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n"
@@ -628,6 +840,7 @@ int main(int argc, char **argv)
             "  \"cell_end\": %u,\n"
             "  \"density_bits\": \"0x%08x\",\n"
             "  \"remapped_density_bits\": \"0x%08x\",\n"
+            "  \"force_bits\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n"
             "  \"pass\": %s\n"
             "}\n",
             device_name,
@@ -643,22 +856,34 @@ int main(int argc, char **argv)
             output_cell_end,
             density_bits,
             remapped_density_bits,
+            force_bits[0],
+            force_bits[1],
+            force_bits[2],
+            force_bits[3],
             pass ? "true" : "false");
     fclose(output);
     output = NULL;
     exit_code = pass ? 0 : 1;
-    printf("%s  %s: hash=0x%08x index=%u cells=[%u,%u] density=0x%08x\n",
+    printf("%s  %s: hash=0x%08x index=%u cells=[%u,%u] "
+           "density=0x%08x force=[0x%08x,0x%08x,0x%08x,0x%08x]\n",
            pass ? "PASS" : "FAIL",
            device_name,
            output_hash,
            output_index,
            output_cell_start,
            output_cell_end,
-           density_bits);
+           density_bits,
+           force_bits[0],
+           force_bits[1],
+           force_bits[2],
+           force_bits[3]);
 
 cleanup:
     if (output != NULL) {
         fclose(output);
+    }
+    if (force_module != NULL) {
+        api.cuModuleUnload(force_module);
     }
     if (density_module != NULL) {
         api.cuModuleUnload(density_module);
@@ -666,6 +891,7 @@ cleanup:
     if (module != NULL) {
         api.cuModuleUnload(module);
     }
+    free_device(&api, &force_device);
     free_device(&api, &remapped_density_device);
     free_device(&api, &density_device);
     free_device(&api, &mapping_device);
@@ -685,6 +911,7 @@ cleanup:
     }
     free(ptx);
     free(density_ptx);
+    free(force_ptx);
     if (api.library != NULL) {
         FreeLibrary(api.library);
     }

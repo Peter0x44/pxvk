@@ -193,12 +193,13 @@ For each of the 17 cataloged PTX hashes:
 
 The project-owned oracle completes this sequence through direct SPIR-V emission
 and exact Intel/RTX execution. The captured `KernelFluidCalcHashPacked`,
-`KernelReorderPosVelAndFindCellStartPacked`, and `KernelFluidDensity` entries
-also compile and validate. Native RTX runs them as a one-particle pipeline;
-PTX-derived Vulkan matches the calc/reorder state and both density outputs on
-Intel and RTX. Density uses the trace-observed texture lengths, constant-copy
-length, and block size with synthetic exact constant values. The other 13
-launched entries remain parse/type/CFG validated rather than lowered.
+`KernelReorderPosVelAndFindCellStartPacked`, `KernelFluidDensity`, and
+`KernelFluidForce` entries also compile and validate. Native RTX runs them as a
+one-particle pipeline; PTX-derived Vulkan matches calc/reorder state, both
+density outputs, and the force vector on Intel and RTX. Density and force use
+trace-observed texture lengths, constant-copy lengths, and block sizes with
+synthetic exact constant values. The other 12 launched entries remain
+parse/type/CFG validated rather than lowered.
 
 The raw PTX remains local. A committed normalized manifest should contain only
 hashes and non-proprietary structural expectations already documented in

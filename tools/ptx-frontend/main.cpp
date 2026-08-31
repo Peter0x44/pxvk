@@ -890,34 +890,6 @@ instruction_def_use(const Instruction &instruction)
     }
     return {definitions, uses};
 }
-bool register_is_declared(const Entry &routine, const std::string &name)
-{
-    static const std::set<std::string> special_registers = {
-        "%tid.x", "%ntid.x", "%ctaid.x", "%nctaid.x",
-    };
-    if (special_registers.count(name) != 0) {
-        return true;
-    }
-    for (const RegisterBank &bank : routine.register_banks) {
-        if (bank.count == 1 && name == bank.prefix) {
-            return true;
-        }
-        if (bank.count > 1 && name.rfind(bank.prefix, 0) == 0) {
-            const std::string suffix = name.substr(bank.prefix.size());
-            if (suffix.empty() ||
-                std::any_of(suffix.begin(), suffix.end(), [](char value) {
-                    return std::isdigit(static_cast<unsigned char>(value)) == 0;
-                })) {
-                continue;
-            }
-            const std::size_t index = static_cast<std::size_t>(std::stoul(suffix));
-            if (index < bank.count) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 std::string declared_register_type(const Entry &routine, const std::string &name)
 {

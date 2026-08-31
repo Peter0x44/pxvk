@@ -285,13 +285,31 @@ module, with bindings 0/1/2/3 and local size 192, passes Vulkan 1.2 validation;
 SHA-256 is
 `f79e55fa85c6edd760a2479692d7f5ab40a6ae726b410e11458062e8c6db083f`.
 
-`tools/cuda-physx-fixture` now runs a three-kernel one-particle pipeline against
-the local proprietary module 0013 and module 0010 PTX. Calc-hash and reorder
-produce density's inputs. The density launch then uses the trace-observed block
-size 192, 1,024-byte module-constant update, 64-element position/hash texture
-bindings, and 524,288-element cell-start/end bindings. The fixture constants
-are synthetic exact bits placed at the captured constant offsets: radius term
-and distance scale `1.0f`, normalization `2.0f`. This is a trace-shaped
+The next trace-ordered entry, `KernelFluidForce`, contains 499 instructions in
+68 basic blocks with 100 CFG edges. It uses a 100-byte packed parameter block,
+108 bytes of invocation-local storage, the 10,240-byte module constant, and six
+linear texture references: sorted positions, velocities, densities, hash keys,
+cell starts, and cell ends. The captured launch uses local size 128 and no
+dynamic shared memory. Finite lowering adds ordered `lt`, unordered `le`/`ne`,
+FTZ `max`, approximate reciprocal/square-root, and full float division. The
+committed `force_math_probe.ptx` keeps those selected-entry paths in the
+redistributable CTest suite. The deterministic 30,375-word force module passes
+Vulkan 1.2 validation; SHA-256 is
+`c0b1fba28f3a8cfaf94e600c711b906e212e08162824a29e25dd0b86e52df534`.
+
+`tools/cuda-physx-fixture` now runs a four-kernel one-particle pipeline against
+local proprietary modules 0013, 0010, and 0016. Calc-hash and reorder produce
+density's inputs. Density uses the trace-observed block size 192, 1,024-byte
+module-constant update, 64-element position/hash texture bindings, and
+524,288-element cell-start/end bindings. Force consumes that output with its
+trace-observed block size 128, 1,024-byte constant update, three 64-element
+float texture bindings, the 64-element hash, and the same cell tables.
+
+The fixture constants are synthetic exact bits placed at captured offsets.
+Density uses radius term and distance scale `1.0f` plus normalization `2.0f`.
+Force uses time step `1.0f`, zero damping and acceleration, and maximum velocity
+`100.0f`. This makes the one-particle self-neighbor contribute no pair force,
+so the exact output is the input velocity. This is a trace-shaped
 differential, not a captured in-game memory snapshot.
 
 Native RTX produces:
@@ -300,15 +318,18 @@ Native RTX produces:
 - reordered position bits `[0x3f800000, 0x40000000, 0x40400000, 0x00000000]`;
 - reordered velocity bits `[0x40800000, 0x40a00000, 0x40c00000, 0x40e00000]`;
 - cell interval `[0, 1]` at hash `0x00003081`;
-- direct and remapped density bits `0x40000000` (`2.0f`).
+- direct and remapped density bits `0x40000000` (`2.0f`);
+- force bits `[0x40800000, 0x40a00000, 0x40c00000, 0x00000000]`.
 
-The Vulkan density fixture starts from the identical post-reorder state and
-binds separate constant and texture-metadata descriptor ranges. Intel UHD and
-RTX 3070 both return `0x40000000` for the direct and remapped outputs. The
+The Vulkan density and force fixtures start from the corresponding deterministic
+post-reorder/post-density state and bind separate constant and texture-metadata
+descriptor ranges. Intel UHD and RTX 3070 match every native output bit. The
 committed evidence hashes are:
 
-- native three-kernel CUDA pipeline:
-  `3658b7bc3ae2ce6fa1cbba9c60760881c6790b6992a02ef2f3137224fc5fa6cc`;
+- native four-kernel CUDA pipeline:
+  `b27ef7d9030bcdff2a77d84e4df7af2a95766a1fe920bb74d4696e6cd3b8cb2c`;
+- translated force Vulkan:
+  `ce9dc03f572be9e5901c3cf6cc2f56caad7af3e1a2f5d2c5717b4b20c1f262b1`;
 - translated density Vulkan:
   `67ca1b0f75a279a1a9ad00be197c9d5252494871739f3f8acd3fa05a3d9fa079`;
 - translated calc-hash Vulkan:
@@ -316,27 +337,16 @@ committed evidence hashes are:
 - translated reorder Vulkan:
   `a048d9dc1467761ae2c39b5d53e3b3c38351cfc3428e844b898b94965a5e847d`.
 
-Reproduce locally without committing proprietary PTX:
+Reproduce the complete portable path from the repository root:
 
 ```powershell
-cmake -S tools/cuda-physx-fixture -B build/cuda-physx-fixture -A Win32
-cmake --build build/cuda-physx-fixture --config Release
-build/cuda-physx-fixture/Release/cuda-physx-fixture.exe `
-  path/to/module_0013_01_05.ptx `
-  path/to/module_0010_01_05.ptx native-fluid-density.json
-
-build/ptx-frontend/Release/ptx-frontend.exe `
-  path/to/module_0010_01_05.ptx module-0010.json
-build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
-  _Z19KernelFluidDensityD17PxgFixedSizeArrayIfES0_15DensityDebugGPUPiS_IK6float4ES_IKjES7_S7_S7_ `
-  192 0 module-0010.json fluid-density.spv
-spirv-val.exe --target-env vulkan1.2 fluid-density.spv
-build/vulkan-probe/Release/vulkan-memory-smoke.exe `
-  translated-fluid-density.json --density-fixture fluid-density.spv
+.\run-tests.ps1 -CapturedPtxDir path\to\extracted\ptx
 ```
 
-This proves three real captured PhysX kernels on synthetic deterministic state.
-It does not reproduce a captured in-game memory snapshot.
+The directory must contain modules 0013, 0010, and 0016. The script parses,
+emits, validates when `spirv-val.exe` is available, and executes calc-hash,
+reorder, density, and force. Proprietary PTX and generated derivatives remain
+local.
 
 The emitted modules declare float32 `RoundingModeRTE` and
 `SignedZeroInfNanPreserve`. All three probed target GPUs advertise those
@@ -525,9 +535,9 @@ exports and no proprietary inputs.
 
 All seven items now run through `preflight.ps1 -RunOracle`. The PE32 runner
 allocates device-local 32 MiB buffers, dispatches one 64-thread SPIR-V module,
-and emits the CUDA oracle's math, barrier, local-memory, module-constant, and
-texture field names per device. Intel and RTX match every committed NVIDIA
-field bit-for-bit. Three runs produced byte-identical JSON.
+and emits the CUDA oracle's math, barrier, invocation-private local-memory, and
+integer/float texture field names per device. Intel and RTX match every covered
+NVIDIA field bit-for-bit. Three runs produced byte-identical JSON.
 
 The readable GLSL source is `oracle.comp`. `rebuild-oracle.ps1` compiles it,
 adds the required `NoContraction` decoration to the GLSL.std.450 `Fma`, assembles
@@ -537,9 +547,9 @@ module returns native `0xa8800000` on both.
 
 The committed result is
 `tools/vulkan-probe/expected/reference-workstation/oracle.json`, SHA-256
-`42a8778edb77a7a74429e30fc2ec68c87c677ac0b9ca51a604539b07a8953968`.
+`782856f86951d704e40feceb0394321a444f7877b6623f6601700f8fcb271073`.
 The SPIR-V SHA-256 is
-`2f79e7a87e40ac60ae316f51772b9eb40160ba1838c4a64ed3425badacbf1fab`.
+`37782524d39e89aea01ce1b7c51462259fc14637ee7cd28bab7396186b37bb2a`.
 The AMD replay remains a deferred external cross-vendor gate.
 
 ### Slice acceptance

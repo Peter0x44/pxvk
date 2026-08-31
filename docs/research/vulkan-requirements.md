@@ -74,6 +74,19 @@ build\vulkan-probe\vulkan-memory-smoke.exe vulkan-memory-smoke.json
 build\vulkan-probe\vulkan-memory-smoke.exe vulkan-oracle.json build\vulkan-probe\oracle.spv
 ```
 
+The repository-level portable regression command builds both projects, runs the
+frontend CTest suite, checks the same hardware gate, and executes the
+independent and directly generated SPIR-V fixtures:
+
+```powershell
+.\run-tests.ps1
+```
+
+Passing `-CapturedPtxDir` adds calc-hash, reorder, density, and force from local
+game PTX. The raw game PTX is proprietary and is intentionally not committed;
+the redistributable run still covers the compiler oracle, constant storage,
+integer/float texture fetches, barriers, local memory, and the 32 MiB heap.
+
 The process reported `pointer_bits: 32`, Vulkan header version 1.4.357, and
 loader API version 1.4.357. Two executions produced byte-identical JSON. `jq`
 parsed the result and confirmed both devices report `shaderInt64`.
@@ -90,13 +103,14 @@ produced byte-identical JSON. The committed result is
 `tools/vulkan-probe/expected/reference-workstation/memory-smoke.json`, SHA-256
 `4527312167c098277ba0422cfcd87d48a5578fdeeea3883234dbac0bbed2d2a0`.
 
-The combined 64-thread oracle then matched all committed native CUDA math,
-barrier, and integer-texture fields on both devices. Intel exposed one
-load-bearing SPIR-V rule: GLSL.std.450 `Fma` returned the separately rounded zero
-until its result was decorated `NoContraction`; with the decoration Intel and
-RTX both returned native `0xa8800000`. The combined result is
+The combined 64-thread oracle then matched native CUDA math, barrier,
+invocation-private local-memory, and integer/float texture fields on both
+devices. Intel exposed one load-bearing SPIR-V rule: GLSL.std.450 `Fma`
+returned the separately rounded zero until its result was decorated
+`NoContraction`; with the decoration Intel and RTX both returned native
+`0xa8800000`. The combined result is
 `tools/vulkan-probe/expected/reference-workstation/oracle.json`, SHA-256
-`42a8778edb77a7a74429e30fc2ec68c87c677ac0b9ca51a604539b07a8953968`.
+`782856f86951d704e40feceb0394321a444f7877b6623f6601700f8fcb271073`.
 
 The direct compiler slice now reproduces that result from
 `tools/cuda-oracle/probe.ptx`: the frontend emits schema-5 structured IR and
@@ -125,6 +139,13 @@ bindings 0/1/2/3 contract. A one-particle fixture uses the trace-observed
 524,288-element cell tables, and local size 192. With synthetic exact constants
 that make the self contribution `2.0f`, native RTX and translated Intel/RTX all
 return direct and remapped density bits `0x40000000`.
+
+The captured 30,375-word `KernelFluidForce` module uses the same four bindings
+with six texture metadata records and local size 128. Synthetic time step
+`1.0f`, zero damping/acceleration, and maximum velocity `100.0f` make the
+one-particle self-neighbor produce the exact force vector
+`[0x40800000, 0x40a00000, 0x40c00000, 0x00000000]`. Native RTX and translated
+Intel/RTX match bit-for-bit.
 
 ### Observed device results
 

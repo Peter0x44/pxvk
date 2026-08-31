@@ -13,6 +13,9 @@ const uint MATH_OUTPUT = 16u;
 const uint BARRIER_OUTPUT = 64u;
 const uint TEXTURE_INPUT = 160u;
 const uint TEXTURE_OUTPUT = 256u;
+const uint TEXTURE_FLOAT_INPUT = 320u;
+const uint TEXTURE_FLOAT_OUTPUT = 384u;
+const uint LOCAL_OUTPUT = 448u;
 
 uint flush_ftz_bits(uint bits)
 {
@@ -34,6 +37,10 @@ uint ftz_output(float value)
 void main()
 {
     uint tid = gl_LocalInvocationID.x;
+    uint local_values[4];
+    uint local_index = (tid * 3u) & 3u;
+    local_values[local_index] = 0x5a000000u + tid;
+    words[LOCAL_OUTPUT + tid] = local_values[local_index];
 
     if (tid == 0u) {
         words[MEMORY_OUTPUT] = (words[MEMORY_INPUT] ^ 0xa5a55a5au) + 0x10203040u;
@@ -87,6 +94,13 @@ void main()
         for (uint component = 0u; component < 4u; ++component) {
             words[output_index + component] =
                 in_bounds ? words[input_index + component] : 0u;
+        }
+
+        uint float_input_index = TEXTURE_FLOAT_INPUT + safe_coordinate * 4u;
+        uint float_output_index = TEXTURE_FLOAT_OUTPUT + tid * 4u;
+        for (uint component = 0u; component < 4u; ++component) {
+            words[float_output_index + component] =
+                in_bounds ? words[float_input_index + component] : 0u;
         }
     }
 }

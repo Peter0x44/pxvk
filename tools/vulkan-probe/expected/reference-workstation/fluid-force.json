@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "pointer_bits": 32,
+  "test": "force_kernel_fixture",
+  "buffer_bytes": 33554432,
+  "kernel": "KernelFluidForce",
+  "position_bits": ["0x3f800000", "0x40000000", "0x40400000", "0x00000000"],
+  "velocity_bits": ["0x40800000", "0x40a00000", "0x40c00000", "0x40e00000"],
+  "density_bits": "0x40000000",
+  "hash": "0x00003081",
+  "force_constants": {"time_step": "0x3f800000", "damping": "0x00000000", "maximum_velocity": "0x42c80000"},
+  "expected_force_bits": ["0x40800000", "0x40a00000", "0x40c00000", "0x00000000"],
+  "spirv_words": 30375,
+  "devices": [
+    {
+      "index": 0,
+      "name": "Intel(R) UHD Graphics",
+      "vendor_id": "0x00008086",
+      "device_id": "0x00009a60",
+      "api_version": "1.4.323",
+      "driver_version_raw": 1661869,
+      "device_memory_local": true,
+      "staging_host_coherent": true,
+      "force_bits": ["0x40800000", "0x40a00000", "0x40c00000", "0x00000000"],
+      "pass": true,
+      "error": ""
+    },
+    {
+      "index": 1,
+      "name": "NVIDIA GeForce RTX 3070 Laptop GPU",
+      "vendor_id": "0x000010de",
+      "device_id": "0x000024dd",
+      "api_version": "1.4.341",
+      "driver_version_raw": 2559967232,
+      "device_memory_local": true,
+      "staging_host_coherent": true,
+      "force_bits": ["0x40800000", "0x40a00000", "0x40c00000", "0x00000000"],
+      "pass": true,
+      "error": ""
+    }
+  ]
+}
