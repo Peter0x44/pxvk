@@ -1,11 +1,12 @@
 {
   "schema_version": 4,
-  "source_bytes": 3337,
+  "source_bytes": 3865,
   "ptx_version": "4.1",
   "target": "sm_52",
   "address_size": 32,
   "texture_references": [
-    "probe_tex"
+    "probe_tex",
+    "probe_tex_float"
   ],
   "variables": [],
   "functions": [],
@@ -67,7 +68,7 @@
       },
       "instructions": [
         {
-          "line": 16,
+          "line": 17,
           "variant": "ld.param.u32",
           "base": "ld",
           "modifiers": [
@@ -101,7 +102,7 @@
           "uses": []
         },
         {
-          "line": 18,
+          "line": 19,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -130,7 +131,7 @@
           "uses": []
         },
         {
-          "line": 19,
+          "line": 20,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -159,7 +160,7 @@
           "uses": []
         },
         {
-          "line": 20,
+          "line": 21,
           "variant": "div.full.ftz.f32",
           "base": "div",
           "modifiers": [
@@ -197,7 +198,7 @@
           ]
         },
         {
-          "line": 21,
+          "line": 22,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -227,7 +228,7 @@
           ]
         },
         {
-          "line": 22,
+          "line": 23,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -269,7 +270,7 @@
           ]
         },
         {
-          "line": 24,
+          "line": 25,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -298,7 +299,7 @@
           "uses": []
         },
         {
-          "line": 25,
+          "line": 26,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -327,7 +328,7 @@
           "uses": []
         },
         {
-          "line": 26,
+          "line": 27,
           "variant": "div.full.ftz.f32",
           "base": "div",
           "modifiers": [
@@ -365,7 +366,7 @@
           ]
         },
         {
-          "line": 27,
+          "line": 28,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -395,7 +396,7 @@
           ]
         },
         {
-          "line": 28,
+          "line": 29,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -437,7 +438,7 @@
           ]
         },
         {
-          "line": 30,
+          "line": 31,
           "variant": "rcp.approx.ftz.f32",
           "base": "rcp",
           "modifiers": [
@@ -469,7 +470,7 @@
           ]
         },
         {
-          "line": 31,
+          "line": 32,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -499,7 +500,7 @@
           ]
         },
         {
-          "line": 32,
+          "line": 33,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -541,7 +542,7 @@
           ]
         },
         {
-          "line": 34,
+          "line": 35,
           "variant": "sqrt.approx.ftz.f32",
           "base": "sqrt",
           "modifiers": [
@@ -573,7 +574,7 @@
           ]
         },
         {
-          "line": 35,
+          "line": 36,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -603,7 +604,7 @@
           ]
         },
         {
-          "line": 36,
+          "line": 37,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -645,7 +646,7 @@
           ]
         },
         {
-          "line": 38,
+          "line": 39,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -674,7 +675,7 @@
           "uses": []
         },
         {
-          "line": 39,
+          "line": 40,
           "variant": "sqrt.approx.ftz.f32",
           "base": "sqrt",
           "modifiers": [
@@ -706,7 +707,7 @@
           ]
         },
         {
-          "line": 40,
+          "line": 41,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -736,7 +737,7 @@
           ]
         },
         {
-          "line": 41,
+          "line": 42,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -778,7 +779,7 @@
           ]
         },
         {
-          "line": 43,
+          "line": 44,
           "variant": "rsqrt.approx.ftz.f32",
           "base": "rsqrt",
           "modifiers": [
@@ -810,7 +811,7 @@
           ]
         },
         {
-          "line": 44,
+          "line": 45,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -840,7 +841,7 @@
           ]
         },
         {
-          "line": 45,
+          "line": 46,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -882,7 +883,7 @@
           ]
         },
         {
-          "line": 47,
+          "line": 48,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -911,7 +912,7 @@
           "uses": []
         },
         {
-          "line": 48,
+          "line": 49,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -940,7 +941,7 @@
           "uses": []
         },
         {
-          "line": 49,
+          "line": 50,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -969,7 +970,7 @@
           "uses": []
         },
         {
-          "line": 50,
+          "line": 51,
           "variant": "fma.rn.ftz.f32",
           "base": "fma",
           "modifiers": [
@@ -1013,7 +1014,7 @@
           ]
         },
         {
-          "line": 51,
+          "line": 52,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -1043,7 +1044,7 @@
           ]
         },
         {
-          "line": 52,
+          "line": 53,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -1085,7 +1086,7 @@
           ]
         },
         {
-          "line": 54,
+          "line": 55,
           "variant": "mul.ftz.f32",
           "base": "mul",
           "modifiers": [
@@ -1122,7 +1123,7 @@
           ]
         },
         {
-          "line": 55,
+          "line": 56,
           "variant": "add.ftz.f32",
           "base": "add",
           "modifiers": [
@@ -1159,7 +1160,7 @@
           ]
         },
         {
-          "line": 56,
+          "line": 57,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -1189,7 +1190,7 @@
           ]
         },
         {
-          "line": 57,
+          "line": 58,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -1231,7 +1232,7 @@
           ]
         },
         {
-          "line": 59,
+          "line": 60,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -1260,7 +1261,7 @@
           "uses": []
         },
         {
-          "line": 60,
+          "line": 61,
           "variant": "cvt.rzi.ftz.s32.f32",
           "base": "cvt",
           "modifiers": [
@@ -1293,7 +1294,7 @@
           ]
         },
         {
-          "line": 61,
+          "line": 62,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -1323,7 +1324,7 @@
           ]
         },
         {
-          "line": 62,
+          "line": 63,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -1365,7 +1366,7 @@
           ]
         },
         {
-          "line": 64,
+          "line": 65,
           "variant": "mov.u32",
           "base": "mov",
           "modifiers": [
@@ -1393,7 +1394,7 @@
           "uses": []
         },
         {
-          "line": 65,
+          "line": 66,
           "variant": "cvt.rn.f32.u32",
           "base": "cvt",
           "modifiers": [
@@ -1425,7 +1426,7 @@
           ]
         },
         {
-          "line": 66,
+          "line": 67,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -1455,7 +1456,7 @@
           ]
         },
         {
-          "line": 67,
+          "line": 68,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -1497,7 +1498,7 @@
           ]
         },
         {
-          "line": 69,
+          "line": 70,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -1526,7 +1527,7 @@
           "uses": []
         },
         {
-          "line": 70,
+          "line": 71,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -1555,7 +1556,7 @@
           "uses": []
         },
         {
-          "line": 71,
+          "line": 72,
           "variant": "add.ftz.f32",
           "base": "add",
           "modifiers": [
@@ -1592,7 +1593,7 @@
           ]
         },
         {
-          "line": 72,
+          "line": 73,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -1622,7 +1623,7 @@
           ]
         },
         {
-          "line": 73,
+          "line": 74,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -1664,7 +1665,7 @@
           ]
         },
         {
-          "line": 75,
+          "line": 76,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -1693,7 +1694,7 @@
           "uses": []
         },
         {
-          "line": 76,
+          "line": 77,
           "variant": "mul.ftz.f32",
           "base": "mul",
           "modifiers": [
@@ -1730,7 +1731,7 @@
           ]
         },
         {
-          "line": 77,
+          "line": 78,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -1760,7 +1761,7 @@
           ]
         },
         {
-          "line": 78,
+          "line": 79,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -1802,7 +1803,7 @@
           ]
         },
         {
-          "line": 80,
+          "line": 81,
           "variant": "mov.f32",
           "base": "mov",
           "modifiers": [
@@ -1831,7 +1832,7 @@
           "uses": []
         },
         {
-          "line": 81,
+          "line": 82,
           "variant": "min.ftz.f32",
           "base": "min",
           "modifiers": [
@@ -1868,7 +1869,7 @@
           ]
         },
         {
-          "line": 82,
+          "line": 83,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -1898,7 +1899,7 @@
           ]
         },
         {
-          "line": 83,
+          "line": 84,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -1940,7 +1941,7 @@
           ]
         },
         {
-          "line": 85,
+          "line": 86,
           "variant": "max.ftz.f32",
           "base": "max",
           "modifiers": [
@@ -1977,7 +1978,7 @@
           ]
         },
         {
-          "line": 86,
+          "line": 87,
           "variant": "mov.b32",
           "base": "mov",
           "modifiers": [
@@ -2007,7 +2008,7 @@
           ]
         },
         {
-          "line": 87,
+          "line": 88,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -2049,7 +2050,7 @@
           ]
         },
         {
-          "line": 89,
+          "line": 90,
           "variant": "ret",
           "base": "ret",
           "modifiers": [],
@@ -2165,7 +2166,7 @@
       },
       "instructions": [
         {
-          "line": 104,
+          "line": 105,
           "variant": "ld.param.u32",
           "base": "ld",
           "modifiers": [
@@ -2199,7 +2200,7 @@
           "uses": []
         },
         {
-          "line": 105,
+          "line": 106,
           "variant": "mov.u32",
           "base": "mov",
           "modifiers": [
@@ -2229,7 +2230,7 @@
           ]
         },
         {
-          "line": 106,
+          "line": 107,
           "variant": "add.u32",
           "base": "add",
           "modifiers": [
@@ -2264,7 +2265,7 @@
           ]
         },
         {
-          "line": 107,
+          "line": 108,
           "variant": "shl.b32",
           "base": "shl",
           "modifiers": [
@@ -2299,7 +2300,7 @@
           ]
         },
         {
-          "line": 108,
+          "line": 109,
           "variant": "mov.u32",
           "base": "mov",
           "modifiers": [
@@ -2327,7 +2328,7 @@
           "uses": []
         },
         {
-          "line": 109,
+          "line": 110,
           "variant": "add.u32",
           "base": "add",
           "modifiers": [
@@ -2363,7 +2364,7 @@
           ]
         },
         {
-          "line": 110,
+          "line": 111,
           "variant": "st.shared.u32",
           "base": "st",
           "modifiers": [
@@ -2398,7 +2399,7 @@
           ]
         },
         {
-          "line": 111,
+          "line": 112,
           "variant": "bar.sync",
           "base": "bar",
           "modifiers": [
@@ -2419,7 +2420,7 @@
           "uses": []
         },
         {
-          "line": 112,
+          "line": 113,
           "variant": "add.u32",
           "base": "add",
           "modifiers": [
@@ -2454,7 +2455,7 @@
           ]
         },
         {
-          "line": 113,
+          "line": 114,
           "variant": "and.b32",
           "base": "and",
           "modifiers": [
@@ -2489,7 +2490,7 @@
           ]
         },
         {
-          "line": 114,
+          "line": 115,
           "variant": "shl.b32",
           "base": "shl",
           "modifiers": [
@@ -2524,7 +2525,7 @@
           ]
         },
         {
-          "line": 115,
+          "line": 116,
           "variant": "mov.u32",
           "base": "mov",
           "modifiers": [
@@ -2552,7 +2553,7 @@
           "uses": []
         },
         {
-          "line": 116,
+          "line": 117,
           "variant": "add.u32",
           "base": "add",
           "modifiers": [
@@ -2588,7 +2589,7 @@
           ]
         },
         {
-          "line": 117,
+          "line": 118,
           "variant": "ld.shared.u32",
           "base": "ld",
           "modifiers": [
@@ -2624,7 +2625,7 @@
           ]
         },
         {
-          "line": 118,
+          "line": 119,
           "variant": "shl.b32",
           "base": "shl",
           "modifiers": [
@@ -2659,7 +2660,7 @@
           ]
         },
         {
-          "line": 119,
+          "line": 120,
           "variant": "add.u32",
           "base": "add",
           "modifiers": [
@@ -2695,7 +2696,7 @@
           ]
         },
         {
-          "line": 120,
+          "line": 121,
           "variant": "st.global.u32",
           "base": "st",
           "modifiers": [
@@ -2730,7 +2731,7 @@
           ]
         },
         {
-          "line": 121,
+          "line": 122,
           "variant": "ret",
           "base": "ret",
           "modifiers": [],
@@ -2828,7 +2829,7 @@
       },
       "instructions": [
         {
-          "line": 134,
+          "line": 135,
           "variant": "ld.param.u32",
           "base": "ld",
           "modifiers": [
@@ -2862,7 +2863,7 @@
           "uses": []
         },
         {
-          "line": 135,
+          "line": 136,
           "variant": "mov.u32",
           "base": "mov",
           "modifiers": [
@@ -2892,7 +2893,7 @@
           ]
         },
         {
-          "line": 136,
+          "line": 137,
           "variant": "sub.s32",
           "base": "sub",
           "modifiers": [
@@ -2927,7 +2928,7 @@
           ]
         },
         {
-          "line": 137,
+          "line": 138,
           "variant": "tex.1d.v4.u32.s32",
           "base": "tex",
           "modifiers": [
@@ -2994,7 +2995,7 @@
           ]
         },
         {
-          "line": 138,
+          "line": 139,
           "variant": "mad.lo.s32",
           "base": "mad",
           "modifiers": [
@@ -3036,7 +3037,7 @@
           ]
         },
         {
-          "line": 139,
+          "line": 140,
           "variant": "st.global.v4.u32",
           "base": "st",
           "modifiers": [
@@ -3092,7 +3093,7 @@
           ]
         },
         {
-          "line": 140,
+          "line": 141,
           "variant": "ret",
           "base": "ret",
           "modifiers": [],
@@ -3122,6 +3123,364 @@
         "st.global.v4.u32",
         "sub.s32",
         "tex.1d.v4.u32.s32"
+      ]
+    },
+    {
+      "name": "texture_float_probe",
+      "kind": "entry",
+      "linkage": "visible",
+      "packed_parameter_bytes": 4,
+      "return_parameter_bytes": 0,
+      "static_shared_bytes": 0,
+      "static_local_bytes": 0,
+      "max_threads": [],
+      "minimum_ctas_per_sm": 0,
+      "return_parameters": [],
+      "parameters": [
+        {
+          "name": "texture_float_probe_param_0",
+          "type": ".u32",
+          "offset": 0,
+          "size": 4,
+          "alignment": 4
+        }
+      ],
+      "register_banks": [
+        {
+          "prefix": "%out",
+          "type": ".u32",
+          "count": 1
+        },
+        {
+          "prefix": "%thread",
+          "type": ".u32",
+          "count": 1
+        },
+        {
+          "prefix": "%coord",
+          "type": ".s32",
+          "count": 1
+        },
+        {
+          "prefix": "%address",
+          "type": ".u32",
+          "count": 1
+        },
+        {
+          "prefix": "%f",
+          "type": ".f32",
+          "count": 5
+        }
+      ],
+      "labels": [],
+      "cfg": {
+        "blocks": [
+          {
+            "id": "b0",
+            "labels": [],
+            "instruction_begin": 0,
+            "instruction_end": 7,
+            "successors": []
+          }
+        ],
+        "edge_count": 0
+      },
+      "instructions": [
+        {
+          "line": 154,
+          "variant": "ld.param.u32",
+          "base": "ld",
+          "modifiers": [
+            "param",
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%out",
+            "[texture_float_probe_param_0]"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%out"
+            },
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "symbol",
+                  "name": "texture_float_probe_param_0"
+                }
+              ]
+            }
+          ],
+          "result_type": "u32",
+          "definitions": [
+            "%out"
+          ],
+          "uses": []
+        },
+        {
+          "line": 155,
+          "variant": "mov.u32",
+          "base": "mov",
+          "modifiers": [
+            "u32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%thread",
+            "%tid.x"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "register",
+              "name": "%tid.x"
+            }
+          ],
+          "result_type": "u32",
+          "definitions": [
+            "%thread"
+          ],
+          "uses": [
+            "%tid.x"
+          ]
+        },
+        {
+          "line": 156,
+          "variant": "sub.s32",
+          "base": "sub",
+          "modifiers": [
+            "s32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%coord",
+            "%thread",
+            "2"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%coord"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ],
+          "result_type": "s32",
+          "definitions": [
+            "%coord"
+          ],
+          "uses": [
+            "%thread"
+          ]
+        },
+        {
+          "line": 157,
+          "variant": "tex.1d.v4.f32.s32",
+          "base": "tex",
+          "modifiers": [
+            "1d",
+            "v4",
+            "f32",
+            "s32"
+          ],
+          "predicate": "",
+          "operands": [
+            "{%f1,%f2,%f3,%f4}",
+            "[probe_tex_float,{%coord}]"
+          ],
+          "structured_operands": [
+            {
+              "kind": "list",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%f1"
+                },
+                {
+                  "kind": "register",
+                  "name": "%f2"
+                },
+                {
+                  "kind": "register",
+                  "name": "%f3"
+                },
+                {
+                  "kind": "register",
+                  "name": "%f4"
+                }
+              ]
+            },
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "symbol",
+                  "name": "probe_tex_float"
+                },
+                {
+                  "kind": "list",
+                  "values": [
+                    {
+                      "kind": "register",
+                      "name": "%coord"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result_type": "f32",
+          "definitions": [
+            "%f1",
+            "%f2",
+            "%f3",
+            "%f4"
+          ],
+          "uses": [
+            "%coord"
+          ]
+        },
+        {
+          "line": 158,
+          "variant": "mad.lo.s32",
+          "base": "mad",
+          "modifiers": [
+            "lo",
+            "s32"
+          ],
+          "predicate": "",
+          "operands": [
+            "%address",
+            "%thread",
+            "16",
+            "%out"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 16
+            },
+            {
+              "kind": "register",
+              "name": "%out"
+            }
+          ],
+          "result_type": "s32",
+          "definitions": [
+            "%address"
+          ],
+          "uses": [
+            "%thread",
+            "%out"
+          ]
+        },
+        {
+          "line": 159,
+          "variant": "st.global.v4.f32",
+          "base": "st",
+          "modifiers": [
+            "global",
+            "v4",
+            "f32"
+          ],
+          "predicate": "",
+          "operands": [
+            "[%address]",
+            "{%f1,%f2,%f3,%f4}"
+          ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%address"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%f1"
+                },
+                {
+                  "kind": "register",
+                  "name": "%f2"
+                },
+                {
+                  "kind": "register",
+                  "name": "%f3"
+                },
+                {
+                  "kind": "register",
+                  "name": "%f4"
+                }
+              ]
+            }
+          ],
+          "result_type": "",
+          "definitions": [],
+          "uses": [
+            "%address",
+            "%f1",
+            "%f2",
+            "%f3",
+            "%f4"
+          ]
+        },
+        {
+          "line": 160,
+          "variant": "ret",
+          "base": "ret",
+          "modifiers": [],
+          "predicate": "",
+          "operands": [],
+          "structured_operands": [],
+          "result_type": "",
+          "definitions": [],
+          "uses": []
+        }
+      ],
+      "instruction_count": 7,
+      "base_families": [
+        "ld",
+        "mad",
+        "mov",
+        "ret",
+        "st",
+        "sub",
+        "tex"
+      ],
+      "variants": [
+        "ld.param.u32",
+        "mad.lo.s32",
+        "mov.u32",
+        "ret",
+        "st.global.v4.f32",
+        "sub.s32",
+        "tex.1d.v4.f32.s32"
       ]
     }
   ]

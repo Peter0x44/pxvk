@@ -189,7 +189,8 @@ public:
     void define_main(std::uint32_t main_function,
                      std::uint32_t math_function,
                      std::uint32_t barrier_function,
-                     std::uint32_t texture_function)
+                     std::uint32_t texture_function,
+                     std::uint32_t texture_float_function)
     {
         emit_entry_point(main_function, {local_id_, buffer_, shared_});
         emit(execution_modes_, SpvOpExecutionMode,
@@ -227,6 +228,7 @@ public:
                              {is_texture_thread.id, texture_label, texture_merge});
         function_instruction(SpvOpLabel, {texture_label});
         emit_void_call(texture_function);
+        emit_void_call(texture_float_function);
         function_instruction(SpvOpBranch, {texture_merge});
         function_instruction(SpvOpLabel, {texture_merge});
         end_function();
@@ -737,9 +739,13 @@ private:
         if (destinations.size() != 4u ||
             texture.at("kind").get<std::string>() != "memory" ||
             texture.at("values").size() != 2u ||
-            texture.at("values").at(0).at("kind").get<std::string>() != "symbol" ||
-            texture.at("values").at(0).at("name").get<std::string>() != "probe_tex") {
+            texture.at("values").at(0).at("kind").get<std::string>() != "symbol") {
             unsupported(instruction, "unsupported texture shape");
+        }
+        const std::string texture_name =
+            texture.at("values").at(0).at("name").get<std::string>();
+        if (texture_name != "probe_tex" && texture_name != "probe_tex_float") {
+            unsupported(instruction, "unsupported texture reference");
         }
         const Json &coordinates = texture.at("values").at(1);
         if (coordinates.at("kind").get<std::string>() != "list" ||
@@ -763,10 +769,12 @@ private:
             SpvOpIMul,
             ValueType::u32,
             {safe.id, module_.constant(ValueType::u32, 4u).id});
+        const std::uint32_t input_base =
+            texture_name == "probe_tex" ? 160u : 320u;
         const Value base = module_.instruction(
             SpvOpIAdd,
             ValueType::u32,
-            {row.id, module_.constant(ValueType::u32, 160u).id});
+            {row.id, module_.constant(ValueType::u32, input_base).id});
         for (std::uint32_t component = 0u; component < 4u; ++component) {
             const Value index = module_.instruction(
                 SpvOpIAdd,
@@ -943,7 +951,9 @@ private:
                 SpvOpControlBarrier, {workgroup.id, workgroup.id, semantics.id});
             return;
         }
-        if (base == "tex" && variant == "tex.1d.v4.u32.s32") {
+        if (base == "tex" &&
+            (variant == "tex.1d.v4.u32.s32" ||
+             variant == "tex.1d.v4.f32.s32")) {
             lower_texture(instruction);
             return;
         }
@@ -1629,12 +1639,19 @@ std::vector<std::uint32_t> emit_oracle(const Json &manifest)
     const std::uint32_t math = module.allocate_id();
     const std::uint32_t barrier = module.allocate_id();
     const std::uint32_t texture = module.allocate_id();
+    const std::uint32_t texture_float = module.allocate_id();
     const std::uint32_t main_function = module.allocate_id();
 
     EntryLowerer(module, find_entry(manifest, "math_probe"), {16u}, math).lower();
     EntryLowerer(module, find_entry(manifest, "barrier_probe"), {64u}, barrier).lower();
     EntryLowerer(module, find_entry(manifest, "texture_probe"), {256u}, texture).lower();
-    module.define_main(main_function, math, barrier, texture);
+    EntryLowerer(
+        module,
+        find_entry(manifest, "texture_float_probe"),
+        {384u},
+        texture_float).lower();
+    module.define_main(
+        main_function, math, barrier, texture, texture_float);
     return module.finish();
 }
 

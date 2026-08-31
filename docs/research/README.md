@@ -58,7 +58,7 @@ Open probes are tracked rather than dropped:
 | Probe | Status | Required before |
 |---|---|---|
 | Deterministic fluid/deformable kernel outputs | One-particle calc-hash/reorder pipeline matches native CUDA on PTX-derived Intel/RTX Vulkan; captured in-game state remains deferred | Accepting additional translated PhysX kernels without focused fixtures |
-| Float legacy-texture fetch bits/OOB | Deferred until a candidate texture lowering exists | Accepting texture lowering |
+| Float legacy-texture fetch bits/OOB | Complete on native RTX and PTX-derived Intel/RTX Vulkan: in-range bits preserved, signed OOB returns four positive zeros | Accepting current `tex.1d.v4.f32.s32` lowering |
 | Queried-only CUDA symbol NULL versus stub behavior | Non-blocking; ZLUDA proves non-null not-supported stubs work | Removing conservative export stubs |
 | Minimal non-NVIDIA NVAPI interface set | Deferred to game-integration validation | Running the original PhysX runtime without NVIDIA |
 | CUDA host-call thread IDs | Deferred runtime-hardening evidence | Claiming observed single-thread assumptions or optimizing locking |

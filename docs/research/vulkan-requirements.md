@@ -272,17 +272,18 @@ tex.1d.v4.f32.s32
 tex.1d.v4.u32.s32
 ```
 
-The native unsigned probe established point reads from a linearly bound range:
-negative and high signed coordinates return an all-zero vector. Edge-clamped
-sampled-image behavior is therefore wrong.
+The native integer and float probes established point reads from linearly bound
+ranges. In both forms, negative and high signed coordinates return an all-zero
+vector, so edge-clamped sampled-image behavior is wrong. The float form
+preserves all tested in-range component bits, including signed zero,
+subnormals, infinities, and NaN payloads.
 
-The first candidate lowering is a storage-buffer fetch with:
+The accepted lowering is a storage-buffer fetch with:
 
 1. a signed coordinate bounds check against the bound element count;
 2. an all-zero result when out of range;
 3. four exact 32-bit component loads when in range;
-4. bit reinterpretation for the f32 form, pending the deferred float-texture
-   native probe.
+4. bit reinterpretation for the f32 form.
 
 This needs texture binding metadata but no Vulkan image, sampler, texel-buffer,
 or format feature. The metadata layout belongs to implementation design.
@@ -387,9 +388,9 @@ first implementation slice should remain small:
 Do not accept translated real kernels until:
 
 - the standalone Vulkan differential classifies every oracle mismatch;
-- the deferred float-texture native probe fixes the f32 fetch contract;
-- deterministic fluid and deformable input/output fixtures exist for real
-  kernel differential testing.
+- the native integer and float texture probes fix both linear-fetch contracts;
+- deterministic fluid hash/reorder fixtures cover two real translated kernels;
+- a deformable fixture remains required before accepting corresponding kernels.
 
 The remaining queried-only export, NVAPI, threading, and PhysX-off trace probes
 are integration or hardening gates, not Vulkan device-capability blockers.

@@ -19,7 +19,7 @@ namespace {
 
 constexpr VkDeviceSize kBufferBytes = 32ull * 1024ull * 1024ull;
 constexpr VkDeviceSize kMemoryCopyBytes = 2ull * sizeof(std::uint32_t);
-constexpr VkDeviceSize kOracleCopyBytes = 304ull * sizeof(std::uint32_t);
+constexpr VkDeviceSize kOracleCopyBytes = 432ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kKernelFixtureCopyBytes = 512ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kReorderFixtureCopyBytes =
     32768ull * sizeof(std::uint32_t);
@@ -44,6 +44,19 @@ constexpr std::size_t kMathOffset = 16;
 constexpr std::size_t kBarrierOffset = 64;
 constexpr std::size_t kTextureInputOffset = 160;
 constexpr std::size_t kTextureOutputOffset = 256;
+constexpr std::size_t kTextureFloatInputOffset = 320;
+constexpr std::size_t kTextureFloatOutputOffset = 384;
+constexpr std::array<std::array<std::uint32_t, 4>, 8>
+    kExpectedFloatTextureInput = {{
+        {0x3f800000u, 0x80000000u, 0x00000001u, 0x7fc12345u},
+        {0x40000000u, 0xbf800000u, 0x00800000u, 0x7f800000u},
+        {0x40400000u, 0xc0000000u, 0x3eaaaaabu, 0xff800000u},
+        {0x40800000u, 0x3f000000u, 0x3f3504f3u, 0x7fc00000u},
+        {0x40a00000u, 0x3fc00000u, 0x3dcccccdu, 0x00000000u},
+        {0x40c00000u, 0x40200000u, 0x3f7fffffu, 0x80000001u},
+        {0x40e00000u, 0x40600000u, 0x3f800001u, 0x7f7fffffu},
+        {0x41000000u, 0x40900000u, 0xbf000000u, 0xff7fffffu},
+    }};
 constexpr std::array<std::uint32_t, 14> kExpectedMath = {
     0x3eaaaaabu,
     0x00000000u,
@@ -361,6 +374,7 @@ struct DeviceResult {
     std::array<std::uint32_t, 14> math = {};
     std::array<std::uint32_t, 64> barrier = {};
     std::array<std::array<std::uint32_t, 4>, 12> texture = {};
+    std::array<std::array<std::uint32_t, 4>, 12> texture_float = {};
     std::uint32_t kernel_hash = 0;
     std::uint32_t kernel_index = 0;
     std::array<std::uint32_t, 4> reordered_position = {};
@@ -527,6 +541,12 @@ DeviceResult run_device(
                 for (std::uint32_t component = 0; component < 4; ++component) {
                     words[kTextureInputOffset + row * 4u + component] =
                         0x10000000u * (component + 1u) + row * 0x100u + component;
+                }
+            }
+            for (std::uint32_t row = 0; row < kExpectedFloatTextureInput.size(); ++row) {
+                for (std::uint32_t component = 0; component < 4u; ++component) {
+                    words[kTextureFloatInputOffset + row * 4u + component] =
+                        kExpectedFloatTextureInput[row][component];
                 }
             }
         }
@@ -813,6 +833,12 @@ DeviceResult run_device(
                     4u,
                     result.texture[row].begin());
             }
+            for (std::size_t row = 0; row < result.texture_float.size(); ++row) {
+                std::copy_n(
+                    words + kTextureFloatOutputOffset + row * 4u,
+                    4u,
+                    result.texture_float[row].begin());
+            }
             result.pass = result.pass &&
                 std::equal(result.math.begin(), result.math.end(), kExpectedMath.begin());
             for (std::size_t index = 0; index < result.barrier.size(); ++index) {
@@ -830,6 +856,19 @@ DeviceResult run_device(
                             static_cast<std::uint32_t>(coordinate) * 0x100u +
                             static_cast<std::uint32_t>(component);
                     result.pass = result.pass && result.texture[row][component] == expected;
+                }
+            }
+            for (std::size_t row = 0; row < result.texture_float.size(); ++row) {
+                const int coordinate = static_cast<int>(row) - 2;
+                for (std::size_t component = 0; component < 4u; ++component) {
+                    const std::uint32_t expected =
+                        coordinate < 0 || coordinate >= 8
+                            ? 0u
+                            : kExpectedFloatTextureInput[
+                                  static_cast<std::size_t>(coordinate)][component];
+                    result.pass =
+                        result.pass &&
+                        result.texture_float[row][component] == expected;
                 }
             }
         }
@@ -1105,6 +1144,16 @@ int main(int argc, char **argv)
                            << "\"" << hex32(result.texture[row][component]) << "\"";
                 }
                 output << "]}" << (row + 1 == result.texture.size() ? "\n" : ",\n");
+            }
+            output << "      ]},\n"
+                   << "      \"texture_float\": {\"rows\": [\n";
+            for (std::size_t row = 0; row < result.texture_float.size(); ++row) {
+                output << "        {\"coord\": " << static_cast<int>(row) - 2 << ", \"value\": [";
+                for (std::size_t component = 0; component < 4; ++component) {
+                    output << (component == 0 ? "" : ", ")
+                           << "\"" << hex32(result.texture_float[row][component]) << "\"";
+                }
+                output << "]}" << (row + 1 == result.texture_float.size() ? "\n" : ",\n");
             }
             output << "      ]},\n";
         }

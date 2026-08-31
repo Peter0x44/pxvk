@@ -204,13 +204,13 @@ implementation path; LLVM is a credible fallback if SSA/legalization grows
 beyond the finite emitter. See the official
 [LLVM SPIR-V backend guide](https://llvm.org/docs/SPIRVUsage.html).
 
-The first vertical slice now emits a 2,609-word SPIR-V 1.5 module directly from
+The first vertical slice now emits a 2,865-word SPIR-V 1.5 module directly from
 the schema-4 structured IR for `tools/cuda-oracle/probe.ptx`. The module uses
 one 64-thread Vulkan entry point to invoke the original one-thread math,
-64-thread barrier, and 12-thread texture routines against the oracle binding
-profile. SDK `spirv-val --target-env vulkan1.2` accepts the binary, and Intel
-UHD plus RTX 3070 executions match every native CUDA math, barrier, and texture
-field.
+64-thread barrier, and 12-thread integer and float texture routines against the
+oracle binding profile. SDK `spirv-val --target-env vulkan1.2` accepts the
+binary, and Intel UHD plus RTX 3070 executions match every native CUDA math,
+barrier, and texture field.
 
 The second slice lowers the captured 89-instruction
 `KernelFluidCalcHashPacked` entry from `module_0013_01_05.ptx`. A conservative
@@ -339,8 +339,11 @@ format/component count, and observed invariant sampler state. Generated shaders
 perform signed bounds checks and four storage-buffer component reads; OOB
 returns zero. No Vulkan image or sampler is created.
 
-Float texture bit interpretation remains blocked on its focused native probe.
-Integer texture lowering can proceed against the committed fixture.
+The focused native float-texture probe is complete. `tex.1d.v4.f32.s32`
+preserves all tested in-range bits, including negative zero, subnormals,
+infinities, and NaN payloads; negative and high signed coordinates return four
+positive-zero components. The storage-buffer lowering reproduces those bits on
+Intel and RTX without a Vulkan image or sampler.
 
 ### Commands and synchronization
 
@@ -514,7 +517,7 @@ size matches `mirrors-edge-ptx-corpus-analysis.json`. This includes the two
 module-scope shared allocations that contribute to launched entry totals.
 
 The project-owned structured, value-typed oracle IR manifest SHA-256 is
-`be46ffaf026d5982c107434ea80a5009c75a664ee3f1f7cc3d5f76e41751d696`.
+`1bfd086046f864b938db84d2898e2e9f283a4b37e1b23715253af88c82390358`.
 The redistributable structural corpus manifest is
 `tools/ptx-frontend/expected/corpus-manifest.json`, SHA-256
 `b46479bf9a21121b448216eacfa66344551ddfeee60f352f6d9dc536e7682cde`.
@@ -558,12 +561,10 @@ behavior.
 
 ## Blockers by acceptance point
 
-| Open item | Blocks | Does not block |
+| Blocker | Blocks | Does not block |
 |---|---|---|
-| Software FTZ placement beyond standalone cases | accepting real translated kernels | completed standalone f32 oracle and frontend work |
 | Approximate math beyond fixed oracle inputs | accepting affected real kernels | exact committed reciprocal/sqrt/rsqrt cases |
-| Float texture native probe | accepting `tex.1d.v4.f32.s32` | integer texture lowering |
-| Deterministic fluid/deformable fixtures | accepting corresponding real kernels | standalone runner and frontend parsing |
+| Deterministic deformable fixture | accepting corresponding real kernels | standalone runner, fluid pair, and frontend parsing |
 | Queried-only NULL/stub probe | shrinking export table | conservative stubs and standalone work |
 | Minimal non-NVIDIA NVAPI set | game startup on AMD/non-NVIDIA renderer | AMD Vulkan preflight and oracle runner |
 | AMD memory/oracle execution replay | claiming generated SPIR-V execution on AMD | continuing and accepting the reference-system runner on Intel/RTX |

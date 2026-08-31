@@ -214,7 +214,7 @@ shallow test per spelling:
 | Shared memory | static alignment, dynamic base alignment, and static-plus-dynamic sizes used by radix, reorder, and deformable solver entries |
 | Floating point | every field in the committed CUDA oracle, including fused versus separate operations and NaN operand behavior |
 | Barrier | all 64 workgroup invocations observe neighbor writes after `bar.sync 0` |
-| Texture | signed coordinates, in-range four-component values, and negative/high zero result for `u32`; f32 case after its native probe |
+| Texture | signed coordinates, in-range four-component bit preservation, and negative/high zero results for both `u32` and `f32` |
 
 `tools/ptx-frontend/cfg_probe.ptx` covers packed parameter loads, launch
 built-ins, predicated exit, a back-edge loop, global address calculation, and

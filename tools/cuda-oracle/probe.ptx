@@ -3,6 +3,7 @@
 .address_size 32
 
 .global .texref probe_tex;
+.global .texref probe_tex_float;
 
 .visible .entry math_probe(
     .param .u32 math_probe_param_0
@@ -137,5 +138,24 @@
     tex.1d.v4.u32.s32 {%r1, %r2, %r3, %r4}, [probe_tex, {%coord}];
     mad.lo.s32 %address, %thread, 16, %out;
     st.global.v4.u32 [%address], {%r1, %r2, %r3, %r4};
+    ret;
+}
+
+.visible .entry texture_float_probe(
+    .param .u32 texture_float_probe_param_0
+)
+{
+    .reg .u32 %out;
+    .reg .u32 %thread;
+    .reg .s32 %coord;
+    .reg .u32 %address;
+    .reg .f32 %f<5>;
+
+    ld.param.u32 %out, [texture_float_probe_param_0];
+    mov.u32 %thread, %tid.x;
+    sub.s32 %coord, %thread, 2;
+    tex.1d.v4.f32.s32 {%f1, %f2, %f3, %f4}, [probe_tex_float, {%coord}];
+    mad.lo.s32 %address, %thread, 16, %out;
+    st.global.v4.f32 [%address], {%f1, %f2, %f3, %f4};
     ret;
 }

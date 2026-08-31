@@ -63,6 +63,7 @@ The output can be compared byte-for-byte with the committed fixture.
 | What are native approximate math bits? | `rcp`, `sqrt`, and `rsqrt` on fixed inputs | Exact values recorded below | Vulkan results must be compared bitwise or against an explicitly approved tolerance |
 | Does `bar.sync 0` make all shared writes visible? | 64 threads write, barrier, read neighbor | Exact cyclic neighbor sequence | Lower to full-workgroup execution + workgroup-memory barrier |
 | How does an integer-coordinate linear texref handle OOB? | Coordinates -2 through 9 over eight `uint4` elements | In-range exact; negative and high OOB return zero | Storage-buffer lowering needs explicit bounds-to-zero, not edge clamping |
+| Does a float texref preserve fetched bits and OOB zero? | Normal values, signed zero, subnormals, infinities, NaN payloads, and signed coordinates -2 through 9 | Every in-range component was bit-identical; negative/high OOB returned four positive zeros | Lower `tex.1d.v4.f32.s32` as bounded four-word loads plus bit reinterpretation |
 | How are NaNs handled by observed min/max order? | NaN as first operand, 1.0 as second | Both return 1.0 | Preserve NVIDIA operand-order behavior for these forms |
 | How do directed/int conversions behave? | `cvt.rzi.s32.f32(-3.75)` and `cvt.rn.f32.u32(16777217)` | -3 and 16777216.0 | Match truncation and nearest-even rounding |
 
@@ -183,32 +184,37 @@ storage-buffer candidate and weakens the sampled-image candidate.
 
 ## Vulkan differential result
 
-The first PE32 Vulkan oracle now reproduces every committed field bit-for-bit
+The PTX-derived PE32 Vulkan oracle reproduces every committed field bit-for-bit
 on Intel UHD and RTX 3070 Vulkan:
 
 - all 14 f32/conversion results;
 - the 64-thread shared-memory barrier sequence;
-- all 12 integer texture rows including signed OOB zero.
+- all 12 integer texture rows including signed OOB zero;
+- all 12 float texture rows, including signed zero, subnormals, infinities, and
+  NaN payload preservation.
 
 Intel initially returned zero for the fused FMA because GLSL.std.450 `Fma`
 without `NoContraction` may be split. Decorating the FMA result explicitly
 restored native `0xa8800000`; the separate multiply/add remained zero on both
-devices. The result fixture is
-`tools/vulkan-probe/expected/reference-workstation/oracle.json`, SHA-256
-`42a8778edb77a7a74429e30fc2ec68c87c677ac0b9ca51a604539b07a8953968`.
+devices. Native CUDA evidence is
+`tools/cuda-oracle/expected/rtx3070-driver610.88.json`, SHA-256
+`729ca715fa38fcf7da8f4d0d72a0d067c1d65056357752a9a300f96c2ee1f53b`.
+The PTX-generated Vulkan result is
+`tools/vulkan-probe/expected/reference-workstation/ptx-generated-oracle.json`,
+SHA-256
+`e1d4a6dbf54acd08978ce999112e868e291c9ab11a1e40fc64701b9cc05aecf7`.
 
 ## Remaining native probes
 
 Still open at their later acceptance gates:
 
-1. **Real workload output:** capture or construct one deterministic fluid kernel
-   input/output and one deformable kernel input/output.
-2. **Float texture:** verify `tex.1d.v4.f32.s32` bit interpretation and OOB zero.
-3. **Queried-only exports:** determine whether null symbols are accepted or
+1. **Captured workload output:** the synthetic fluid hash/reorder pair is
+   complete; captured in-game state and one deformable input/output remain.
+2. **Queried-only exports:** determine whether null symbols are accepted or
    whether not-supported stubs are required. ZLUDA proves stubs work.
-4. **NVAPI gate:** determine the smallest interface set required by the current
+3. **NVAPI gate:** determine the smallest interface set required by the current
    system `PhysXDevice.dll` on a non-NVIDIA rendering path.
-5. **Host threading:** add thread IDs to a game trace to record call-thread
+4. **Host threading:** add thread IDs to a game trace to record call-thread
    behavior, while still implementing thread-safe state.
 
 A full game-memory replay capture is not required to begin a thin translator.
