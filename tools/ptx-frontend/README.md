@@ -94,13 +94,15 @@ build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
   generated-kernel.spv
 ```
 
-Kernel mode binds the 32-bit CUDA heap at descriptor binding 0 and the packed
-launch-parameter words at binding 1. PTX byte addresses remain `u32` heap
-offsets. The dynamic-shared byte count is explicit pipeline input; the emitter
-combines it with module/routine static shared layouts to size the Workgroup
-arena. Named `.shared` symbols resolve to aligned byte offsets in that arena.
-Named `.local` symbols resolve to aligned byte offsets in a per-invocation
-Function array.
+Kernel mode binds the 32-bit CUDA heap at descriptor binding 0, packed
+launch-parameter words at binding 1, and module `.const` storage at read-only
+storage-buffer binding 2 when the selected module declares constants. PTX byte
+addresses remain `u32` byte offsets within their memory space. The
+dynamic-shared byte count is explicit pipeline input; the emitter combines it
+with module/routine static shared layouts to size the Workgroup arena. Named
+`.shared` symbols resolve to aligned byte offsets in that arena. Named `.local`
+symbols resolve to aligned byte offsets in a per-invocation Function array.
+Named `.const` symbols resolve to aligned byte offsets in binding 2.
 
 The current state-machine lowering stores virtual registers in function storage
 and executes one PTX basic block per structured loop iteration. A finite prelude
@@ -174,7 +176,7 @@ Validated failures include:
 SHA-256:
 
 ```text
-611d93f54c373bfbf9f7915e0d1a75165d1e7af59ea6e1dcfdf834a3578c8c6b
+c61f5cf9cdb96e0ec97547d2ee010e76d97fcf953dc7a77683eb037312fa02a2
 ```
 
 ### Corpus manifest

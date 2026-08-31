@@ -14,6 +14,8 @@
 #define LOCAL_THREAD_COUNT 64
 #define TEXTURE_ELEMENT_COUNT 8
 #define TEXTURE_PROBE_COUNT 12
+#define CONSTANT_WORD_COUNT 8
+#define CONSTANT_RESULT_COUNT 2
 
 typedef struct cuda_api {
     HMODULE library;
@@ -28,6 +30,7 @@ typedef struct cuda_api {
         CUmodule *, const void *, unsigned int, CUjit_option *, void **);
     CUresult(CUDAAPI *cuModuleUnload)(CUmodule);
     CUresult(CUDAAPI *cuModuleGetFunction)(CUfunction *, CUmodule, const char *);
+    CUresult(CUDAAPI *cuModuleGetGlobal_v2)(CUdeviceptr *, size_t *, CUmodule, const char *);
     CUresult(CUDAAPI *cuModuleGetTexRef)(CUtexref *, CUmodule, const char *);
     CUresult(CUDAAPI *cuMemAlloc_v2)(CUdeviceptr *, size_t);
     CUresult(CUDAAPI *cuMemFree_v2)(CUdeviceptr);
@@ -89,6 +92,7 @@ static bool load_cuda(cuda_api *api)
     LOAD_API(api, cuModuleLoadDataEx);
     LOAD_API(api, cuModuleUnload);
     LOAD_API(api, cuModuleGetFunction);
+    LOAD_API(api, cuModuleGetGlobal_v2);
     LOAD_API(api, cuModuleGetTexRef);
     LOAD_API(api, cuMemAlloc_v2);
     LOAD_API(api, cuMemFree_v2);
@@ -213,8 +217,10 @@ int main(int argc, char **argv)
     CUfunction local_function = NULL;
     CUfunction texture_function = NULL;
     CUfunction texture_float_function = NULL;
+    CUfunction constant_function = NULL;
     CUtexref texture = NULL;
     CUtexref texture_float = NULL;
+    CUdeviceptr constant_symbol = 0;
     CUdeviceptr math_device = 0;
     CUdeviceptr barrier_device = 0;
     CUdeviceptr local_device = 0;
@@ -222,6 +228,7 @@ int main(int argc, char **argv)
     CUdeviceptr texture_output_device = 0;
     CUdeviceptr texture_float_input_device = 0;
     CUdeviceptr texture_float_output_device = 0;
+    CUdeviceptr constant_output_device = 0;
     uint32_t math_results[MATH_RESULT_COUNT] = {0};
     uint32_t barrier_results[BARRIER_THREAD_COUNT] = {0};
     uint32_t local_results[LOCAL_THREAD_COUNT] = {0};
@@ -238,9 +245,21 @@ int main(int argc, char **argv)
         {0x41000000u, 0x40900000u, 0xbf000000u, 0xff7fffffu},
     };
     uint32_t texture_float_results[TEXTURE_PROBE_COUNT][4] = {{0}};
+    const uint32_t constant_input[CONSTANT_WORD_COUNT] = {
+        0x00000000u,
+        0x11111111u,
+        0x22222222u,
+        0x33333333u,
+        0x1234abcdu,
+        0x7fc12345u,
+        0x66666666u,
+        0x77777777u,
+    };
+    uint32_t constant_results[CONSTANT_RESULT_COUNT] = {0};
     char device_name[256] = {0};
     size_t texture_offset = ~(size_t)0;
     size_t texture_float_offset = ~(size_t)0;
+    size_t constant_symbol_bytes = 0;
     bool success = false;
     unsigned int index;
     char jit_error[8192] = {0};
@@ -306,6 +325,22 @@ int main(int argc, char **argv)
     CUDA_TRY(&api,
              api.cuModuleGetFunction(
                  &texture_float_function, module, "texture_float_probe"));
+    CUDA_TRY(&api,
+             api.cuModuleGetFunction(
+                 &constant_function, module, "constant_probe"));
+    CUDA_TRY(&api,
+             api.cuModuleGetGlobal_v2(
+                 &constant_symbol,
+                 &constant_symbol_bytes,
+                 module,
+                 "probe_constants"));
+    if (constant_symbol_bytes != sizeof(constant_input)) {
+        fprintf(
+            stderr,
+            "unexpected constant symbol size: %lu\n",
+            (unsigned long)constant_symbol_bytes);
+        goto cleanup;
+    }
     CUDA_TRY(&api, api.cuModuleGetTexRef(&texture, module, "probe_tex"));
     CUDA_TRY(&api,
              api.cuModuleGetTexRef(&texture_float, module, "probe_tex_float"));
@@ -322,12 +357,18 @@ int main(int argc, char **argv)
              api.cuMemAlloc_v2(
                  &texture_float_output_device, sizeof(texture_float_results)));
     CUDA_TRY(&api,
+             api.cuMemAlloc_v2(
+                 &constant_output_device, sizeof(constant_results)));
+    CUDA_TRY(&api,
              api.cuMemcpyHtoD_v2(texture_input_device, texture_input, sizeof(texture_input)));
     CUDA_TRY(&api,
              api.cuMemcpyHtoD_v2(
                  texture_float_input_device,
                  texture_float_input,
                  sizeof(texture_float_input)));
+    CUDA_TRY(&api,
+             api.cuMemcpyHtoD_v2(
+                 constant_symbol, constant_input, sizeof(constant_input)));
 
     CUDA_TRY(&api,
              api.cuTexRefSetFormat(texture, CU_AD_FORMAT_UNSIGNED_INT32, 4));
@@ -385,6 +426,9 @@ int main(int argc, char **argv)
                  TEXTURE_PROBE_COUNT,
                  0,
                  texture_float_output_device));
+    CUDA_TRY(&api,
+             launch_one_pointer(
+                 &api, constant_function, 1, 1, 0, constant_output_device));
     CUDA_TRY(&api, api.cuCtxSynchronize());
 
     CUDA_TRY(&api, api.cuMemcpyDtoH_v2(math_results, math_device, sizeof(math_results)));
@@ -400,6 +444,11 @@ int main(int argc, char **argv)
                  texture_float_results,
                  texture_float_output_device,
                  sizeof(texture_float_results)));
+    CUDA_TRY(&api,
+             api.cuMemcpyDtoH_v2(
+                 constant_results,
+                 constant_output_device,
+                 sizeof(constant_results)));
 
     fprintf(output, "{\n  \"device\": \"%s\",\n  \"math\": {\n", device_name);
     for (index = 0; index < MATH_RESULT_COUNT; ++index) {
@@ -442,10 +491,20 @@ int main(int argc, char **argv)
         }
         fprintf(output, "]}%s\n", index + 1 == TEXTURE_PROBE_COUNT ? "" : ",");
     }
-    fprintf(output, "    ]\n  }\n}\n");
+    fprintf(output, "    ]\n  },\n  \"constant\": {\n    \"values\": [");
+    for (index = 0; index < CONSTANT_RESULT_COUNT; ++index) {
+        if (index != 0) {
+            fputs(", ", output);
+        }
+        write_hex(output, constant_results[index]);
+    }
+    fprintf(output, "]\n  }\n}\n");
     success = true;
 
 cleanup:
+    if (constant_output_device != 0) {
+        api.cuMemFree_v2(constant_output_device);
+    }
     if (texture_float_output_device != 0) {
         api.cuMemFree_v2(texture_float_output_device);
     }

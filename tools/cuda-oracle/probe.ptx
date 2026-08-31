@@ -4,6 +4,7 @@
 
 .global .texref probe_tex;
 .global .texref probe_tex_float;
+.const .align 16 .b8 probe_constants[32];
 
 .visible .entry math_probe(
     .param .u32 math_probe_param_0
@@ -181,5 +182,25 @@
     tex.1d.v4.f32.s32 {%f1, %f2, %f3, %f4}, [probe_tex_float, {%coord}];
     mad.lo.s32 %address, %thread, 16, %out;
     st.global.v4.f32 [%address], {%f1, %f2, %f3, %f4};
+    ret;
+}
+
+.visible .entry constant_probe(
+    .param .u32 constant_probe_param_0
+)
+{
+    .reg .u32 %out;
+    .reg .u32 %base;
+    .reg .u32 %address;
+    .reg .u32 %value;
+    .reg .f32 %float_value;
+
+    ld.param.u32 %out, [constant_probe_param_0];
+    mov.u32 %base, probe_constants;
+    add.u32 %address, %base, 12;
+    ld.const.u32 %value, [%address+4];
+    ld.const.f32 %float_value, [%address+8];
+    st.global.u32 [%out], %value;
+    st.global.f32 [%out+4], %float_value;
     ret;
 }

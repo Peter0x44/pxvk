@@ -19,8 +19,9 @@ namespace {
 
 constexpr VkDeviceSize kBufferBytes = 32ull * 1024ull * 1024ull;
 constexpr VkDeviceSize kMemoryCopyBytes = 2ull * sizeof(std::uint32_t);
-constexpr VkDeviceSize kOracleCopyBytes = 512ull * sizeof(std::uint32_t);
+constexpr VkDeviceSize kOracleCopyBytes = 514ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kKernelFixtureCopyBytes = 512ull * sizeof(std::uint32_t);
+constexpr VkDeviceSize kConstantFixtureCopyBytes = 514ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kReorderFixtureCopyBytes =
     32768ull * sizeof(std::uint32_t);
 constexpr std::size_t kReorderedPositionOffset = 512;
@@ -47,6 +48,10 @@ constexpr std::size_t kTextureOutputOffset = 256;
 constexpr std::size_t kTextureFloatInputOffset = 320;
 constexpr std::size_t kTextureFloatOutputOffset = 384;
 constexpr std::size_t kLocalOffset = 448;
+constexpr std::size_t kConstantOutputOffset = 512;
+constexpr std::array<std::uint32_t, 2> kExpectedConstant = {
+    0x1234abcdu, 0x7fc12345u,
+};
 constexpr std::array<std::array<std::uint32_t, 4>, 8>
     kExpectedFloatTextureInput = {{
         {0x3f800000u, 0x80000000u, 0x00000001u, 0x7fc12345u},
@@ -377,6 +382,7 @@ struct DeviceResult {
     std::array<std::uint32_t, 64> local = {};
     std::array<std::array<std::uint32_t, 4>, 12> texture = {};
     std::array<std::array<std::uint32_t, 4>, 12> texture_float = {};
+    std::array<std::uint32_t, 2> constant = {};
     std::uint32_t kernel_hash = 0;
     std::uint32_t kernel_index = 0;
     std::array<std::uint32_t, 4> reordered_position = {};
@@ -391,9 +397,11 @@ DeviceResult run_device(
     VkPhysicalDevice physical_device,
     const std::vector<std::uint32_t> &shader,
     bool oracle_mode,
+    bool ptx_oracle_mode,
     bool require_memory_result,
     bool kernel_fixture_mode,
-    bool reorder_fixture_mode)
+    bool reorder_fixture_mode,
+    bool constant_fixture_mode)
 {
     DeviceResult result;
     result.index = device_index;
@@ -480,7 +488,11 @@ DeviceResult run_device(
             ? kOracleCopyBytes
             : reorder_fixture_mode
                 ? kReorderFixtureCopyBytes
-                : kernel_fixture_mode ? kKernelFixtureCopyBytes : kMemoryCopyBytes;
+                : kernel_fixture_mode
+                    ? kKernelFixtureCopyBytes
+                    : constant_fixture_mode
+                        ? kConstantFixtureCopyBytes
+                        : kMemoryCopyBytes;
         check(
             vkMapMemory(device, staging_buffer.memory, 0, staging_buffer.allocation_size, 0, &mapped),
             "vkMapMemory");
@@ -534,6 +546,13 @@ DeviceResult run_device(
             words[257] = 1u;
             words[320] = 1u;
             words[385] = 0x3f800000u;
+        } else if (constant_fixture_mode) {
+            words[0] = static_cast<std::uint32_t>(
+                kConstantOutputOffset * sizeof(std::uint32_t));
+            words[4] = kExpectedConstant[0];
+            words[5] = kExpectedConstant[1];
+            words[kConstantOutputOffset] = 0xdeadbeefu;
+            words[kConstantOutputOffset + 1u] = 0xdeadbeefu;
         } else {
             words[0] = kInput;
             words[1] = 0xdeadbeefu;
@@ -551,6 +570,8 @@ DeviceResult run_device(
                         kExpectedFloatTextureInput[row][component];
                 }
             }
+            words[4] = kExpectedConstant[0];
+            words[5] = kExpectedConstant[1];
         }
         if (!staging_buffer.host_coherent) {
             VkMappedMemoryRange range = {
@@ -564,8 +585,10 @@ DeviceResult run_device(
         }
 
         const std::uint32_t binding_count =
-            kernel_fixture_mode || reorder_fixture_mode ? 2u : 1u;
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {};
+            ptx_oracle_mode || constant_fixture_mode
+                ? 3u
+                : kernel_fixture_mode || reorder_fixture_mode ? 2u : 1u;
+        std::array<VkDescriptorSetLayoutBinding, 3> bindings = {};
         for (std::uint32_t binding_index = 0;
              binding_index < binding_count;
              ++binding_index) {
@@ -612,8 +635,8 @@ DeviceResult run_device(
             &descriptor_layout,
         };
         check(vkAllocateDescriptorSets(device, &set_info, &descriptor_set), "vkAllocateDescriptorSets");
-        std::array<VkDescriptorBufferInfo, 2> descriptor_buffer_infos = {};
-        std::array<VkWriteDescriptorSet, 2> descriptor_writes = {};
+        std::array<VkDescriptorBufferInfo, 3> descriptor_buffer_infos = {};
+        std::array<VkWriteDescriptorSet, 3> descriptor_writes = {};
         for (std::uint32_t binding_index = 0;
              binding_index < binding_count;
              ++binding_index) {
@@ -822,6 +845,12 @@ DeviceResult run_device(
             result.pass =
                 result.kernel_hash == kExpectedKernelHash &&
                 result.kernel_index == 0u;
+        } else if (constant_fixture_mode) {
+            std::copy_n(
+                words + kConstantOutputOffset,
+                result.constant.size(),
+                result.constant.begin());
+            result.pass = result.constant == kExpectedConstant;
         } else {
             result.pass = !require_memory_result ||
                 (result.input_after == kInput && result.result == kExpected);
@@ -841,6 +870,13 @@ DeviceResult run_device(
                     words + kTextureFloatOutputOffset + row * 4u,
                     4u,
                     result.texture_float[row].begin());
+            }
+            if (ptx_oracle_mode) {
+                std::copy_n(
+                    words + kConstantOutputOffset,
+                    result.constant.size(),
+                    result.constant.begin());
+                result.pass = result.pass && result.constant == kExpectedConstant;
             }
             result.pass = result.pass &&
                 std::equal(result.math.begin(), result.math.end(), kExpectedMath.begin());
@@ -886,9 +922,11 @@ DeviceResult run_device(
                 ? "reorder kernel fixture result mismatch"
                 : kernel_fixture_mode
                     ? "selected kernel fixture result mismatch"
-                    : oracle_mode
-                        ? "standalone oracle result mismatch"
-                        : "integer/global-memory result mismatch";
+                    : constant_fixture_mode
+                        ? "constant kernel fixture result mismatch"
+                        : oracle_mode
+                            ? "standalone oracle result mismatch"
+                            : "integer/global-memory result mismatch";
         }
     } catch (const std::exception &error) {
         result.error = error.what();
@@ -948,18 +986,23 @@ int main(int argc, char **argv)
         argc == 4 && std::string(argv[2]) == "--kernel-fixture";
     const bool reorder_fixture_mode =
         argc == 4 && std::string(argv[2]) == "--reorder-fixture";
+    const bool constant_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--constant-fixture";
     const bool incomplete_named_mode =
         argc == 3 &&
         (std::string(argv[2]) == "--ptx-oracle" ||
          std::string(argv[2]) == "--kernel-fixture" ||
-         std::string(argv[2]) == "--reorder-fixture");
+         std::string(argv[2]) == "--reorder-fixture" ||
+         std::string(argv[2]) == "--constant-fixture");
     if ((argc != 2 && argc != 3 &&
-         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode) ||
+         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
+         !constant_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
                   << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --kernel-fixture <generated.spv>\n"
-                  << "       vulkan-memory-smoke <output.json> --reorder-fixture <generated.spv>\n";
+                  << "       vulkan-memory-smoke <output.json> --reorder-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --constant-fixture <generated.spv>\n";
         return 2;
     }
 
@@ -1003,13 +1046,16 @@ int main(int argc, char **argv)
     const bool oracle_mode =
         (argc == 3 && !incomplete_named_mode) || ptx_oracle_mode;
     const bool shader_input_mode =
-        oracle_mode || kernel_fixture_mode || reorder_fixture_mode;
+        oracle_mode || kernel_fixture_mode || reorder_fixture_mode ||
+        constant_fixture_mode;
     const bool require_memory_result =
-        !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode;
+        !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
+        !constant_fixture_mode;
     std::vector<std::uint32_t> shader;
     if (shader_input_mode) {
         const char *shader_path =
-            ptx_oracle_mode || kernel_fixture_mode || reorder_fixture_mode
+            ptx_oracle_mode || kernel_fixture_mode || reorder_fixture_mode ||
+                    constant_fixture_mode
                 ? argv[3]
                 : argv[2];
         std::ifstream shader_input(shader_path, std::ios::binary | std::ios::ate);
@@ -1045,9 +1091,11 @@ int main(int argc, char **argv)
             devices[index],
             shader,
             oracle_mode,
+            ptx_oracle_mode,
             require_memory_result,
             kernel_fixture_mode,
-            reorder_fixture_mode);
+            reorder_fixture_mode,
+            constant_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -1064,6 +1112,7 @@ int main(int argc, char **argv)
            << "  \"test\": \""
            << (reorder_fixture_mode ? "reorder_kernel_fixture" :
                kernel_fixture_mode ? "selected_kernel_fixture" :
+               constant_fixture_mode ? "constant_kernel_fixture" :
                ptx_oracle_mode ? "ptx_generated_oracle" :
                oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory")
            << "\",\n"
@@ -1081,6 +1130,10 @@ int main(int argc, char **argv)
                   "\"0x40400000\"],\n"
                << "  \"cell_divisor_bits\": \"0x3f800000\",\n"
                << "  \"expected_hash\": \"" << hex32(kExpectedKernelHash) << "\",\n";
+    } else if (constant_fixture_mode) {
+        output << "  \"kernel\": \"constant_probe\",\n"
+               << "  \"expected\": [\"" << hex32(kExpectedConstant[0])
+               << "\", \"" << hex32(kExpectedConstant[1]) << "\"],\n";
     } else {
         output << "  \"input\": \"" << hex32(kInput) << "\",\n"
                << "  \"mask\": \"" << hex32(kMask) << "\",\n"
@@ -1128,6 +1181,10 @@ int main(int argc, char **argv)
             output << "      \"kernel_hash\": \"" << hex32(result.kernel_hash)
                    << "\",\n"
                    << "      \"kernel_index\": " << result.kernel_index << ",\n";
+        } else if (constant_fixture_mode) {
+            output << "      \"constant\": {\"values\": [\""
+                   << hex32(result.constant[0]) << "\", \""
+                   << hex32(result.constant[1]) << "\"]},\n";
         } else {
             output << "      \"input_after\": \"" << hex32(result.input_after) << "\",\n"
                    << "      \"result\": \"" << hex32(result.result) << "\",\n";
@@ -1173,6 +1230,16 @@ int main(int argc, char **argv)
                 output << "]}" << (row + 1 == result.texture_float.size() ? "\n" : ",\n");
             }
             output << "      ]},\n";
+            if (ptx_oracle_mode) {
+                output << "      \"constant\": {\"values\": [";
+                for (std::size_t constant_index = 0;
+                     constant_index < result.constant.size();
+                     ++constant_index) {
+                    output << (constant_index == 0 ? "" : ", ")
+                           << "\"" << hex32(result.constant[constant_index]) << "\"";
+                }
+                output << "]},\n";
+            }
         }
         output << "      \"pass\": " << (result.pass ? "true" : "false") << ",\n"
                << "      \"error\": " << json_string(result.error.c_str()) << "\n"

@@ -100,11 +100,16 @@ RTX both returned native `0xa8800000`. The combined result is
 
 The direct compiler slice now reproduces that result from
 `tools/cuda-oracle/probe.ptx`: the frontend emits schema-5 structured IR and
-routine storage layouts, and the project emitter produces a deterministic
-2,967-word SPIR-V 1.5 binary. SDK validation passes, and the generated module
-matches every math, barrier, invocation-private local-memory, and integer/float
-texture field on Intel and RTX. The original GLSL/assembly oracle remains the
-independent Vulkan-side reference rather than compiler input.
+routine/module storage layouts, and the project emitter produces a deterministic
+3,086-word SPIR-V 1.5 binary. SDK validation passes, and the generated module
+matches every math, barrier, invocation-private local-memory, module-constant,
+and integer/float texture field on Intel and RTX. Module constants use a
+read-only storage buffer at binding 2. The original GLSL/assembly oracle remains
+the independent Vulkan-side reference rather than compiler input.
+
+The selected-entry kernel path separately emits a 446-word constant-memory
+fixture with heap/parameter/constant bindings 0/1/2. It validates for Vulkan
+1.2 and returns native `0x1234abcd` and `0x7fc12345` on both local GPUs.
 
 ### Observed device results
 

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "pointer_bits": 32,
+  "test": "constant_kernel_fixture",
+  "buffer_bytes": 33554432,
+  "kernel": "constant_probe",
+  "expected": ["0x1234abcd", "0x7fc12345"],
+  "spirv_words": 446,
+  "devices": [
+    {
+      "index": 0,
+      "name": "Intel(R) UHD Graphics",
+      "vendor_id": "0x00008086",
+      "device_id": "0x00009a60",
+      "api_version": "1.4.323",
+      "driver_version_raw": 1661869,
+      "device_memory_local": true,
+      "staging_host_coherent": true,
+      "constant": {"values": ["0x1234abcd", "0x7fc12345"]},
+      "pass": true,
+      "error": ""
+    },
+    {
+      "index": 1,
+      "name": "NVIDIA GeForce RTX 3070 Laptop GPU",
+      "vendor_id": "0x000010de",
+      "device_id": "0x000024dd",
+      "api_version": "1.4.341",
+      "driver_version_raw": 2559967232,
+      "device_memory_local": true,
+      "staging_host_coherent": true,
+      "constant": {"values": ["0x1234abcd", "0x7fc12345"]},
+      "pass": true,
+      "error": ""
+    }
+  ]
+}

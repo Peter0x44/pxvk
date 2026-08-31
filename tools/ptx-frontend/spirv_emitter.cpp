@@ -37,7 +37,7 @@ struct OracleBinding {
 
 class SpirvModule {
 public:
-    explicit SpirvModule(std::uint32_t shared_bytes)
+    SpirvModule(std::uint32_t shared_bytes, std::uint32_t constant_bytes)
     {
         emit(capabilities_, SpvOpCapability, {SpvCapabilityShader});
         emit(capabilities_, SpvOpCapability, {SpvCapabilityRoundingModeRTE});
@@ -99,6 +99,19 @@ public:
              {type_ptr_storage_buffer_, buffer_, SpvStorageClassStorageBuffer});
         emit(annotations_, SpvOpDecorate, {buffer_, SpvDecorationDescriptorSet, 0u});
         emit(annotations_, SpvOpDecorate, {buffer_, SpvDecorationBinding, 0u});
+
+        if (constant_bytes != 0u) {
+            constant_buffer_ = allocate_id();
+            emit(declarations_, SpvOpVariable,
+                 {type_ptr_storage_buffer_, constant_buffer_,
+                  SpvStorageClassStorageBuffer});
+            emit(annotations_, SpvOpDecorate,
+                 {constant_buffer_, SpvDecorationDescriptorSet, 0u});
+            emit(annotations_, SpvOpDecorate,
+                 {constant_buffer_, SpvDecorationBinding, 2u});
+            emit(annotations_, SpvOpDecorate,
+                 {constant_buffer_, SpvDecorationNonWritable});
+        }
 
         local_id_ = allocate_id();
         emit(declarations_, SpvOpVariable,
@@ -194,9 +207,16 @@ public:
                      std::uint32_t barrier_function,
                      std::uint32_t local_function,
                      std::uint32_t texture_function,
-                     std::uint32_t texture_float_function)
+                     std::uint32_t texture_float_function,
+                     std::uint32_t constant_function)
     {
-        emit_entry_point(main_function, {local_id_, buffer_, shared_});
+        if (constant_buffer_ != 0u) {
+            emit_entry_point(
+                main_function,
+                {local_id_, buffer_, shared_, constant_buffer_});
+        } else {
+            emit_entry_point(main_function, {local_id_, buffer_, shared_});
+        }
         emit(execution_modes_, SpvOpExecutionMode,
              {main_function, SpvExecutionModeLocalSize, 64u, 1u, 1u});
         emit(execution_modes_, SpvOpExecutionMode,
@@ -218,6 +238,7 @@ public:
                              {is_math_thread.id, math_label, math_merge});
         function_instruction(SpvOpLabel, {math_label});
         emit_void_call(math_function);
+        emit_void_call(constant_function);
         function_instruction(SpvOpBranch, {math_merge});
         function_instruction(SpvOpLabel, {math_merge});
 
@@ -242,9 +263,16 @@ public:
     void define_kernel_entry_point(std::uint32_t function, std::uint32_t local_size)
     {
         ensure_kernel_globals();
-        emit_entry_point(
-            function,
-            {local_id_, workgroup_id_, buffer_, parameter_buffer_, shared_});
+        if (constant_buffer_ != 0u) {
+            emit_entry_point(
+                function,
+                {local_id_, workgroup_id_, buffer_, parameter_buffer_, shared_,
+                 constant_buffer_});
+        } else {
+            emit_entry_point(
+                function,
+                {local_id_, workgroup_id_, buffer_, parameter_buffer_, shared_});
+        }
         emit(execution_modes_, SpvOpExecutionMode,
              {function, SpvExecutionModeLocalSize, local_size, 1u, 1u});
         emit(execution_modes_, SpvOpExecutionMode,
@@ -357,6 +385,20 @@ public:
             SpvOpAccessChain,
             type_ptr_storage_u32_,
             {buffer_, zero.id, index.id});
+        return instruction(SpvOpLoad, ValueType::u32, {pointer.id});
+    }
+
+    Value load_constant(Value word_index)
+    {
+        if (constant_buffer_ == 0u) {
+            throw std::runtime_error("constant load without module constant storage");
+        }
+        const Value zero = constant(ValueType::u32, 0u);
+        const Value index = coerce(word_index, ValueType::u32);
+        const Value pointer = instruction_with_type(
+            SpvOpAccessChain,
+            type_ptr_storage_u32_,
+            {constant_buffer_, zero.id, index.id});
         return instruction(SpvOpLoad, ValueType::u32, {pointer.id});
     }
 
@@ -575,6 +617,7 @@ private:
     std::uint32_t type_ptr_workgroup_array_ = 0u;
     std::uint32_t type_ptr_workgroup_u32_ = 0u;
     std::uint32_t buffer_ = 0u;
+    std::uint32_t constant_buffer_ = 0u;
     std::uint32_t local_id_ = 0u;
     std::uint32_t shared_ = 0u;
     std::uint32_t parameter_buffer_ = 0u;
@@ -638,6 +681,22 @@ std::uint32_t module_static_shared_bytes(const Json &manifest)
     return bytes;
 }
 
+std::uint32_t module_constant_bytes(const Json &manifest)
+{
+    std::uint32_t bytes = 0u;
+    for (const Json &variable : manifest.at("variables")) {
+        if (variable.at("space").get<std::string>() != "const" ||
+            variable.at("external").get<bool>()) {
+            continue;
+        }
+        bytes = std::max(
+            bytes,
+            variable.at("offset").get<std::uint32_t>() +
+                variable.at("size").get<std::uint32_t>());
+    }
+    return bytes;
+}
+
 std::uint32_t required_shared_bytes(
     const Json &manifest,
     const Json &entry,
@@ -656,6 +715,7 @@ std::uint32_t required_shared_bytes(
 class EntryLowerer {
 public:
     EntryLowerer(SpirvModule &module,
+                 const Json &manifest,
                  const Json &entry,
                  OracleBinding binding,
                  std::uint32_t function)
@@ -667,6 +727,13 @@ public:
                 parse_type(bank.at("type").get<std::string>()),
                 bank.at("count").get<std::size_t>(),
             });
+        }
+        for (const Json &variable : manifest.at("variables")) {
+            if (variable.at("space").get<std::string>() == "const") {
+                storage_offsets_.emplace(
+                    variable.at("name").get<std::string>(),
+                    variable.at("offset").get<std::uint32_t>());
+            }
         }
         for (const Json &variable : entry_.at("variables")) {
             storage_offsets_.emplace(
@@ -1035,6 +1102,16 @@ private:
                    module_.load_shared(word_index(address_operand(operands.at(1)))));
             return;
         }
+        if (base == "ld" && has_modifier(instruction, "const")) {
+            const Value loaded =
+                module_.load_constant(word_index(address_operand(operands.at(1))));
+            define(
+                destination(),
+                has_modifier(instruction, "f32")
+                    ? module_.coerce(loaded, ValueType::f32)
+                    : loaded);
+            return;
+        }
         if (base == "st" && has_modifier(instruction, "local")) {
             if (local_ == 0u) {
                 unsupported(instruction, "local store without local storage");
@@ -1112,6 +1189,14 @@ public:
                     ? total_static
                     : variable.at("offset").get<std::uint32_t>(),
                 external);
+        }
+        for (const Json &variable : manifest.at("variables")) {
+            if (variable.at("space").get<std::string>() == "const") {
+                add_storage_symbol(
+                    variable.at("name").get<std::string>(),
+                    variable.at("offset").get<std::uint32_t>(),
+                    false);
+            }
         }
         for (const Json &variable : entry_.at("variables")) {
             const std::string space =
@@ -1627,6 +1712,16 @@ private:
             define(operands.at(0), loaded);
             return;
         }
+        if (base == "ld" && has_modifier(instruction, "const")) {
+            const Value loaded =
+                module_.load_constant(word_index(address_operand(operands.at(1))));
+            define(
+                operands.at(0),
+                has_modifier(instruction, "f32")
+                    ? module_.coerce(loaded, ValueType::f32)
+                    : loaded);
+            return;
+        }
         if (base == "ld" && has_modifier(instruction, "local")) {
             if (local_ == 0u) {
                 unsupported(instruction, "local load without local storage");
@@ -1845,25 +1940,37 @@ std::vector<std::uint32_t> emit_oracle(const Json &manifest)
         shared_bytes = std::max(
             shared_bytes, required_shared_bytes(manifest, entry, 0u));
     }
-    SpirvModule module(shared_bytes);
+    SpirvModule module(shared_bytes, module_constant_bytes(manifest));
     const std::uint32_t math = module.allocate_id();
     const std::uint32_t barrier = module.allocate_id();
     const std::uint32_t local = module.allocate_id();
     const std::uint32_t texture = module.allocate_id();
     const std::uint32_t texture_float = module.allocate_id();
+    const std::uint32_t constant = module.allocate_id();
     const std::uint32_t main_function = module.allocate_id();
 
-    EntryLowerer(module, find_entry(manifest, "math_probe"), {16u}, math).lower();
-    EntryLowerer(module, find_entry(manifest, "barrier_probe"), {64u}, barrier).lower();
-    EntryLowerer(module, find_entry(manifest, "local_probe"), {448u}, local).lower();
-    EntryLowerer(module, find_entry(manifest, "texture_probe"), {256u}, texture).lower();
+    EntryLowerer(
+        module, manifest, find_entry(manifest, "math_probe"), {16u}, math).lower();
+    EntryLowerer(
+        module, manifest, find_entry(manifest, "barrier_probe"), {64u}, barrier).lower();
+    EntryLowerer(
+        module, manifest, find_entry(manifest, "local_probe"), {448u}, local).lower();
+    EntryLowerer(
+        module, manifest, find_entry(manifest, "texture_probe"), {256u}, texture).lower();
     EntryLowerer(
         module,
+        manifest,
         find_entry(manifest, "texture_float_probe"),
         {384u},
         texture_float).lower();
+    EntryLowerer(
+        module,
+        manifest,
+        find_entry(manifest, "constant_probe"),
+        {512u},
+        constant).lower();
     module.define_main(
-        main_function, math, barrier, local, texture, texture_float);
+        main_function, math, barrier, local, texture, texture_float, constant);
     return module.finish();
 }
 
@@ -1884,7 +1991,8 @@ std::vector<std::uint32_t> emit_kernel_entry(
     }
     const Json &entry = find_entry(manifest, entry_name);
     SpirvModule module(
-        required_shared_bytes(manifest, entry, dynamic_shared_bytes));
+        required_shared_bytes(manifest, entry, dynamic_shared_bytes),
+        module_constant_bytes(manifest));
     const std::uint32_t function = module.allocate_id();
     KernelEntryLowerer(
         module,

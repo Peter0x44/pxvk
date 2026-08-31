@@ -41,6 +41,13 @@ add_test(
         "${CMAKE_CURRENT_BINARY_DIR}/oracle-explicit-rte.spv"
 )
 add_test(
+    NAME ptx-constant-kernel-emitter
+    COMMAND ptx-spirv-emitter
+        --entry constant_probe 1 0
+        "${CMAKE_CURRENT_SOURCE_DIR}/expected/oracle-manifest.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/constant-kernel.spv"
+)
+add_test(
     NAME ptx-cfg-frontend
     COMMAND ptx-frontend
         "${CMAKE_CURRENT_SOURCE_DIR}/cfg_probe.ptx"

@@ -3,9 +3,9 @@
 ## Status
 
 A project-owned x86 CUDA Driver API probe now records exact NVIDIA results for
-the PTX floating-point, workgroup-barrier, invocation-private local-memory, and
-legacy integer/float linear-texture semantics that are most backend-sensitive
-in the Mirror's Edge corpus.
+the PTX floating-point, workgroup-barrier, invocation-private local-memory,
+module constant-memory, and legacy integer/float linear-texture semantics that
+are most backend-sensitive in the Mirror's Edge corpus.
 
 Implemented at:
 
@@ -20,7 +20,7 @@ tools/cuda-oracle/
 The committed result fixture has SHA-256:
 
 ```text
-02dcd524f09a0578906a27d68b3892066dfcfbaf94c83fef061b6719765374e1
+38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011
 ```
 
 Three native executions produced byte-identical JSON.
@@ -65,6 +65,7 @@ The output can be compared byte-for-byte with the committed fixture.
 | Does `bar.sync 0` make all shared writes visible? | 64 threads write, barrier, read neighbor | Exact cyclic neighbor sequence | Lower to full-workgroup execution + workgroup-memory barrier |
 | How does an integer-coordinate linear texref handle OOB? | Coordinates -2 through 9 over eight `uint4` elements | In-range exact; negative and high OOB return zero | Storage-buffer lowering needs explicit bounds-to-zero, not edge clamping |
 | Does a float texref preserve fetched bits and OOB zero? | Normal values, signed zero, subnormals, infinities, NaN payloads, and signed coordinates -2 through 9 | Every in-range component was bit-identical; negative/high OOB returned four positive zeros | Lower `tex.1d.v4.f32.s32` as bounded four-word loads plus bit reinterpretation |
+| Do indirect `.const` loads preserve integer and float payload bits? | Copy eight words into a 32-byte module constant, form an address through `mov` + `add`, then load `u32` and `f32` | Returned `0x1234abcd` and NaN payload `0x7fc12345` exactly | Represent module constants as a read-only bound byte range with 32-bit space-relative addressing |
 | How are NaNs handled by observed min/max order? | NaN as first operand, 1.0 as second | Both return 1.0 | Preserve NVIDIA operand-order behavior for these forms |
 | How do directed/int conversions behave? | `cvt.rzi.s32.f32(-3.75)` and `cvt.rn.f32.u32(16777217)` | -3 and 16777216.0 | Match truncation and nearest-even rounding |
 
@@ -166,6 +167,14 @@ CUDA returns the complete `0x5a000000` through `0x5a00003f` sequence. This
 establishes the concrete private-storage and alignment contract needed by
 `KernelFluidDensity`'s 108-byte local depot.
 
+## Module constant result
+
+The host resolves the 32-byte `probe_constants` symbol with
+`cuModuleGetGlobal_v2`, copies eight words into it, and launches a kernel that
+forms an indirect address from the symbol base. Native `ld.const.u32` returns
+`0x1234abcd`; `ld.const.f32` preserves the `0x7fc12345` NaN payload. This is the
+same symbol-base plus computed-offset shape used by `KernelFluidDensity`.
+
 ## Decisions enabled
 
 ### Floating point
@@ -193,6 +202,13 @@ Routine `.local` declarations require an aligned, invocation-private arena.
 They do not justify a descriptor, workgroup allocation, or cross-invocation
 synchronization.
 
+### Constant storage
+
+Module `.const` declarations require immutable-per-dispatch storage with
+module-relative 32-bit byte offsets. The Vulkan lowering uses read-only storage
+buffer binding 2; this does not place constants in the CUDA heap or launch
+parameter buffer.
+
 ### Texture
 
 The two legacy 1D texture operations can be modeled as typed linear range
@@ -210,17 +226,18 @@ on Intel UHD and RTX 3070 Vulkan:
 - all 12 integer texture rows including signed OOB zero;
 - all 12 float texture rows, including signed zero, subnormals, infinities, and
   NaN payload preservation.
+- the indirect module-constant integer and float payloads.
 
 Intel initially returned zero for the fused FMA because GLSL.std.450 `Fma`
 without `NoContraction` may be split. Decorating the FMA result explicitly
 restored native `0xa8800000`; the separate multiply/add remained zero on both
 devices. Native CUDA evidence is
 `tools/cuda-oracle/expected/rtx3070-driver610.88.json`, SHA-256
-`02dcd524f09a0578906a27d68b3892066dfcfbaf94c83fef061b6719765374e1`.
+`38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
 The PTX-generated Vulkan result is
 `tools/vulkan-probe/expected/reference-workstation/ptx-generated-oracle.json`,
 SHA-256
-`3460af5a20b6754a1e1fed3e11f5d348402d3f44faec933266649585d93702a7`.
+`60f74896d5ac3af9682a5b5960c2587f7303b0e8252d33689749ea40b950056f`.
 
 ## Remaining native probes
 

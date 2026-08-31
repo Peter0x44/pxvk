@@ -204,14 +204,14 @@ implementation path; LLVM is a credible fallback if SSA/legalization grows
 beyond the finite emitter. See the official
 [LLVM SPIR-V backend guide](https://llvm.org/docs/SPIRVUsage.html).
 
-The first vertical slice now emits a 2,967-word SPIR-V 1.5 module directly from
+The first vertical slice now emits a 3,086-word SPIR-V 1.5 module directly from
 the schema-5 structured IR for `tools/cuda-oracle/probe.ptx`. The module uses
-one 64-thread Vulkan entry point to invoke the original one-thread math,
-64-thread barrier, 64-thread invocation-private local-memory, and 12-thread
-integer and float texture routines against the oracle binding profile. SDK
-`spirv-val --target-env vulkan1.2` accepts the binary, and Intel UHD plus RTX
-3070 executions match every native CUDA math, barrier, local-memory, and texture
-field.
+one 64-thread Vulkan entry point to invoke the original one-thread math and
+constant routines, 64-thread barrier, 64-thread invocation-private local-memory,
+and 12-thread integer and float texture routines against the oracle binding
+profile. SDK `spirv-val --target-env vulkan1.2` accepts the binary, and Intel UHD
+plus RTX 3070 executions match every native CUDA math, barrier, local-memory,
+module-constant, and texture field.
 
 The second slice lowers the captured 89-instruction
 `KernelFluidCalcHashPacked` entry from `module_0013_01_05.ptx`. A conservative
@@ -237,9 +237,26 @@ count explicitly when sizing each Workgroup arena. The standalone local probe
 stores and reloads the aligned symbol at byte offset 16; native RTX and
 translated Intel/RTX return `0x5a000000 + tid` for all 64 invocations.
 
-This closes the local-storage prerequisite for trace-ordered
-`KernelFluidDensity`. Its remaining structural work is module constant storage
-and the finite instruction/helper subset used by that captured entry.
+This closes the local- and module-constant-storage prerequisites for
+trace-ordered `KernelFluidDensity`. Its remaining structural work is the finite
+instruction/helper subset used by that captured entry.
+
+Module `.const` declarations are emitted as a read-only storage buffer at
+binding 2, separate from the binding-0 CUDA heap and binding-1 launch
+parameters. Symbols retain schema-5 aligned byte offsets. The standalone
+constant probe copies eight native words through `cuModuleGetGlobal_v2`, then
+uses the density kernel's symbol-base plus computed-offset address shape;
+native RTX and translated Intel/RTX preserve `0x1234abcd` and NaN payload
+`0x7fc12345` exactly. The captured trace independently shows a 1,024-byte
+device-to-device update into density's 10,240-byte `parameters_cmem`.
+
+The selected-entry path independently emits the same `constant_probe` through
+`KernelEntryLowerer` as a 446-word module with bindings 0/1/2. Vulkan 1.2
+validation passes, and both local GPUs match the native payloads. The committed
+fixture is
+`tools/vulkan-probe/expected/reference-workstation/constant-kernel.json`,
+SHA-256
+`b00dfe683ae265e8569be15aa05a2dabfd0ca4633d2b8c500f34dee5753620da`.
 
 `tools/cuda-physx-fixture` runs both kernels as a one-particle pipeline against
 the local proprietary PTX. Native RTX and PTX-derived Vulkan on Intel/RTX all
@@ -469,9 +486,9 @@ exports and no proprietary inputs.
 
 All seven items now run through `preflight.ps1 -RunOracle`. The PE32 runner
 allocates device-local 32 MiB buffers, dispatches one 64-thread SPIR-V module,
-and emits the CUDA oracle's math, barrier, and texture field names per device.
-Intel and RTX match every committed NVIDIA field bit-for-bit. Three runs
-produced byte-identical JSON.
+and emits the CUDA oracle's math, barrier, local-memory, module-constant, and
+texture field names per device. Intel and RTX match every committed NVIDIA
+field bit-for-bit. Three runs produced byte-identical JSON.
 
 The readable GLSL source is `oracle.comp`. `rebuild-oracle.ps1` compiles it,
 adds the required `NoContraction` decoration to the GLSL.std.450 `Fma`, assembles
@@ -530,7 +547,7 @@ size matches `mirrors-edge-ptx-corpus-analysis.json`. This includes the two
 module-scope shared allocations that contribute to launched entry totals.
 
 The project-owned schema-5 structured, value-typed oracle IR manifest SHA-256
-is `611d93f54c373bfbf9f7915e0d1a75165d1e7af59ea6e1dcfdf834a3578c8c6b`.
+is `c61f5cf9cdb96e0ec97547d2ee010e76d97fcf953dc7a77683eb037312fa02a2`.
 The schema-3 redistributable structural corpus manifest is
 `tools/ptx-frontend/expected/corpus-manifest.json`, SHA-256
 `d49317aaeaf1f39f080d0cfdaa5c56b96dba8fa71ea06d76c672792b831e02ee`.

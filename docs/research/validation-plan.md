@@ -44,22 +44,23 @@ framework, runtime language, shader compiler, or architecture.
 
 | Asset | Current evidence | Role in the plan |
 |---|---|---|
-| `tools/cuda-oracle/probe.ptx` | Native PTX microkernels for f32, barrier, aligned local memory, and `u32`/`f32` texture behavior | Run unchanged through native CUDA and the Vulkan translator |
+| `tools/cuda-oracle/probe.ptx` | Native PTX microkernels for f32, barrier, aligned local memory, module constants, and `u32`/`f32` texture behavior | Run unchanged through native CUDA and the Vulkan translator |
 | `tools/cuda-oracle/expected/rtx3070-driver610.88.json` | Committed exact NVIDIA result bits | Primary standalone semantic fixture |
 | `tools/cuda-oracle/main.c` | PE32/i386 Driver API launcher | Native reference runner and shape for a backend runner |
 | `tools/nvcuda-trace/tests/launch_params_test.c` | Standard/reversed packed launch tokens and malformed/unreadable inputs | Preserve `pxvk_parse_launch_extra` behavior; extend only when the launch ABI changes |
 | `tools/nvcuda-trace/tests/proxy_smoke.c` | `LoadLibrary`, export lookup, `cuInit`, and enumeration | Shape for an out-of-process pxvk facade smoke test |
 | `tools/nvcuda-trace/tests/injected_smoke.c` | Startup-injected `nvcuda.dll` discovery and calls | Shape for launcher/injection validation |
 | `tools/vulkan-probe/main.c` | x86 loader, device features, and quantitative limits | Input to startup-gate tests, not a compute-correctness test |
-| `tools/vulkan-probe/memory_smoke.cpp` plus generated SPIR-V | Real 32 MiB buffers; f32/FMA/conversion, workgroup barrier, invocation-private local storage, and integer/float texture output exactly match CUDA on Intel and RTX | Completed reference-system standalone Vulkan semantic gate; preserve for deferred AMD run |
+| `tools/vulkan-probe/memory_smoke.cpp` plus generated SPIR-V | Real 32 MiB buffers; f32/FMA/conversion, workgroup barrier, invocation-private local storage, module constants, and integer/float texture output exactly match CUDA on Intel and RTX | Completed reference-system standalone Vulkan semantic gate; preserve for deferred AMD run |
 | `tools/ptx-frontend/main.cpp` | Strict parser validates all 17 modules, 4,174 blocks, 5,935 edges, all label/register references, routine storage-symbol layouts, and finite result/use-type contracts for all 147 variants; all 16 launched layouts match independent analysis | Completed whole-corpus grammar/metadata/CFG/dataflow/type gate; selected kernels emit SPIR-V |
 | 17 local captured PTX modules | Complete corpus accepted by both ZLUDA and the project frontend; hashes remain local/cataloged | Local parse/normalization coverage without committing proprietary PTX |
 | Three native game traces | Fluid, deformable, and confirmed broken-glass execution | Route and workload-presence oracle |
 
 The committed CUDA oracle SHA-256 is
-`02dcd524f09a0578906a27d68b3892066dfcfbaf94c83fef061b6719765374e1`.
+`38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
 Its JSON contains 14 named f32 results, 64-element barrier and local-memory
-results, and 12 signed-coordinate rows for each integer and float texture.
+results, two module-constant payloads, and 12 signed-coordinate rows for each
+integer and float texture.
 
 ## Validation layers
 
@@ -238,10 +239,11 @@ intent through the candidate translator and compare normalized JSON field by
 field.
 
 This differential now passes on the reference system. Every committed math,
-barrier, and integer-texture field matches native CUDA bit-for-bit on Intel and
-RTX. The only observed mismatch was Intel splitting GLSL.std.450 `Fma`; adding
-`NoContraction` to the FMA result made both devices return native
-`0xa8800000`. AMD execution remains a separately tracked deferred gate.
+barrier, local-memory, module-constant, and integer/float-texture field matches
+native CUDA bit-for-bit on Intel and RTX. The only observed mismatch was Intel
+splitting GLSL.std.450 `Fma`; adding `NoContraction` to the FMA result made both
+devices return native `0xa8800000`. AMD execution remains a separately tracked
+deferred gate.
 
 ### Exact fields
 
