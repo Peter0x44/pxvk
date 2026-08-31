@@ -57,7 +57,7 @@ Open probes are tracked rather than dropped:
 
 | Probe | Status | Required before |
 |---|---|---|
-| Deterministic fluid/deformable kernel outputs | Fluid calc-hash/reorder matches native CUDA on PTX-derived Intel/RTX Vulkan; deformable output and captured in-game state remain deferred | Accepting a translated workload family without focused fixtures |
+| Deterministic fluid/deformable kernel outputs | Fluid calc-hash/reorder/density matches native CUDA on PTX-derived Intel/RTX Vulkan; deformable output and captured in-game state remain deferred | Accepting a translated workload family without focused fixtures |
 | Float legacy-texture fetch bits/OOB | Complete on native RTX and PTX-derived Intel/RTX Vulkan: in-range bits preserved, signed OOB returns four positive zeros | Accepting current `tex.1d.v4.f32.s32` lowering |
 | Queried-only CUDA symbol NULL versus stub behavior | Non-blocking; ZLUDA proves non-null not-supported stubs work | Removing conservative export stubs |
 | Minimal non-NVIDIA NVAPI interface set | Deferred to game-integration validation | Running the original PhysX runtime without NVIDIA |
@@ -67,5 +67,5 @@ Open probes are tracked rather than dropped:
 | AMD generated-SPIR-V execution | Hardware preflight passes; full oracle deferred until the AMD machine is available | Claiming cross-vendor execution correctness on AMD |
 
 Each probe blocks only the named acceptance point. None blocks the next local
-slice: execute the now-valid 19,884-word `KernelFluidDensity` module against a
-trace-derived native/Vulkan density fixture.
+slice: analyze and lower the trace-ordered `KernelFluidForce` entry without
+broadening beyond its captured instruction and state contract.

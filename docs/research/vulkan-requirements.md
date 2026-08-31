@@ -119,6 +119,13 @@ one-component `u32` and 773-word four-component `f32` fixtures both pass Vulkan
 1.2 validation and match on Intel and RTX, including exact negative-zero,
 subnormal, infinity, and NaN-payload bits.
 
+The captured 19,884-word `KernelFluidDensity` module exercises the combined
+bindings 0/1/2/3 contract. A one-particle fixture uses the trace-observed
+1,024-byte constant update, 64-element position/hash textures,
+524,288-element cell tables, and local size 192. With synthetic exact constants
+that make the self contribution `2.0f`, native RTX and translated Intel/RTX all
+return direct and remapped density bits `0x40000000`.
+
 ### Observed device results
 
 | Property | Intel UHD Graphics | RTX 3070 Laptop |

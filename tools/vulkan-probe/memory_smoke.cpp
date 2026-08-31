@@ -32,6 +32,21 @@ constexpr std::size_t kReorderCellEndBase = 16384;
 constexpr std::size_t kKernelHashOutputOffset = 64;
 constexpr std::size_t kKernelIndexOutputOffset = 128;
 constexpr std::uint32_t kExpectedKernelHash = 1u + (2u << 6u) + (3u << 12u);
+constexpr std::size_t kDensityOutputOffset = 64;
+constexpr std::size_t kDensityRemappedOutputOffset = 128;
+constexpr std::size_t kDensitySortedPositionsOffset = 192;
+constexpr std::size_t kDensityParticleHashOffset = 512;
+constexpr std::size_t kDensityMappingOffset = 768;
+constexpr std::size_t kDensityCellStartBase = 1024;
+constexpr std::size_t kDensityCellCount = 524288;
+constexpr std::size_t kDensityCellEndBase =
+    kDensityCellStartBase + kDensityCellCount;
+constexpr VkDeviceSize kDensityPayloadBytes =
+    (kDensityCellEndBase + kDensityCellCount) * sizeof(std::uint32_t);
+constexpr VkDeviceSize kDensityConstantBytes = 10240u;
+constexpr VkDeviceSize kDensityTextureMetadataBytes =
+    4u * 3u * sizeof(std::uint32_t);
+constexpr std::uint32_t kExpectedDensityBits = 0x40000000u;
 constexpr std::array<std::uint32_t, 4> kExpectedReorderedPosition = {
     0x3f800000u, 0x40000000u, 0x40400000u, 0u,
 };
@@ -96,6 +111,11 @@ constexpr std::array<const char *, 14> kMathNames = {
     "min_nan_one",
     "max_nan_one",
 };
+
+VkDeviceSize align_up(VkDeviceSize value, VkDeviceSize alignment)
+{
+    return ((value + alignment - 1u) / alignment) * alignment;
+}
 
 void check(VkResult result, const char *operation)
 {
@@ -390,6 +410,8 @@ struct DeviceResult {
     std::array<std::uint32_t, 4> reordered_velocity = {};
     std::uint32_t cell_start = 0;
     std::uint32_t cell_end = 0;
+    std::uint32_t density = 0;
+    std::uint32_t remapped_density = 0;
     std::string error;
 };
 
@@ -404,7 +426,8 @@ DeviceResult run_device(
     bool reorder_fixture_mode,
     bool constant_fixture_mode,
     bool texture_fixture_mode,
-    bool texture_float_fixture_mode)
+    bool texture_float_fixture_mode,
+    bool density_fixture_mode)
 {
     DeviceResult result;
     result.index = device_index;
@@ -415,9 +438,13 @@ DeviceResult run_device(
         std::max<VkDeviceSize>(
             4u, result.properties.limits.minStorageBufferOffsetAlignment);
     const VkDeviceSize texture_metadata_offset =
-        ((4096u + texture_metadata_alignment - 1u) /
-         texture_metadata_alignment) *
-        texture_metadata_alignment;
+        align_up(4096u, texture_metadata_alignment);
+    const VkDeviceSize density_constant_offset =
+        align_up(kDensityPayloadBytes, texture_metadata_alignment);
+    const VkDeviceSize density_texture_metadata_offset =
+        align_up(
+            density_constant_offset + kDensityConstantBytes,
+            texture_metadata_alignment);
 
     VkDevice device = VK_NULL_HANDLE;
     BufferAllocation device_buffer;
@@ -504,15 +531,86 @@ DeviceResult run_device(
                     ? kKernelFixtureCopyBytes
                     : constant_fixture_mode
                         ? kConstantFixtureCopyBytes
-                        : selected_texture_mode
-                            ? texture_metadata_offset + kTextureMetadataBytes
-                            : kMemoryCopyBytes;
+                        : density_fixture_mode
+                            ? density_texture_metadata_offset +
+                                  kDensityTextureMetadataBytes
+                            : selected_texture_mode
+                                ? texture_metadata_offset +
+                                      kTextureMetadataBytes
+                                : kMemoryCopyBytes;
         check(
             vkMapMemory(device, staging_buffer.memory, 0, staging_buffer.allocation_size, 0, &mapped),
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        if (reorder_fixture_mode) {
+        if (density_fixture_mode) {
+            words[0] = static_cast<std::uint32_t>(
+                kDensityOutputOffset * sizeof(std::uint32_t));
+            words[1] = 1u;
+            words[2] = static_cast<std::uint32_t>(
+                kDensityRemappedOutputOffset * sizeof(std::uint32_t));
+            words[3] = 1u;
+            words[11] = static_cast<std::uint32_t>(
+                kDensitySortedPositionsOffset * sizeof(std::uint32_t));
+            words[12] = 1u;
+            words[13] = static_cast<std::uint32_t>(
+                kDensityParticleHashOffset * sizeof(std::uint32_t));
+            words[14] = 1u;
+            words[15] = static_cast<std::uint32_t>(
+                kDensityMappingOffset * sizeof(std::uint32_t));
+            words[16] = 1u;
+            words[17] = static_cast<std::uint32_t>(
+                kDensityCellStartBase * sizeof(std::uint32_t));
+            words[18] = static_cast<std::uint32_t>(kDensityCellCount);
+            words[19] = static_cast<std::uint32_t>(
+                kDensityCellEndBase * sizeof(std::uint32_t));
+            words[20] = static_cast<std::uint32_t>(kDensityCellCount);
+            words[kDensityOutputOffset] = 0xdeadbeefu;
+            words[kDensityRemappedOutputOffset] = 0xdeadbeefu;
+            words[kDensitySortedPositionsOffset] = 0x3f800000u;
+            words[kDensitySortedPositionsOffset + 1u] = 0x40000000u;
+            words[kDensitySortedPositionsOffset + 2u] = 0x40400000u;
+            words[kDensitySortedPositionsOffset + 3u] = 0u;
+            std::fill_n(
+                words + kDensityParticleHashOffset,
+                64u,
+                0xffffffffu);
+            words[kDensityParticleHashOffset] = kExpectedKernelHash;
+            words[kDensityMappingOffset] = 0u;
+            std::fill_n(
+                words + kDensityCellStartBase,
+                kDensityCellCount,
+                0xffffffffu);
+            std::fill_n(
+                words + kDensityCellEndBase,
+                kDensityCellCount,
+                0xffffffffu);
+            words[kDensityCellStartBase + kExpectedKernelHash] = 0u;
+            words[kDensityCellEndBase + kExpectedKernelHash] = 1u;
+
+            auto *constants = reinterpret_cast<std::uint32_t *>(
+                static_cast<std::uint8_t *>(mapped) + density_constant_offset);
+            constants[13] = 0x40000000u;
+            constants[18] = 0x3f800000u;
+            constants[21] = 0x3f800000u;
+            auto *metadata = reinterpret_cast<std::uint32_t *>(
+                static_cast<std::uint8_t *>(mapped) +
+                density_texture_metadata_offset);
+            metadata[0] =
+                static_cast<std::uint32_t>(kDensitySortedPositionsOffset);
+            metadata[1] = 64u;
+            metadata[2] = 4u;
+            metadata[3] =
+                static_cast<std::uint32_t>(kDensityParticleHashOffset);
+            metadata[4] = 64u;
+            metadata[5] = 1u;
+            metadata[6] = static_cast<std::uint32_t>(kDensityCellStartBase);
+            metadata[7] = static_cast<std::uint32_t>(kDensityCellCount);
+            metadata[8] = 1u;
+            metadata[9] = static_cast<std::uint32_t>(kDensityCellEndBase);
+            metadata[10] = static_cast<std::uint32_t>(kDensityCellCount);
+            metadata[11] = 1u;
+        } else if (reorder_fixture_mode) {
             constexpr std::array<std::uint32_t, 9> pointers = {
                 2048u, 2112u, 4096u, 65536u, 768u,
                 2176u, 256u, 512u, 2240u,
@@ -622,7 +720,7 @@ DeviceResult run_device(
         }
 
         const std::uint32_t binding_count =
-            selected_texture_mode
+            selected_texture_mode || density_fixture_mode
                 ? 4u
                 : ptx_oracle_mode || constant_fixture_mode
                     ? 3u
@@ -684,7 +782,17 @@ DeviceResult run_device(
                 0,
                 kBufferBytes,
             };
-            if (selected_texture_mode && binding_index == 3u) {
+            if (density_fixture_mode && binding_index == 2u) {
+                descriptor_buffer_infos[binding_index].offset =
+                    density_constant_offset;
+                descriptor_buffer_infos[binding_index].range =
+                    kDensityConstantBytes;
+            } else if (density_fixture_mode && binding_index == 3u) {
+                descriptor_buffer_infos[binding_index].offset =
+                    density_texture_metadata_offset;
+                descriptor_buffer_infos[binding_index].range =
+                    kDensityTextureMetadataBytes;
+            } else if (selected_texture_mode && binding_index == 3u) {
                 descriptor_buffer_infos[binding_index].offset =
                     texture_metadata_offset;
                 descriptor_buffer_infos[binding_index].range =
@@ -866,7 +974,13 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        if (reorder_fixture_mode) {
+        if (density_fixture_mode) {
+            result.density = words[kDensityOutputOffset];
+            result.remapped_density = words[kDensityRemappedOutputOffset];
+            result.pass =
+                result.density == kExpectedDensityBits &&
+                result.remapped_density == kExpectedDensityBits;
+        } else if (reorder_fixture_mode) {
             std::copy_n(
                 words + kReorderedPositionOffset,
                 result.reordered_position.size(),
@@ -993,17 +1107,19 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = reorder_fixture_mode
-                ? "reorder kernel fixture result mismatch"
-                : kernel_fixture_mode
-                    ? "selected kernel fixture result mismatch"
-                    : constant_fixture_mode
-                        ? "constant kernel fixture result mismatch"
-                        : selected_texture_mode
-                            ? "selected texture kernel fixture result mismatch"
-                            : oracle_mode
-                                ? "standalone oracle result mismatch"
-                                : "integer/global-memory result mismatch";
+            result.error = density_fixture_mode
+                ? "density kernel fixture result mismatch"
+                : reorder_fixture_mode
+                    ? "reorder kernel fixture result mismatch"
+                    : kernel_fixture_mode
+                        ? "selected kernel fixture result mismatch"
+                        : constant_fixture_mode
+                            ? "constant kernel fixture result mismatch"
+                            : selected_texture_mode
+                                ? "selected texture kernel fixture result mismatch"
+                                : oracle_mode
+                                    ? "standalone oracle result mismatch"
+                                    : "integer/global-memory result mismatch";
         }
     } catch (const std::exception &error) {
         result.error = error.what();
@@ -1069,6 +1185,8 @@ int main(int argc, char **argv)
         argc == 4 && std::string(argv[2]) == "--texture-fixture";
     const bool texture_float_fixture_mode =
         argc == 4 && std::string(argv[2]) == "--texture-float-fixture";
+    const bool density_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--density-fixture";
     const bool incomplete_named_mode =
         argc == 3 &&
         (std::string(argv[2]) == "--ptx-oracle" ||
@@ -1076,11 +1194,12 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--reorder-fixture" ||
          std::string(argv[2]) == "--constant-fixture" ||
          std::string(argv[2]) == "--texture-fixture" ||
-         std::string(argv[2]) == "--texture-float-fixture");
+         std::string(argv[2]) == "--texture-float-fixture" ||
+         std::string(argv[2]) == "--density-fixture");
     if ((argc != 2 && argc != 3 &&
          !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
          !constant_fixture_mode && !texture_fixture_mode &&
-         !texture_float_fixture_mode) ||
+         !texture_float_fixture_mode && !density_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
                   << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n"
@@ -1088,7 +1207,8 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --reorder-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --constant-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --texture-fixture <generated.spv>\n"
-                  << "       vulkan-memory-smoke <output.json> --texture-float-fixture <generated.spv>\n";
+                  << "       vulkan-memory-smoke <output.json> --texture-float-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --density-fixture <generated.spv>\n";
         return 2;
     }
 
@@ -1134,17 +1254,17 @@ int main(int argc, char **argv)
     const bool shader_input_mode =
         oracle_mode || kernel_fixture_mode || reorder_fixture_mode ||
         constant_fixture_mode || texture_fixture_mode ||
-        texture_float_fixture_mode;
+        texture_float_fixture_mode || density_fixture_mode;
     const bool require_memory_result =
         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
         !constant_fixture_mode && !texture_fixture_mode &&
-        !texture_float_fixture_mode;
+        !texture_float_fixture_mode && !density_fixture_mode;
     std::vector<std::uint32_t> shader;
     if (shader_input_mode) {
         const char *shader_path =
             ptx_oracle_mode || kernel_fixture_mode || reorder_fixture_mode ||
                     constant_fixture_mode || texture_fixture_mode ||
-                    texture_float_fixture_mode
+                    texture_float_fixture_mode || density_fixture_mode
                 ? argv[3]
                 : argv[2];
         std::ifstream shader_input(shader_path, std::ios::binary | std::ios::ate);
@@ -1186,7 +1306,8 @@ int main(int argc, char **argv)
             reorder_fixture_mode,
             constant_fixture_mode,
             texture_fixture_mode,
-            texture_float_fixture_mode);
+            texture_float_fixture_mode,
+            density_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -1201,7 +1322,8 @@ int main(int argc, char **argv)
            << "  \"schema_version\": 1,\n"
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
            << "  \"test\": \""
-           << (reorder_fixture_mode ? "reorder_kernel_fixture" :
+           << (density_fixture_mode ? "density_kernel_fixture" :
+               reorder_fixture_mode ? "reorder_kernel_fixture" :
                kernel_fixture_mode ? "selected_kernel_fixture" :
                constant_fixture_mode ? "constant_kernel_fixture" :
                texture_fixture_mode ? "texture_kernel_fixture" :
@@ -1210,7 +1332,17 @@ int main(int argc, char **argv)
                oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory")
            << "\",\n"
            << "  \"buffer_bytes\": " << kBufferBytes << ",\n";
-    if (reorder_fixture_mode) {
+    if (density_fixture_mode) {
+        output << "  \"kernel\": \"KernelFluidDensity\",\n"
+               << "  \"position_bits\": [\"0x3f800000\", \"0x40000000\", "
+                  "\"0x40400000\", \"0x00000000\"],\n"
+               << "  \"hash\": \"" << hex32(kExpectedKernelHash) << "\",\n"
+               << "  \"density_constants\": {\"radius_term\": \"0x3f800000\", "
+                  "\"distance_scale\": \"0x3f800000\", "
+                  "\"normalization\": \"0x40000000\"},\n"
+               << "  \"expected_density_bits\": \""
+               << hex32(kExpectedDensityBits) << "\",\n";
+    } else if (reorder_fixture_mode) {
         output << "  \"kernel\": \"KernelReorderPosVelAndFindCellStartPacked\",\n"
                << "  \"position_bits\": [\"0x3f800000\", \"0x40000000\", "
                   "\"0x40400000\", \"0x00000000\"],\n"
@@ -1256,7 +1388,12 @@ int main(int argc, char **argv)
                << (result.device_memory_local ? "true" : "false") << ",\n"
                << "      \"staging_host_coherent\": "
                << (result.staging_coherent ? "true" : "false") << ",\n";
-        if (reorder_fixture_mode) {
+        if (density_fixture_mode) {
+            output << "      \"density_bits\": \""
+                   << hex32(result.density) << "\",\n"
+                   << "      \"remapped_density_bits\": \""
+                   << hex32(result.remapped_density) << "\",\n";
+        } else if (reorder_fixture_mode) {
             output << "      \"reordered_position_bits\": [";
             for (std::size_t component = 0u;
                  component < result.reordered_position.size();

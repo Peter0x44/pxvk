@@ -245,9 +245,6 @@ The frontend does not yet provide:
 - SPIR-V emission beyond the project oracle and the selected finite
   `KernelFluidCalcHashPacked`, `KernelReorderPosVelAndFindCellStartPacked`, and
   `KernelFluidDensity` slices;
-- an end-to-end native/Vulkan output differential for `KernelFluidDensity`
-  (its deterministic 19,884-word module currently passes Vulkan 1.2
-  validation);
 - shader caching;
 - CUDA module/runtime integration.
 

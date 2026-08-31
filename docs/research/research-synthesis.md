@@ -284,23 +284,37 @@ all 411 density instructions lower. The deterministic 19,884-word SPIR-V
 module, with bindings 0/1/2/3 and local size 192, passes Vulkan 1.2 validation;
 SHA-256 is
 `f79e55fa85c6edd760a2479692d7f5ab40a6ae726b410e11458062e8c6db083f`.
-Its next gate is a trace-derived native/Vulkan density output fixture, not
-additional static instruction lowering.
 
-`tools/cuda-physx-fixture` runs both kernels as a one-particle pipeline against
-the local proprietary PTX. Native RTX and PTX-derived Vulkan on Intel/RTX all
-produce:
+`tools/cuda-physx-fixture` now runs a three-kernel one-particle pipeline against
+the local proprietary module 0013 and module 0010 PTX. Calc-hash and reorder
+produce density's inputs. The density launch then uses the trace-observed block
+size 192, 1,024-byte module-constant update, 64-element position/hash texture
+bindings, and 524,288-element cell-start/end bindings. The fixture constants
+are synthetic exact bits placed at the captured constant offsets: radius term
+and distance scale `1.0f`, normalization `2.0f`. This is a trace-shaped
+differential, not a captured in-game memory snapshot.
+
+Native RTX produces:
 
 - hash `0x00003081`, original index `0`;
 - reordered position bits `[0x3f800000, 0x40000000, 0x40400000, 0x00000000]`;
 - reordered velocity bits `[0x40800000, 0x40a00000, 0x40c00000, 0x40e00000]`;
-- cell interval `[0, 1]` at hash `0x00003081`.
+- cell interval `[0, 1]` at hash `0x00003081`;
+- direct and remapped density bits `0x40000000` (`2.0f`).
 
-The committed evidence hashes are:
+The Vulkan density fixture starts from the identical post-reorder state and
+binds separate constant and texture-metadata descriptor ranges. Intel UHD and
+RTX 3070 both return `0x40000000` for the direct and remapped outputs. The
+committed evidence hashes are:
 
-- paired native CUDA: `ff29f41035678f0fa4c829676baa5c7f43eaa2b5008f44b2ae100be24a0a1543`;
-- translated calc-hash Vulkan: `ffec75c749d458b61c71712375300ab21aee723755ffbcb403273c038b953b1c`;
-- translated reorder Vulkan: `a048d9dc1467761ae2c39b5d53e3b3c38351cfc3428e844b898b94965a5e847d`.
+- native three-kernel CUDA pipeline:
+  `3658b7bc3ae2ce6fa1cbba9c60760881c6790b6992a02ef2f3137224fc5fa6cc`;
+- translated density Vulkan:
+  `67ca1b0f75a279a1a9ad00be197c9d5252494871739f3f8acd3fa05a3d9fa079`;
+- translated calc-hash Vulkan:
+  `ffec75c749d458b61c71712375300ab21aee723755ffbcb403273c038b953b1c`;
+- translated reorder Vulkan:
+  `a048d9dc1467761ae2c39b5d53e3b3c38351cfc3428e844b898b94965a5e847d`.
 
 Reproduce locally without committing proprietary PTX:
 
@@ -308,26 +322,21 @@ Reproduce locally without committing proprietary PTX:
 cmake -S tools/cuda-physx-fixture -B build/cuda-physx-fixture -A Win32
 cmake --build build/cuda-physx-fixture --config Release
 build/cuda-physx-fixture/Release/cuda-physx-fixture.exe `
-  path/to/module_0013_01_05.ptx native-fluid-pair.json
+  path/to/module_0013_01_05.ptx `
+  path/to/module_0010_01_05.ptx native-fluid-density.json
 
 build/ptx-frontend/Release/ptx-frontend.exe `
-  path/to/module_0013_01_05.ptx module-0013.json
+  path/to/module_0010_01_05.ptx module-0010.json
 build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
-  _Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj `
-  64 0 module-0013.json fluid-calc-hash.spv
-build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
-  _Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej `
-  64 260 module-0013.json fluid-reorder.spv
-spirv-val.exe --target-env vulkan1.2 fluid-calc-hash.spv
-spirv-val.exe --target-env vulkan1.2 fluid-reorder.spv
+  _Z19KernelFluidDensityD17PxgFixedSizeArrayIfES0_15DensityDebugGPUPiS_IK6float4ES_IKjES7_S7_S7_ `
+  192 0 module-0010.json fluid-density.spv
+spirv-val.exe --target-env vulkan1.2 fluid-density.spv
 build/vulkan-probe/Release/vulkan-memory-smoke.exe `
-  translated-fluid-hash.json --kernel-fixture fluid-calc-hash.spv
-build/vulkan-probe/Release/vulkan-memory-smoke.exe `
-  translated-fluid-reorder.json --reorder-fixture fluid-reorder.spv
+  translated-fluid-density.json --density-fixture fluid-density.spv
 ```
 
-This proves two real captured PhysX kernels on a synthetic deterministic state.
-It does not yet reproduce a captured in-game memory snapshot.
+This proves three real captured PhysX kernels on synthetic deterministic state.
+It does not reproduce a captured in-game memory snapshot.
 
 The emitted modules declare float32 `RoundingModeRTE` and
 `SignedZeroInfNanPreserve`. All three probed target GPUs advertise those
