@@ -100,7 +100,7 @@ RTX both returned native `0xa8800000`. The combined result is
 
 The direct compiler slice now reproduces that result from
 `tools/cuda-oracle/probe.ptx`: the frontend emits schema-4 structured IR and
-the project emitter produces a deterministic 2,605-word SPIR-V 1.5 binary.
+the project emitter produces a deterministic 2,609-word SPIR-V 1.5 binary.
 SDK validation passes, and the generated module matches every math, barrier,
 and texture field on Intel and RTX. The original GLSL/assembly oracle remains
 the independent Vulkan-side reference rather than compiler input.

@@ -1,0 +1,36 @@
+.version 4.1
+.target sm_52
+.address_size 32
+
+.extern .shared .align 4 .b8 sharedHash[];
+
+.visible .entry barrier_cfg_probe(
+    .param .u32 barrier_cfg_probe_param_0,
+    .param .u32 barrier_cfg_probe_param_1
+)
+{
+    .reg .pred %p<5>;
+    .reg .u32 %r<8>;
+
+    ld.param.u32 %r1, [barrier_cfg_probe_param_0];
+    ld.param.u32 %r2, [barrier_cfg_probe_param_1];
+    mov.u32 %r3, %tid.x;
+    setp.ge.u32 %p1, %r3, %r2;
+    @%p1 bra barrier;
+    mov.u32 %r4, 7;
+    st.shared.u32 [sharedHash+4], %r4;
+    setp.ne.s32 %p2, %r3, 0;
+    setp.eq.s32 %p3, %r3, 0;
+    and.pred %p4, %p2, %p3;
+    @!%p4 bra barrier;
+    bra.uni previous;
+previous:
+    st.shared.u32 [sharedHash], %r4;
+barrier:
+    bar.sync 0;
+    @%p1 bra done;
+    ld.shared.u32 %r5, [sharedHash+4];
+    st.global.u32 [%r1], %r5;
+done:
+    ret;
+}

@@ -54,6 +54,21 @@ add_test(
         "${CMAKE_CURRENT_BINARY_DIR}/cfg-probe.spv"
 )
 set_tests_properties(ptx-cfg-emitter PROPERTIES DEPENDS ptx-cfg-frontend)
+add_test(
+    NAME ptx-barrier-cfg-frontend
+    COMMAND ptx-frontend
+        "${CMAKE_CURRENT_SOURCE_DIR}/barrier_cfg_probe.ptx"
+        "${CMAKE_CURRENT_BINARY_DIR}/barrier-cfg-probe-manifest.json"
+)
+add_test(
+    NAME ptx-barrier-cfg-emitter
+    COMMAND ptx-spirv-emitter
+        --entry barrier_cfg_probe 8
+        "${CMAKE_CURRENT_BINARY_DIR}/barrier-cfg-probe-manifest.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/barrier-cfg-probe.spv"
+)
+set_tests_properties(
+    ptx-barrier-cfg-emitter PROPERTIES DEPENDS ptx-barrier-cfg-frontend)
 if(MSVC)
     foreach(target ptx-frontend ptx-spirv-emitter)
         target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)

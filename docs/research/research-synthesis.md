@@ -204,7 +204,7 @@ implementation path; LLVM is a credible fallback if SSA/legalization grows
 beyond the finite emitter. See the official
 [LLVM SPIR-V backend guide](https://llvm.org/docs/SPIRVUsage.html).
 
-The first vertical slice now emits a 2,605-word SPIR-V 1.5 module directly from
+The first vertical slice now emits a 2,609-word SPIR-V 1.5 module directly from
 the schema-4 structured IR for `tools/cuda-oracle/probe.ptx`. The module uses
 one 64-thread Vulkan entry point to invoke the original one-thread math,
 64-thread barrier, and 12-thread texture routines against the oracle binding
@@ -217,15 +217,31 @@ The second slice lowers the captured 89-instruction
 structured state machine stores PTX registers in function storage and dispatches
 14 PTX basic blocks through one SPIR-V loop/switch. Binding 0 is the 32-bit
 CUDA heap and binding 1 is the packed 52-byte launch parameter buffer. The
-3,138-word module is deterministic and passes Vulkan 1.2 validation.
+3,143-word module is deterministic and passes Vulkan 1.2 validation.
 
-`tools/cuda-physx-fixture` runs a redistributable one-particle input recipe
-against the local proprietary PTX on native CUDA. RTX produced hash
-`0x00003081` and index `0`. The PTX-derived Vulkan module produced those exact
-values on Intel and RTX. The committed evidence hashes are:
+The paired third slice lowers the captured 116-instruction
+`KernelReorderPosVelAndFindCellStartPacked` entry. It adds shared `u32`
+storage, predicate conjunction, integer equality/inequality, a 260-byte
+dynamic-shared contract, workgroup barriers, and vector `f32` stores. Its
+pre-barrier diamond is emitted as structured selections that reconverge before
+one dynamically uniform `OpControlBarrier`; the remaining 12 blocks use the
+state machine. The deterministic 3,863-word module passes Vulkan 1.2
+validation.
 
-- native CUDA: `3604e07bfce743926f81d5df1cffd19003b04582e364a7210a9e62aae13834c6`;
-- translated Vulkan: `ef6aee45b57658fc369521d53a4d16407d364d11e978cee1154ff45417a3818c`.
+`tools/cuda-physx-fixture` runs both kernels as a one-particle pipeline against
+the local proprietary PTX. Native RTX and PTX-derived Vulkan on Intel/RTX all
+produce:
+
+- hash `0x00003081`, original index `0`;
+- reordered position bits `[0x3f800000, 0x40000000, 0x40400000, 0x00000000]`;
+- reordered velocity bits `[0x40800000, 0x40a00000, 0x40c00000, 0x40e00000]`;
+- cell interval `[0, 1]` at hash `0x00003081`.
+
+The committed evidence hashes are:
+
+- paired native CUDA: `ff29f41035678f0fa4c829676baa5c7f43eaa2b5008f44b2ae100be24a0a1543`;
+- translated calc-hash Vulkan: `f31c88b1785ca0cb78341e2f4c4aa2905f9f64bcf683aa2d6de04d7494d4c373`;
+- translated reorder Vulkan: `a048d9dc1467761ae2c39b5d53e3b3c38351cfc3428e844b898b94965a5e847d`.
 
 Reproduce locally without committing proprietary PTX:
 
@@ -233,19 +249,25 @@ Reproduce locally without committing proprietary PTX:
 cmake -S tools/cuda-physx-fixture -B build/cuda-physx-fixture -A Win32
 cmake --build build/cuda-physx-fixture --config Release
 build/cuda-physx-fixture/Release/cuda-physx-fixture.exe `
-  path/to/module_0013_01_05.ptx native-fluid-hash.json
+  path/to/module_0013_01_05.ptx native-fluid-pair.json
 
 build/ptx-frontend/Release/ptx-frontend.exe `
   path/to/module_0013_01_05.ptx module-0013.json
 build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
   _Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj `
   64 module-0013.json fluid-calc-hash.spv
+build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
+  _Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej `
+  64 module-0013.json fluid-reorder.spv
 spirv-val.exe --target-env vulkan1.2 fluid-calc-hash.spv
+spirv-val.exe --target-env vulkan1.2 fluid-reorder.spv
 build/vulkan-probe/Release/vulkan-memory-smoke.exe `
   translated-fluid-hash.json --kernel-fixture fluid-calc-hash.spv
+build/vulkan-probe/Release/vulkan-memory-smoke.exe `
+  translated-fluid-reorder.json --reorder-fixture fluid-reorder.spv
 ```
 
-This proves one real captured PhysX kernel on a synthetic deterministic state.
+This proves two real captured PhysX kernels on a synthetic deterministic state.
 It does not yet reproduce a captured in-game memory snapshot.
 
 The emitted modules declare float32 `RoundingModeRTE` and

@@ -21,9 +21,21 @@ constexpr VkDeviceSize kBufferBytes = 32ull * 1024ull * 1024ull;
 constexpr VkDeviceSize kMemoryCopyBytes = 2ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kOracleCopyBytes = 304ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kKernelFixtureCopyBytes = 512ull * sizeof(std::uint32_t);
+constexpr VkDeviceSize kReorderFixtureCopyBytes =
+    32768ull * sizeof(std::uint32_t);
+constexpr std::size_t kReorderedPositionOffset = 512;
+constexpr std::size_t kReorderedVelocityOffset = 528;
+constexpr std::size_t kReorderCellStartBase = 1024;
+constexpr std::size_t kReorderCellEndBase = 16384;
 constexpr std::size_t kKernelHashOutputOffset = 64;
 constexpr std::size_t kKernelIndexOutputOffset = 128;
 constexpr std::uint32_t kExpectedKernelHash = 1u + (2u << 6u) + (3u << 12u);
+constexpr std::array<std::uint32_t, 4> kExpectedReorderedPosition = {
+    0x3f800000u, 0x40000000u, 0x40400000u, 0u,
+};
+constexpr std::array<std::uint32_t, 4> kExpectedReorderedVelocity = {
+    0x40800000u, 0x40a00000u, 0x40c00000u, 0x40e00000u,
+};
 constexpr std::uint32_t kInput = 0x12345678u;
 constexpr std::uint32_t kMask = 0xa5a55a5au;
 constexpr std::uint32_t kAddend = 0x10203040u;
@@ -351,6 +363,10 @@ struct DeviceResult {
     std::array<std::array<std::uint32_t, 4>, 12> texture = {};
     std::uint32_t kernel_hash = 0;
     std::uint32_t kernel_index = 0;
+    std::array<std::uint32_t, 4> reordered_position = {};
+    std::array<std::uint32_t, 4> reordered_velocity = {};
+    std::uint32_t cell_start = 0;
+    std::uint32_t cell_end = 0;
     std::string error;
 };
 
@@ -360,7 +376,8 @@ DeviceResult run_device(
     const std::vector<std::uint32_t> &shader,
     bool oracle_mode,
     bool require_memory_result,
-    bool kernel_fixture_mode)
+    bool kernel_fixture_mode,
+    bool reorder_fixture_mode)
 {
     DeviceResult result;
     result.index = device_index;
@@ -445,13 +462,40 @@ DeviceResult run_device(
 
         const VkDeviceSize copy_bytes = oracle_mode
             ? kOracleCopyBytes
-            : kernel_fixture_mode ? kKernelFixtureCopyBytes : kMemoryCopyBytes;
+            : reorder_fixture_mode
+                ? kReorderFixtureCopyBytes
+                : kernel_fixture_mode ? kKernelFixtureCopyBytes : kMemoryCopyBytes;
         check(
             vkMapMemory(device, staging_buffer.memory, 0, staging_buffer.allocation_size, 0, &mapped),
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        if (kernel_fixture_mode) {
+        if (reorder_fixture_mode) {
+            constexpr std::array<std::uint32_t, 9> pointers = {
+                2048u, 2112u, 4096u, 65536u, 768u,
+                2176u, 256u, 512u, 2240u,
+            };
+            for (std::size_t parameter = 0u; parameter < pointers.size(); ++parameter) {
+                words[parameter * 2u] = pointers[parameter];
+                words[parameter * 2u + 1u] = 1u;
+            }
+            words[18] = 1u;
+            words[192] = 0x3f800000u;
+            words[193] = 0x40000000u;
+            words[194] = 0x40400000u;
+            words[195] = 0u;
+            words[544] = 0x40800000u;
+            words[545] = 0x40a00000u;
+            words[546] = 0x40c00000u;
+            words[547] = 0x40e00000u;
+            words[kKernelHashOutputOffset] = kExpectedKernelHash;
+            words[kKernelIndexOutputOffset] = 0u;
+            words[560] = 0u;
+            std::fill_n(words + kReorderedPositionOffset, 4u, 0xdeadbeefu);
+            std::fill_n(words + kReorderedVelocityOffset, 4u, 0xdeadbeefu);
+            words[kReorderCellStartBase + kExpectedKernelHash] = 0xdeadbeefu;
+            words[kReorderCellEndBase + kExpectedKernelHash] = 0xdeadbeefu;
+        } else if (kernel_fixture_mode) {
             words[0] = 256u;
             words[1] = 1u;
             words[2] = 512u;
@@ -497,7 +541,8 @@ DeviceResult run_device(
             check(vkFlushMappedMemoryRanges(device, 1, &range), "vkFlushMappedMemoryRanges");
         }
 
-        const std::uint32_t binding_count = kernel_fixture_mode ? 2u : 1u;
+        const std::uint32_t binding_count =
+            kernel_fixture_mode || reorder_fixture_mode ? 2u : 1u;
         std::array<VkDescriptorSetLayoutBinding, 2> bindings = {};
         for (std::uint32_t binding_index = 0;
              binding_index < binding_count;
@@ -731,7 +776,25 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        if (kernel_fixture_mode) {
+        if (reorder_fixture_mode) {
+            std::copy_n(
+                words + kReorderedPositionOffset,
+                result.reordered_position.size(),
+                result.reordered_position.begin());
+            std::copy_n(
+                words + kReorderedVelocityOffset,
+                result.reordered_velocity.size(),
+                result.reordered_velocity.begin());
+            result.cell_start =
+                words[kReorderCellStartBase + kExpectedKernelHash];
+            result.cell_end =
+                words[kReorderCellEndBase + kExpectedKernelHash];
+            result.pass =
+                result.reordered_position == kExpectedReorderedPosition &&
+                result.reordered_velocity == kExpectedReorderedVelocity &&
+                result.cell_start == 0u &&
+                result.cell_end == 1u;
+        } else if (kernel_fixture_mode) {
             result.kernel_hash = words[kKernelHashOutputOffset];
             result.kernel_index = words[kKernelIndexOutputOffset];
             result.pass =
@@ -771,11 +834,13 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = kernel_fixture_mode
-                ? "selected kernel fixture result mismatch"
-                : oracle_mode
-                    ? "standalone oracle result mismatch"
-                    : "integer/global-memory result mismatch";
+            result.error = reorder_fixture_mode
+                ? "reorder kernel fixture result mismatch"
+                : kernel_fixture_mode
+                    ? "selected kernel fixture result mismatch"
+                    : oracle_mode
+                        ? "standalone oracle result mismatch"
+                        : "integer/global-memory result mismatch";
         }
     } catch (const std::exception &error) {
         result.error = error.what();
@@ -833,16 +898,20 @@ int main(int argc, char **argv)
         argc == 4 && std::string(argv[2]) == "--ptx-oracle";
     const bool kernel_fixture_mode =
         argc == 4 && std::string(argv[2]) == "--kernel-fixture";
+    const bool reorder_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--reorder-fixture";
     const bool incomplete_named_mode =
         argc == 3 &&
         (std::string(argv[2]) == "--ptx-oracle" ||
-         std::string(argv[2]) == "--kernel-fixture");
+         std::string(argv[2]) == "--kernel-fixture" ||
+         std::string(argv[2]) == "--reorder-fixture");
     if ((argc != 2 && argc != 3 &&
-         !ptx_oracle_mode && !kernel_fixture_mode) ||
+         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
                   << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n"
-                  << "       vulkan-memory-smoke <output.json> --kernel-fixture <generated.spv>\n";
+                  << "       vulkan-memory-smoke <output.json> --kernel-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --reorder-fixture <generated.spv>\n";
         return 2;
     }
 
@@ -885,13 +954,16 @@ int main(int argc, char **argv)
 
     const bool oracle_mode =
         (argc == 3 && !incomplete_named_mode) || ptx_oracle_mode;
-    const bool shader_input_mode = oracle_mode || kernel_fixture_mode;
+    const bool shader_input_mode =
+        oracle_mode || kernel_fixture_mode || reorder_fixture_mode;
     const bool require_memory_result =
-        !ptx_oracle_mode && !kernel_fixture_mode;
+        !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode;
     std::vector<std::uint32_t> shader;
     if (shader_input_mode) {
         const char *shader_path =
-            ptx_oracle_mode || kernel_fixture_mode ? argv[3] : argv[2];
+            ptx_oracle_mode || kernel_fixture_mode || reorder_fixture_mode
+                ? argv[3]
+                : argv[2];
         std::ifstream shader_input(shader_path, std::ios::binary | std::ios::ate);
         if (!shader_input) {
             vkDestroyInstance(instance, nullptr);
@@ -926,7 +998,8 @@ int main(int argc, char **argv)
             shader,
             oracle_mode,
             require_memory_result,
-            kernel_fixture_mode);
+            kernel_fixture_mode,
+            reorder_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -941,12 +1014,20 @@ int main(int argc, char **argv)
            << "  \"schema_version\": 1,\n"
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
            << "  \"test\": \""
-           << (kernel_fixture_mode ? "selected_kernel_fixture" :
+           << (reorder_fixture_mode ? "reorder_kernel_fixture" :
+               kernel_fixture_mode ? "selected_kernel_fixture" :
                ptx_oracle_mode ? "ptx_generated_oracle" :
                oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory")
            << "\",\n"
            << "  \"buffer_bytes\": " << kBufferBytes << ",\n";
-    if (kernel_fixture_mode) {
+    if (reorder_fixture_mode) {
+        output << "  \"kernel\": \"KernelReorderPosVelAndFindCellStartPacked\",\n"
+               << "  \"position_bits\": [\"0x3f800000\", \"0x40000000\", "
+                  "\"0x40400000\", \"0x00000000\"],\n"
+               << "  \"velocity_bits\": [\"0x40800000\", \"0x40a00000\", "
+                  "\"0x40c00000\", \"0x40e00000\"],\n"
+               << "  \"hash\": \"" << hex32(kExpectedKernelHash) << "\",\n";
+    } else if (kernel_fixture_mode) {
         output << "  \"kernel\": \"KernelFluidCalcHashPacked\",\n"
                << "  \"position_bits\": [\"0x3f800000\", \"0x40000000\", "
                   "\"0x40400000\"],\n"
@@ -976,7 +1057,26 @@ int main(int argc, char **argv)
                << (result.device_memory_local ? "true" : "false") << ",\n"
                << "      \"staging_host_coherent\": "
                << (result.staging_coherent ? "true" : "false") << ",\n";
-        if (kernel_fixture_mode) {
+        if (reorder_fixture_mode) {
+            output << "      \"reordered_position_bits\": [";
+            for (std::size_t component = 0u;
+                 component < result.reordered_position.size();
+                 ++component) {
+                output << (component == 0u ? "" : ", ")
+                       << "\"" << hex32(result.reordered_position[component]) << "\"";
+            }
+            output << "],\n"
+                   << "      \"reordered_velocity_bits\": [";
+            for (std::size_t component = 0u;
+                 component < result.reordered_velocity.size();
+                 ++component) {
+                output << (component == 0u ? "" : ", ")
+                       << "\"" << hex32(result.reordered_velocity[component]) << "\"";
+            }
+            output << "],\n"
+                   << "      \"cell_start\": " << result.cell_start << ",\n"
+                   << "      \"cell_end\": " << result.cell_end << ",\n";
+        } else if (kernel_fixture_mode) {
             output << "      \"kernel_hash\": \"" << hex32(result.kernel_hash)
                    << "\",\n"
                    << "      \"kernel_index\": " << result.kernel_index << ",\n";

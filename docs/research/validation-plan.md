@@ -191,10 +191,10 @@ For each of the 17 cataloged PTX hashes:
    source location, and exact form.
 
 The project-owned oracle completes this sequence through direct SPIR-V emission
-and exact Intel/RTX execution. The captured `KernelFluidCalcHashPacked` entry
-also compiles, validates, and matches a native CUDA one-particle fixture on
-Intel and RTX. The other 15 launched entries remain parse/type/CFG validated
-rather than lowered.
+and exact Intel/RTX execution. The captured `KernelFluidCalcHashPacked` and
+`KernelReorderPosVelAndFindCellStartPacked` entries also compile, validate, and
+match a paired native CUDA one-particle fixture on Intel and RTX. The other 14
+launched entries remain parse/type/CFG validated rather than lowered.
 
 The raw PTX remains local. A committed normalized manifest should contain only
 hashes and non-proprietary structural expectations already documented in
@@ -216,11 +216,13 @@ shallow test per spelling:
 | Barrier | all 64 workgroup invocations observe neighbor writes after `bar.sync 0` |
 | Texture | signed coordinates, in-range four-component values, and negative/high zero result for `u32`; f32 case after its native probe |
 
-`tools/ptx-frontend/cfg_probe.ptx` now covers packed parameter loads, launch
+`tools/ptx-frontend/cfg_probe.ptx` covers packed parameter loads, launch
 built-ins, predicated exit, a back-edge loop, global address calculation, and
-storage through the conservative loop/switch CFG lowering. CTest emits its
-manifest and SPIR-V module; SDK validation remains part of the explicit
-compiler verification command.
+storage through the conservative loop/switch CFG lowering.
+`barrier_cfg_probe.ptx` covers divergent shared-memory setup, predicate
+conjunction, structured reconvergence, and one dynamically uniform workgroup
+barrier. CTest emits both manifests and SPIR-V modules; SDK validation remains
+part of the explicit compiler verification command.
 
 Parser-only cases may use dead code to cover the 27 whole-corpus variants absent
 from launched entries. They do not become execution requirements unless a

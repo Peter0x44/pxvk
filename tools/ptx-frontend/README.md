@@ -98,7 +98,9 @@ Kernel mode binds the 32-bit CUDA heap at descriptor binding 0 and the packed
 launch-parameter words at binding 1. PTX byte addresses remain `u32` heap
 offsets. The current state-machine lowering stores virtual registers in
 function storage and executes one PTX basic block per structured loop
-iteration. This is intentionally conservative; SSA and native structured CFG
+iteration. A finite prelude structurizes the paired reorder kernel's divergent
+shared-memory setup so all invocations reconverge before its workgroup barrier.
+This is intentionally conservative; SSA and general structured CFG
 reconstruction remain later optimizations.
 
 
@@ -213,7 +215,8 @@ The frontend does not yet provide:
   opcode contracts;
 - reachability or dead-code elimination;
 - SPIR-V emission beyond the project oracle and selected
-  `KernelFluidCalcHashPacked` finite slices;
+  `KernelFluidCalcHashPacked`/`KernelReorderPosVelAndFindCellStartPacked`
+  finite slices;
 - shader caching;
 - CUDA module/runtime integration.
 

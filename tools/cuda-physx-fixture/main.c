@@ -9,8 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define KERNEL_NAME \
+#define CALC_HASH_KERNEL_NAME \
     "_Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj"
+#define REORDER_KERNEL_NAME \
+    "_Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej"
 #define EXPECTED_HASH (1u + (2u << 6u) + (3u << 12u))
 
 typedef struct cuda_api {
@@ -28,6 +30,7 @@ typedef struct cuda_api {
     CUresult(CUDAAPI *cuMemFree_v2)(CUdeviceptr);
     CUresult(CUDAAPI *cuMemcpyHtoD_v2)(CUdeviceptr, const void *, size_t);
     CUresult(CUDAAPI *cuMemcpyDtoH_v2)(void *, CUdeviceptr, size_t);
+    CUresult(CUDAAPI *cuMemsetD32_v2)(CUdeviceptr, unsigned int, size_t);
     CUresult(CUDAAPI *cuLaunchKernel)(CUfunction,
                                       unsigned int,
                                       unsigned int,
@@ -82,6 +85,7 @@ static bool load_cuda(cuda_api *api)
     LOAD_API(api, cuMemFree_v2);
     LOAD_API(api, cuMemcpyHtoD_v2);
     LOAD_API(api, cuMemcpyDtoH_v2);
+    LOAD_API(api, cuMemsetD32_v2);
     LOAD_API(api, cuLaunchKernel);
     LOAD_API(api, cuGetErrorName);
     LOAD_API(api, cuGetErrorString);
@@ -161,29 +165,54 @@ int main(int argc, char **argv)
     CUdevice device = 0;
     CUcontext context = NULL;
     CUmodule module = NULL;
-    CUfunction function = NULL;
+    CUfunction calc_hash_function = NULL;
+    CUfunction reorder_function = NULL;
     CUdeviceptr output_hash_device = 0;
     CUdeviceptr output_index_device = 0;
     CUdeviceptr positions_device = 0;
-    CUdeviceptr cell_starts_device = 0;
-    CUdeviceptr cell_counts_device = 0;
+    CUdeviceptr velocities_device = 0;
+    CUdeviceptr search_starts_device = 0;
+    CUdeviceptr search_counts_device = 0;
     CUdeviceptr parameters_device = 0;
+    CUdeviceptr reordered_positions_device = 0;
+    CUdeviceptr reordered_velocities_device = 0;
+    CUdeviceptr output_cell_starts_device = 0;
+    CUdeviceptr output_cell_ends_device = 0;
+    CUdeviceptr mapping_device = 0;
     uint32_t output_hash = 0xdeadbeefu;
     uint32_t output_index = 0xdeadbeefu;
-    const float positions[4] = {1.0f, 2.0f, 3.0f, 0.0f};
-    const uint32_t cell_starts[2] = {0u, 1u};
-    const uint32_t cell_counts[1] = {1u};
+    const uint32_t position_bits[4] = {
+        0x3f800000u, 0x40000000u, 0x40400000u, 0u,
+    };
+    const uint32_t velocity_bits[4] = {
+        0x40800000u, 0x40a00000u, 0x40c00000u, 0x40e00000u,
+    };
+    uint32_t reordered_position_bits[4] = {0};
+    uint32_t reordered_velocity_bits[4] = {0};
+    uint32_t output_cell_start = 0xdeadbeefu;
+    uint32_t output_cell_end = 0xdeadbeefu;
+    const uint32_t search_starts[2] = {0u, 1u};
+    const uint32_t search_counts[1] = {1u};
+    const uint32_t mapping[1] = {0u};
     uint32_t parameter_words[40] = {0};
     uint32_t output_hash_arg[2] = {0};
     uint32_t output_index_arg[2] = {0};
     uint32_t positions_arg[2] = {0};
-    uint32_t cell_starts_arg[2] = {0};
-    uint32_t cell_counts_arg[2] = {0};
+    uint32_t velocities_arg[2] = {0};
+    uint32_t search_starts_arg[2] = {0};
+    uint32_t search_counts_arg[2] = {0};
     uint32_t parameters_arg[2] = {0};
+    uint32_t reordered_positions_arg[2] = {0};
+    uint32_t reordered_velocities_arg[2] = {0};
+    uint32_t output_cell_starts_arg[2] = {0};
+    uint32_t output_cell_ends_arg[2] = {0};
+    uint32_t mapping_arg[2] = {0};
     uint32_t particle_count = 1u;
+    const size_t cell_output_count = (size_t)EXPECTED_HASH + 1u;
     char device_name[256] = {0};
     FILE *output = NULL;
     int exit_code = 1;
+    bool pass = false;
 
     if (argc != 3) {
         fprintf(stderr, "usage: cuda-physx-fixture <module.ptx> <output.json>\n");
@@ -202,59 +231,151 @@ int main(int argc, char **argv)
     CUDA_TRY(&api, api.cuDeviceGetName(device_name, (int)sizeof(device_name), device));
     CUDA_TRY(&api, api.cuCtxCreate_v2(&context, 0, device));
     CUDA_TRY(&api, api.cuModuleLoadData(&module, ptx));
-    CUDA_TRY(&api, api.cuModuleGetFunction(&function, module, KERNEL_NAME));
+    CUDA_TRY(&api,
+             api.cuModuleGetFunction(
+                 &calc_hash_function, module, CALC_HASH_KERNEL_NAME));
+    CUDA_TRY(&api,
+             api.cuModuleGetFunction(
+                 &reorder_function, module, REORDER_KERNEL_NAME));
 
     CUDA_TRY(&api, api.cuMemAlloc_v2(&output_hash_device, sizeof(output_hash)));
     CUDA_TRY(&api, api.cuMemAlloc_v2(&output_index_device, sizeof(output_index)));
-    CUDA_TRY(&api, api.cuMemAlloc_v2(&positions_device, sizeof(positions)));
-    CUDA_TRY(&api, api.cuMemAlloc_v2(&cell_starts_device, sizeof(cell_starts)));
-    CUDA_TRY(&api, api.cuMemAlloc_v2(&cell_counts_device, sizeof(cell_counts)));
+    CUDA_TRY(&api, api.cuMemAlloc_v2(&positions_device, sizeof(position_bits)));
+    CUDA_TRY(&api, api.cuMemAlloc_v2(&velocities_device, sizeof(velocity_bits)));
+    CUDA_TRY(&api, api.cuMemAlloc_v2(&search_starts_device, sizeof(search_starts)));
+    CUDA_TRY(&api, api.cuMemAlloc_v2(&search_counts_device, sizeof(search_counts)));
     CUDA_TRY(&api, api.cuMemAlloc_v2(&parameters_device, sizeof(parameter_words)));
+    CUDA_TRY(&api,
+             api.cuMemAlloc_v2(
+                 &reordered_positions_device, sizeof(reordered_position_bits)));
+    CUDA_TRY(&api,
+             api.cuMemAlloc_v2(
+                 &reordered_velocities_device, sizeof(reordered_velocity_bits)));
+    CUDA_TRY(&api,
+             api.cuMemAlloc_v2(
+                 &output_cell_starts_device,
+                 cell_output_count * sizeof(uint32_t)));
+    CUDA_TRY(&api,
+             api.cuMemAlloc_v2(
+                 &output_cell_ends_device,
+                 cell_output_count * sizeof(uint32_t)));
+    CUDA_TRY(&api, api.cuMemAlloc_v2(&mapping_device, sizeof(mapping)));
 
     if (!pointer32(output_hash_device, &output_hash_arg[0]) ||
         !pointer32(output_index_device, &output_index_arg[0]) ||
         !pointer32(positions_device, &positions_arg[0]) ||
-        !pointer32(cell_starts_device, &cell_starts_arg[0]) ||
-        !pointer32(cell_counts_device, &cell_counts_arg[0]) ||
-        !pointer32(parameters_device, &parameters_arg[0])) {
+        !pointer32(velocities_device, &velocities_arg[0]) ||
+        !pointer32(search_starts_device, &search_starts_arg[0]) ||
+        !pointer32(search_counts_device, &search_counts_arg[0]) ||
+        !pointer32(parameters_device, &parameters_arg[0]) ||
+        !pointer32(reordered_positions_device, &reordered_positions_arg[0]) ||
+        !pointer32(reordered_velocities_device, &reordered_velocities_arg[0]) ||
+        !pointer32(output_cell_starts_device, &output_cell_starts_arg[0]) ||
+        !pointer32(output_cell_ends_device, &output_cell_ends_arg[0]) ||
+        !pointer32(mapping_device, &mapping_arg[0])) {
         goto cleanup;
     }
     output_hash_arg[1] = 1u;
     output_index_arg[1] = 1u;
     positions_arg[1] = 1u;
-    cell_starts_arg[1] = 1u;
-    cell_counts_arg[1] = 1u;
+    velocities_arg[1] = 1u;
+    search_starts_arg[1] = 1u;
+    search_counts_arg[1] = 1u;
     parameters_arg[1] = 1u;
+    reordered_positions_arg[1] = 1u;
+    reordered_velocities_arg[1] = 1u;
+    output_cell_starts_arg[1] = (uint32_t)cell_output_count;
+    output_cell_ends_arg[1] = (uint32_t)cell_output_count;
+    mapping_arg[1] = 1u;
     parameter_words[1] = 0x3f800000u;
 
     CUDA_TRY(&api, api.cuMemcpyHtoD_v2(output_hash_device, &output_hash, sizeof(output_hash)));
     CUDA_TRY(&api, api.cuMemcpyHtoD_v2(output_index_device, &output_index, sizeof(output_index)));
-    CUDA_TRY(&api, api.cuMemcpyHtoD_v2(positions_device, positions, sizeof(positions)));
-    CUDA_TRY(&api, api.cuMemcpyHtoD_v2(cell_starts_device, cell_starts, sizeof(cell_starts)));
-    CUDA_TRY(&api, api.cuMemcpyHtoD_v2(cell_counts_device, cell_counts, sizeof(cell_counts)));
+    CUDA_TRY(&api, api.cuMemcpyHtoD_v2(positions_device, position_bits, sizeof(position_bits)));
+    CUDA_TRY(&api, api.cuMemcpyHtoD_v2(velocities_device, velocity_bits, sizeof(velocity_bits)));
+    CUDA_TRY(&api, api.cuMemcpyHtoD_v2(search_starts_device, search_starts, sizeof(search_starts)));
+    CUDA_TRY(&api, api.cuMemcpyHtoD_v2(search_counts_device, search_counts, sizeof(search_counts)));
     CUDA_TRY(&api, api.cuMemcpyHtoD_v2(parameters_device, parameter_words, sizeof(parameter_words)));
+    CUDA_TRY(&api, api.cuMemcpyHtoD_v2(mapping_device, mapping, sizeof(mapping)));
+    CUDA_TRY(&api,
+             api.cuMemsetD32_v2(
+                 output_cell_starts_device, 0xdeadbeefu, cell_output_count));
+    CUDA_TRY(&api,
+             api.cuMemsetD32_v2(
+                 output_cell_ends_device, 0xdeadbeefu, cell_output_count));
 
     {
-        void *kernel_parameters[] = {
+        void *calc_parameters[] = {
             output_hash_arg,
             output_index_arg,
             positions_arg,
-            cell_starts_arg,
-            cell_counts_arg,
+            search_starts_arg,
+            search_counts_arg,
             parameters_arg,
             &particle_count,
         };
-        CUDA_TRY(&api, api.cuLaunchKernel(function,
+        CUDA_TRY(&api, api.cuLaunchKernel(calc_hash_function,
                                           1, 1, 1,
                                           64, 1, 1,
                                           0,
                                           NULL,
-                                          kernel_parameters,
+                                          calc_parameters,
+                                          NULL));
+    }
+    {
+        void *reorder_parameters[] = {
+            reordered_positions_arg,
+            reordered_velocities_arg,
+            output_cell_starts_arg,
+            output_cell_ends_arg,
+            positions_arg,
+            velocities_arg,
+            output_hash_arg,
+            output_index_arg,
+            mapping_arg,
+            &particle_count,
+        };
+        CUDA_TRY(&api, api.cuLaunchKernel(reorder_function,
+                                          1, 1, 1,
+                                          64, 1, 1,
+                                          260,
+                                          NULL,
+                                          reorder_parameters,
                                           NULL));
     }
     CUDA_TRY(&api, api.cuCtxSynchronize());
     CUDA_TRY(&api, api.cuMemcpyDtoH_v2(&output_hash, output_hash_device, sizeof(output_hash)));
     CUDA_TRY(&api, api.cuMemcpyDtoH_v2(&output_index, output_index_device, sizeof(output_index)));
+    CUDA_TRY(&api,
+             api.cuMemcpyDtoH_v2(
+                 reordered_position_bits,
+                 reordered_positions_device,
+                 sizeof(reordered_position_bits)));
+    CUDA_TRY(&api,
+             api.cuMemcpyDtoH_v2(
+                 reordered_velocity_bits,
+                 reordered_velocities_device,
+                 sizeof(reordered_velocity_bits)));
+    CUDA_TRY(&api,
+             api.cuMemcpyDtoH_v2(
+                 &output_cell_start,
+                 output_cell_starts_device +
+                     (CUdeviceptr)EXPECTED_HASH * sizeof(uint32_t),
+                 sizeof(output_cell_start)));
+    CUDA_TRY(&api,
+             api.cuMemcpyDtoH_v2(
+                 &output_cell_end,
+                 output_cell_ends_device +
+                     (CUdeviceptr)EXPECTED_HASH * sizeof(uint32_t),
+                 sizeof(output_cell_end)));
+
+    pass =
+        output_hash == EXPECTED_HASH &&
+        output_index == 0u &&
+        memcmp(reordered_position_bits, position_bits, sizeof(position_bits)) == 0 &&
+        memcmp(reordered_velocity_bits, velocity_bits, sizeof(velocity_bits)) == 0 &&
+        output_cell_start == 0u &&
+        output_cell_end == 1u;
 
     output = fopen(argv[2], "wb");
     if (output == NULL) {
@@ -263,29 +384,43 @@ int main(int argc, char **argv)
     }
     fprintf(output,
             "{\n"
-            "  \"schema_version\": 1,\n"
+            "  \"schema_version\": 2,\n"
             "  \"device\": \"%s\",\n"
-            "  \"kernel\": \"KernelFluidCalcHashPacked\",\n"
-            "  \"position_bits\": [\"0x3f800000\", \"0x40000000\", \"0x40400000\"],\n"
+            "  \"kernels\": [\"KernelFluidCalcHashPacked\", "
+                "\"KernelReorderPosVelAndFindCellStartPacked\"],\n"
+            "  \"position_bits\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n"
+            "  \"velocity_bits\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n"
             "  \"cell_divisor_bits\": \"0x3f800000\",\n"
             "  \"hash\": \"0x%08x\",\n"
             "  \"index\": %u,\n"
-            "  \"expected_hash\": \"0x%08x\",\n"
+            "  \"reordered_position_bits\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n"
+            "  \"reordered_velocity_bits\": [\"0x%08x\", \"0x%08x\", \"0x%08x\", \"0x%08x\"],\n"
+            "  \"cell_start\": %u,\n"
+            "  \"cell_end\": %u,\n"
             "  \"pass\": %s\n"
             "}\n",
             device_name,
+            position_bits[0], position_bits[1], position_bits[2], position_bits[3],
+            velocity_bits[0], velocity_bits[1], velocity_bits[2], velocity_bits[3],
             output_hash,
             output_index,
-            EXPECTED_HASH,
-            output_hash == EXPECTED_HASH && output_index == 0u ? "true" : "false");
+            reordered_position_bits[0], reordered_position_bits[1],
+            reordered_position_bits[2], reordered_position_bits[3],
+            reordered_velocity_bits[0], reordered_velocity_bits[1],
+            reordered_velocity_bits[2], reordered_velocity_bits[3],
+            output_cell_start,
+            output_cell_end,
+            pass ? "true" : "false");
     fclose(output);
     output = NULL;
-    exit_code = output_hash == EXPECTED_HASH && output_index == 0u ? 0 : 1;
-    printf("%s  %s: hash=0x%08x index=%u\n",
-           exit_code == 0 ? "PASS" : "FAIL",
+    exit_code = pass ? 0 : 1;
+    printf("%s  %s: hash=0x%08x index=%u cells=[%u,%u]\n",
+           pass ? "PASS" : "FAIL",
            device_name,
            output_hash,
-           output_index);
+           output_index,
+           output_cell_start,
+           output_cell_end);
 
 cleanup:
     if (output != NULL) {
@@ -294,9 +429,15 @@ cleanup:
     if (module != NULL) {
         api.cuModuleUnload(module);
     }
+    free_device(&api, &mapping_device);
+    free_device(&api, &output_cell_ends_device);
+    free_device(&api, &output_cell_starts_device);
+    free_device(&api, &reordered_velocities_device);
+    free_device(&api, &reordered_positions_device);
     free_device(&api, &parameters_device);
-    free_device(&api, &cell_counts_device);
-    free_device(&api, &cell_starts_device);
+    free_device(&api, &search_counts_device);
+    free_device(&api, &search_starts_device);
+    free_device(&api, &velocities_device);
     free_device(&api, &positions_device);
     free_device(&api, &output_index_device);
     free_device(&api, &output_hash_device);

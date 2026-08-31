@@ -81,7 +81,7 @@ public:
         emit(declarations_, SpvOpTypePointer,
              {type_ptr_input_u32_, SpvStorageClassInput, type_u32_});
 
-        const std::uint32_t shared_length = constant(ValueType::u32, 64u).id;
+        const std::uint32_t shared_length = constant(ValueType::u32, 65u).id;
         type_shared_array_ = allocate_id();
         emit(declarations_, SpvOpTypeArray, {type_shared_array_, type_u32_, shared_length});
         type_ptr_workgroup_array_ = allocate_id();
@@ -236,7 +236,8 @@ public:
     {
         ensure_kernel_globals();
         emit_entry_point(
-            function, {local_id_, workgroup_id_, buffer_, parameter_buffer_});
+            function,
+            {local_id_, workgroup_id_, buffer_, parameter_buffer_, shared_});
         emit(execution_modes_, SpvOpExecutionMode,
              {function, SpvExecutionModeLocalSize, local_size, 1u, 1u});
         emit(execution_modes_, SpvOpExecutionMode,
@@ -971,7 +972,6 @@ public:
           local_size_(local_size)
     {
     }
-
     void lower()
     {
         module_.define_kernel_entry_point(function_, local_size_);
@@ -980,8 +980,11 @@ public:
         const std::uint32_t pc = module_.function_variable(ValueType::u32);
         const Json &blocks = entry_.at("cfg").at("blocks");
         const std::uint32_t exit_pc = static_cast<std::uint32_t>(blocks.size());
-        module_.store_variable(
-            pc, module_.constant(ValueType::u32, 0u), ValueType::u32);
+        barrier_prelude_ = has_barrier();
+        const Value initial_pc = barrier_prelude_
+            ? lower_uniform_barrier_prelude(exit_pc)
+            : module_.constant(ValueType::u32, 0u);
+        module_.store_variable(pc, initial_pc, ValueType::u32);
 
         const std::uint32_t loop_header = module_.allocate_id();
         const std::uint32_t dispatch = module_.allocate_id();
@@ -1071,6 +1074,95 @@ private:
             std::to_string(instruction.at("line").get<std::size_t>()));
     }
 
+    bool has_barrier() const
+    {
+        for (const Json &instruction : entry_.at("instructions")) {
+            if (instruction.at("variant").get<std::string>() == "bar.sync") {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void lower_block_instructions(std::uint32_t block, bool skip_terminal)
+    {
+        const Json &description = entry_.at("cfg").at("blocks").at(block);
+        const std::size_t begin =
+            description.at("instruction_begin").get<std::size_t>();
+        std::size_t end =
+            description.at("instruction_end").get<std::size_t>();
+        if (skip_terminal) {
+            --end;
+        }
+        for (std::size_t index = begin; index < end; ++index) {
+            lower_instruction(entry_.at("instructions").at(index));
+        }
+    }
+
+    Value lower_uniform_barrier_prelude(std::uint32_t exit_pc)
+    {
+        const Json &blocks = entry_.at("cfg").at("blocks");
+        const Json &instructions = entry_.at("instructions");
+        if (blocks.size() < 5u ||
+            instructions.at(
+                blocks.at(4).at("instruction_begin").get<std::size_t>())
+                    .at("variant").get<std::string>() != "bar.sync") {
+            throw std::runtime_error(
+                "selected-kernel barrier CFG is outside the finite prelude shape");
+        }
+
+        lower_block_instructions(0u, true);
+        const std::size_t block0_end =
+            blocks.at(0).at("instruction_end").get<std::size_t>();
+        const Value inactive =
+            predicate_value(
+                instructions.at(block0_end - 1u)
+                    .at("predicate").get<std::string>());
+        const std::uint32_t active_label = module_.allocate_id();
+        const std::uint32_t active_merge = module_.allocate_id();
+        module_.function_instruction(
+            SpvOpSelectionMerge,
+            {active_merge, SpvSelectionControlMaskNone});
+        module_.function_instruction(
+            SpvOpBranchConditional,
+            {inactive.id, active_merge, active_label});
+        module_.function_instruction(SpvOpLabel, {active_label});
+
+        lower_block_instructions(1u, true);
+        const std::size_t block1_end =
+            blocks.at(1).at("instruction_end").get<std::size_t>();
+        const Value skip_previous =
+            predicate_value(
+                instructions.at(block1_end - 1u)
+                    .at("predicate").get<std::string>());
+        const std::uint32_t previous_label = module_.allocate_id();
+        const std::uint32_t previous_merge = module_.allocate_id();
+        module_.function_instruction(
+            SpvOpSelectionMerge,
+            {previous_merge, SpvSelectionControlMaskNone});
+        module_.function_instruction(
+            SpvOpBranchConditional,
+            {skip_previous.id, previous_merge, previous_label});
+        module_.function_instruction(SpvOpLabel, {previous_label});
+        lower_block_instructions(2u, true);
+        lower_block_instructions(3u, false);
+        module_.function_instruction(SpvOpBranch, {previous_merge});
+        module_.function_instruction(SpvOpLabel, {previous_merge});
+        module_.function_instruction(SpvOpBranch, {active_merge});
+        module_.function_instruction(SpvOpLabel, {active_merge});
+
+        const Value workgroup = module_.constant(ValueType::u32, 2u);
+        const Value semantics = module_.constant(ValueType::u32, 0x108u);
+        module_.function_instruction(
+            SpvOpControlBarrier,
+            {workgroup.id, workgroup.id, semantics.id});
+
+        const std::size_t barrier_end =
+            blocks.at(4).at("instruction_end").get<std::size_t>();
+        return next_block(
+            4u, instructions.at(barrier_end - 1u), exit_pc);
+    }
+
     void declare_registers()
     {
         for (const Json &bank : entry_.at("register_banks")) {
@@ -1142,6 +1234,10 @@ private:
                 desired,
                 static_cast<std::uint32_t>(
                     operand.at("value").get<std::int64_t>()));
+        }
+        if (kind == "symbol" &&
+            operand.at("name").get<std::string>() == "sharedHash") {
+            return module_.constant(desired, 0u);
         }
         throw std::runtime_error(
             "unsupported selected-kernel scalar operand kind '" + kind + "'");
@@ -1336,14 +1432,35 @@ private:
                     : loaded);
             return;
         }
+        if (base == "ld" && has_modifier(instruction, "shared")) {
+            const Value loaded =
+                module_.load_shared(word_index(address_operand(operands.at(1))));
+            define(operands.at(0), loaded);
+            return;
+        }
         if (base == "st" && has_modifier(instruction, "global")) {
-            module_.store_buffer(
+            const Value base_index = word_index(address_operand(operands.at(0)));
+            const std::vector<std::string> sources =
+                register_operand_list(operands.at(1));
+            for (std::size_t component = 0u; component < sources.size(); ++component) {
+                Value index = base_index;
+                if (component != 0u) {
+                    index = module_.instruction(
+                        SpvOpIAdd,
+                        ValueType::u32,
+                        {base_index.id,
+                         module_.constant(
+                             ValueType::u32,
+                             static_cast<std::uint32_t>(component)).id});
+                }
+                module_.store_buffer(index, read_register(sources[component]));
+            }
+            return;
+        }
+        if (base == "st" && has_modifier(instruction, "shared")) {
+            module_.store_shared(
                 word_index(address_operand(operands.at(0))),
-                scalar_operand(
-                    operands.at(1),
-                    has_modifier(instruction, "f32")
-                        ? ValueType::f32
-                        : ValueType::u32));
+                scalar_operand(operands.at(1), ValueType::u32));
             return;
         }
         if (base == "mov" || base == "cvta") {
@@ -1378,6 +1495,19 @@ private:
                     SpvOpIAdd, ValueType::s32, {product.id, c.id}));
             return;
         }
+        if (variant == "and.pred") {
+            const Value a =
+                scalar_operand(operands.at(1), ValueType::boolean);
+            const Value b =
+                scalar_operand(operands.at(2), ValueType::boolean);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpLogicalAnd,
+                    ValueType::boolean,
+                    {a.id, b.id}));
+            return;
+        }
         if (base == "and" || base == "or" ||
             base == "shl" || base == "shr") {
             const Value a =
@@ -1405,6 +1535,8 @@ private:
             if (variant == "setp.ge.u32") operation = SpvOpUGreaterThanEqual;
             if (variant == "setp.gt.u32") operation = SpvOpUGreaterThan;
             if (variant == "setp.le.u32") operation = SpvOpULessThanEqual;
+            if (variant == "setp.eq.s32") operation = SpvOpIEqual;
+            if (variant == "setp.ne.s32") operation = SpvOpINotEqual;
             if (operation == SpvOpNop) {
                 unsupported(instruction, "unsupported comparison");
             }
@@ -1412,6 +1544,16 @@ private:
                 operands.at(0),
                 module_.instruction(
                     operation, ValueType::boolean, {a.id, b.id}));
+            return;
+        }
+        if (variant == "bar.sync") {
+            if (!barrier_prelude_) {
+                const Value workgroup = module_.constant(ValueType::u32, 2u);
+                const Value semantics = module_.constant(ValueType::u32, 0x108u);
+                module_.function_instruction(
+                    SpvOpControlBarrier,
+                    {workgroup.id, workgroup.id, semantics.id});
+            }
             return;
         }
         if (base == "div") {
@@ -1464,6 +1606,7 @@ private:
     const Json &entry_;
     std::uint32_t function_;
     std::uint32_t local_size_;
+    bool barrier_prelude_ = false;
     std::map<std::string, RegisterVariable> variables_;
 };
 const Json &find_entry(const Json &manifest, const std::string &name)
