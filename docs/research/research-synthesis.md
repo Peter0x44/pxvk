@@ -237,18 +237,16 @@ count explicitly when sizing each Workgroup arena. The standalone local probe
 stores and reloads the aligned symbol at byte offset 16; native RTX and
 translated Intel/RTX return `0x5a000000 + tid` for all 64 invocations.
 
-This closes the local- and module-constant-storage prerequisites for
-trace-ordered `KernelFluidDensity`. Its remaining structural work is the finite
-instruction/helper subset used by that captured entry.
-
-Module `.const` declarations are emitted as a read-only storage buffer at
-binding 2, separate from the binding-0 CUDA heap and binding-1 launch
-parameters. Symbols retain schema-5 aligned byte offsets. The standalone
-constant probe copies eight native words through `cuModuleGetGlobal_v2`, then
-uses the density kernel's symbol-base plus computed-offset address shape;
-native RTX and translated Intel/RTX preserve `0x1234abcd` and NaN payload
-`0x7fc12345` exactly. The captured trace independently shows a 1,024-byte
-device-to-device update into density's 10,240-byte `parameters_cmem`.
+Local, module-constant, and texture storage are now all present in the
+trace-ordered `KernelFluidDensity` path. Module `.const` declarations use a
+read-only storage buffer at binding 2, separate from the binding-0 CUDA heap
+and binding-1 launch parameters. Symbols retain schema-5 aligned byte offsets.
+The standalone constant probe copies eight native words through
+`cuModuleGetGlobal_v2`, then uses the density kernel's symbol-base plus
+computed-offset address shape; native RTX and translated Intel/RTX preserve
+`0x1234abcd` and NaN payload `0x7fc12345` exactly. The captured trace
+independently shows a 1,024-byte device-to-device update into density's
+10,240-byte `parameters_cmem`.
 
 The selected-entry path independently emits the same `constant_probe` through
 `KernelEntryLowerer` as a 446-word module with bindings 0/1/2. Vulkan 1.2
@@ -258,12 +256,36 @@ fixture is
 SHA-256
 `b00dfe683ae265e8569be15aa05a2dabfd0ca4633d2b8c500f34dee5753620da`.
 
-`KernelFluidDensity` declares `.reg .s64 %rd<35>` but has zero definitions or
-uses of those registers. Kernel lowering now discards an unsupported register
-bank only when it is unreferenced; the CFG fixture includes an unused `.s64`
-bank to lock that behavior. No `Int64` capability or 64-bit arithmetic was
-added. The density compile now advances to its first texture fetch at PTX line
-119, making texture metadata/binding the next blocker.
+Selected legacy texture fetches add read-only storage-buffer binding 3. Each
+module texture-reference index maps to three runtime `u32` words: base
+binding-0 heap-word offset, element count, and component count. The shader
+performs signed coordinate bounds checks before loading, returns positive zero
+out of bounds, and bitcasts `f32` words without arithmetic conversion. A
+729-word selected `u32` fixture covers the captured one-component layout; a
+773-word selected `f32` fixture covers the captured four-component layout and
+preserves negative zero, subnormals, infinities, and NaN payloads. Coordinates
+-2 through 9 match on Intel and RTX. The committed fixture hashes are:
+
+- integer: `f2f2af01930991fe61a4db237a7e0978953b26ab283331627b7c6bc90f349eb3`;
+- float: `66fc00584b8371d0c7028bfcbc981c019ce4401b90ae1af1a55229eb4cb3f11b`.
+
+`KernelFluidDensity` declares `%r<497>`, `%f<30>`, and `.s64 %rd<35>`,
+but its final instructions reference 357 distinct `%rN` names, 23 distinct
+`%fN` names, and no `%rdN` names. PTX bank declarations bound virtual-register
+namespaces; they do not prove liveness or allocate hardware registers. The
+exact old CUDA compiler pass ordering is unavailable, but the instruction
+stream contains no hidden `%rd` dependency. Kernel lowering therefore discards
+an unsupported bank only when it has zero definitions and uses; the CFG fixture
+locks that rule, and a referenced unsupported type remains an error. No
+`Int64` capability or 64-bit arithmetic was added for density.
+
+With the two captured texture variants plus the finite integer/FTZ-float tail,
+all 411 density instructions lower. The deterministic 19,884-word SPIR-V
+module, with bindings 0/1/2/3 and local size 192, passes Vulkan 1.2 validation;
+SHA-256 is
+`f79e55fa85c6edd760a2479692d7f5ab40a6ae726b410e11458062e8c6db083f`.
+Its next gate is a trace-derived native/Vulkan density output fixture, not
+additional static instruction lowering.
 
 `tools/cuda-physx-fixture` runs both kernels as a one-particle pipeline against
 the local proprietary PTX. Native RTX and PTX-derived Vulkan on Intel/RTX all
@@ -356,7 +378,7 @@ Use:
 
 - one device-local 32 MiB buffer with storage and transfer usage;
 - one persistent host-visible staging buffer;
-- a small module-state storage buffer for globals and texture metadata;
+- read-only storage buffers for module constants and the compact texture table;
 - push constants for the exact packed parameter bytes, up to 100 bytes.
 
 Implement `cuMemHostAlloc` with checked, page-aligned Windows virtual memory.
@@ -371,10 +393,11 @@ shift/mask operations; native 8/16-bit storage features remain optional.
 
 ### Textures and module state
 
-A texture reference is typed metadata: bound heap offset, byte length, element
-format/component count, and observed invariant sampler state. Generated shaders
-perform signed bounds checks and four storage-buffer component reads; OOB
-returns zero. No Vulkan image or sampler is created.
+A texture reference is a compact runtime record: bound heap-word offset,
+element count, and component count. Format comes from the finite PTX fetch
+variant; the captured point-filter/clamp state requires no Vulkan image or
+sampler. Generated shaders perform signed bounds checks, use safe indices for
+storage-buffer reads, and explicitly select zero for OOB components.
 
 The focused native float-texture probe is complete. `tex.1d.v4.f32.s32`
 preserves all tested in-range bits, including negative zero, subnormals,

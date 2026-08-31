@@ -111,6 +111,14 @@ The selected-entry kernel path separately emits a 446-word constant-memory
 fixture with heap/parameter/constant bindings 0/1/2. It validates for Vulkan
 1.2 and returns native `0x1234abcd` and `0x7fc12345` on both local GPUs.
 
+Selected-entry texture lowering adds read-only storage-buffer binding 3. Its
+records contain base heap-word offset, element count, and component count.
+Explicit signed bounds checks reproduce native positive-zero OOB behavior
+without requiring `robustBufferAccess2`, an image, or a sampler. The 729-word
+one-component `u32` and 773-word four-component `f32` fixtures both pass Vulkan
+1.2 validation and match on Intel and RTX, including exact negative-zero,
+subnormal, infinity, and NaN-payload bits.
+
 ### Observed device results
 
 | Property | Intel UHD Graphics | RTX 3070 Laptop |

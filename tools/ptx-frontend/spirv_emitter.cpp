@@ -35,9 +35,17 @@ struct OracleBinding {
     std::uint32_t output_word;
 };
 
+constexpr std::uint32_t kTextureMetadataWords = 3u;
+constexpr std::uint32_t kTextureBaseWord = 0u;
+constexpr std::uint32_t kTextureElementCount = 1u;
+constexpr std::uint32_t kTextureComponentCount = 2u;
+
 class SpirvModule {
 public:
-    SpirvModule(std::uint32_t shared_bytes, std::uint32_t constant_bytes)
+    SpirvModule(
+        std::uint32_t shared_bytes,
+        std::uint32_t constant_bytes,
+        bool texture_metadata)
     {
         emit(capabilities_, SpvOpCapability, {SpvCapabilityShader});
         emit(capabilities_, SpvOpCapability, {SpvCapabilityRoundingModeRTE});
@@ -111,6 +119,19 @@ public:
                  {constant_buffer_, SpvDecorationBinding, 2u});
             emit(annotations_, SpvOpDecorate,
                  {constant_buffer_, SpvDecorationNonWritable});
+        }
+
+        if (texture_metadata) {
+            texture_metadata_buffer_ = allocate_id();
+            emit(declarations_, SpvOpVariable,
+                 {type_ptr_storage_buffer_, texture_metadata_buffer_,
+                  SpvStorageClassStorageBuffer});
+            emit(annotations_, SpvOpDecorate,
+                 {texture_metadata_buffer_, SpvDecorationDescriptorSet, 0u});
+            emit(annotations_, SpvOpDecorate,
+                 {texture_metadata_buffer_, SpvDecorationBinding, 3u});
+            emit(annotations_, SpvOpDecorate,
+                 {texture_metadata_buffer_, SpvDecorationNonWritable});
         }
 
         local_id_ = allocate_id();
@@ -263,16 +284,16 @@ public:
     void define_kernel_entry_point(std::uint32_t function, std::uint32_t local_size)
     {
         ensure_kernel_globals();
+        std::vector<std::uint32_t> interfaces = {
+            local_id_, workgroup_id_, buffer_, parameter_buffer_, shared_,
+        };
         if (constant_buffer_ != 0u) {
-            emit_entry_point(
-                function,
-                {local_id_, workgroup_id_, buffer_, parameter_buffer_, shared_,
-                 constant_buffer_});
-        } else {
-            emit_entry_point(
-                function,
-                {local_id_, workgroup_id_, buffer_, parameter_buffer_, shared_});
+            interfaces.push_back(constant_buffer_);
         }
+        if (texture_metadata_buffer_ != 0u) {
+            interfaces.push_back(texture_metadata_buffer_);
+        }
+        emit_entry_point(function, interfaces);
         emit(execution_modes_, SpvOpExecutionMode,
              {function, SpvExecutionModeLocalSize, local_size, 1u, 1u});
         emit(execution_modes_, SpvOpExecutionMode,
@@ -399,6 +420,23 @@ public:
             SpvOpAccessChain,
             type_ptr_storage_u32_,
             {constant_buffer_, zero.id, index.id});
+        return instruction(SpvOpLoad, ValueType::u32, {pointer.id});
+    }
+
+    Value load_texture_metadata(std::uint32_t reference, std::uint32_t field)
+    {
+        if (texture_metadata_buffer_ == 0u) {
+            throw std::runtime_error("texture fetch without texture metadata storage");
+        }
+        const Value zero = constant(ValueType::u32, 0u);
+        const Value index =
+            constant(
+                ValueType::u32,
+                reference * kTextureMetadataWords + field);
+        const Value pointer = instruction_with_type(
+            SpvOpAccessChain,
+            type_ptr_storage_u32_,
+            {texture_metadata_buffer_, zero.id, index.id});
         return instruction(SpvOpLoad, ValueType::u32, {pointer.id});
     }
 
@@ -546,8 +584,9 @@ private:
         emit(section, operation, operands);
     }
 
-    void emit_entry_point(std::uint32_t function,
-                          std::initializer_list<std::uint32_t> interfaces)
+    void emit_entry_point(
+        std::uint32_t function,
+        const std::vector<std::uint32_t> &interfaces)
     {
         std::vector<std::uint32_t> operands = {
             static_cast<std::uint32_t>(SpvExecutionModelGLCompute), function,
@@ -618,6 +657,7 @@ private:
     std::uint32_t type_ptr_workgroup_u32_ = 0u;
     std::uint32_t buffer_ = 0u;
     std::uint32_t constant_buffer_ = 0u;
+    std::uint32_t texture_metadata_buffer_ = 0u;
     std::uint32_t local_id_ = 0u;
     std::uint32_t shared_ = 0u;
     std::uint32_t parameter_buffer_ = 0u;
@@ -695,6 +735,16 @@ std::uint32_t module_constant_bytes(const Json &manifest)
                 variable.at("size").get<std::uint32_t>());
     }
     return bytes;
+}
+
+bool entry_uses_textures(const Json &entry)
+{
+    for (const Json &instruction : entry.at("instructions")) {
+        if (instruction.at("base").get<std::string>() == "tex") {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::uint32_t required_shared_bytes(
@@ -1197,6 +1247,11 @@ public:
                     variable.at("offset").get<std::uint32_t>(),
                     false);
             }
+        }
+        std::uint32_t texture_index = 0u;
+        for (const Json &name : manifest.at("texture_references")) {
+            texture_references_.emplace(
+                name.get<std::string>(), texture_index++);
         }
         for (const Json &variable : entry_.at("variables")) {
             const std::string space =
@@ -1701,6 +1756,101 @@ private:
             {condition.id, target.id, fallthrough.id});
     }
 
+    void lower_texture(const Json &instruction)
+    {
+        const Json &operands = instruction.at("structured_operands");
+        const Json &destinations = operands.at(0);
+        const Json &texture = operands.at(1);
+        if (destinations.at("kind").get<std::string>() != "list" ||
+            destinations.at("values").size() != 4u ||
+            texture.at("kind").get<std::string>() != "memory" ||
+            texture.at("values").size() != 2u ||
+            texture.at("values").at(0).at("kind").get<std::string>() != "symbol") {
+            unsupported(instruction, "unsupported texture shape");
+        }
+        const std::string texture_name =
+            texture.at("values").at(0).at("name").get<std::string>();
+        const auto reference = texture_references_.find(texture_name);
+        if (reference == texture_references_.end()) {
+            unsupported(instruction, "unknown texture reference");
+        }
+        const Json &coordinates = texture.at("values").at(1);
+        if (coordinates.at("kind").get<std::string>() != "list" ||
+            coordinates.at("values").size() != 1u) {
+            unsupported(instruction, "unsupported texture coordinate shape");
+        }
+
+        const Value coordinate =
+            scalar_operand(coordinates.at("values").at(0), ValueType::s32);
+        const Value coordinate_u = module_.coerce(coordinate, ValueType::u32);
+        const Value base_word =
+            module_.load_texture_metadata(reference->second, kTextureBaseWord);
+        const Value element_count =
+            module_.load_texture_metadata(reference->second, kTextureElementCount);
+        const Value component_count =
+            module_.load_texture_metadata(reference->second, kTextureComponentCount);
+        const Value zero_s = module_.constant(ValueType::s32, 0u);
+        const Value zero_u = module_.constant(ValueType::u32, 0u);
+        const Value lower_ok = module_.instruction(
+            SpvOpSGreaterThanEqual,
+            ValueType::boolean,
+            {coordinate.id, zero_s.id});
+        const Value upper_ok = module_.instruction(
+            SpvOpULessThan,
+            ValueType::boolean,
+            {coordinate_u.id, element_count.id});
+        const Value in_bounds = module_.instruction(
+            SpvOpLogicalAnd,
+            ValueType::boolean,
+            {lower_ok.id, upper_ok.id});
+        const Value safe_coordinate = module_.instruction(
+            SpvOpSelect,
+            ValueType::u32,
+            {in_bounds.id, coordinate_u.id, zero_u.id});
+        const Value row_offset = module_.instruction(
+            SpvOpIMul,
+            ValueType::u32,
+            {safe_coordinate.id, component_count.id});
+
+        const bool float_result =
+            instruction.at("variant").get<std::string>() ==
+            "tex.1d.v4.f32.s32";
+        for (std::uint32_t component = 0u; component < 4u; ++component) {
+            const Value component_value =
+                module_.constant(ValueType::u32, component);
+            const Value component_present = module_.instruction(
+                SpvOpULessThan,
+                ValueType::boolean,
+                {component_value.id, component_count.id});
+            const Value safe_component = module_.instruction(
+                SpvOpSelect,
+                ValueType::u32,
+                {component_present.id, component_value.id, zero_u.id});
+            const Value component_offset = module_.instruction(
+                SpvOpIAdd,
+                ValueType::u32,
+                {row_offset.id, safe_component.id});
+            const Value word = module_.instruction(
+                SpvOpIAdd,
+                ValueType::u32,
+                {base_word.id, component_offset.id});
+            const Value loaded = module_.load_buffer(word);
+            const Value defined = module_.instruction(
+                SpvOpLogicalAnd,
+                ValueType::boolean,
+                {in_bounds.id, component_present.id});
+            const Value selected = module_.instruction(
+                SpvOpSelect,
+                ValueType::u32,
+                {defined.id, loaded.id, zero_u.id});
+            define(
+                destinations.at("values").at(component),
+                float_result
+                    ? module_.coerce(selected, ValueType::f32)
+                    : selected);
+        }
+    }
+
     void lower_instruction(const Json &instruction)
     {
         const std::string base =
@@ -1711,6 +1861,12 @@ private:
         if (!instruction.at("predicate").get<std::string>().empty()) {
             unsupported(
                 instruction, "non-branch predication is outside this slice");
+        }
+        if (base == "tex" &&
+            (variant == "tex.1d.v4.u32.s32" ||
+             variant == "tex.1d.v4.f32.s32")) {
+            lower_texture(instruction);
+            return;
         }
 
         if (base == "ld" && has_modifier(instruction, "param")) {
@@ -1799,6 +1955,32 @@ private:
             define(operands.at(0), scalar_operand(operands.at(1), type));
             return;
         }
+        if ((base == "add" || base == "sub" || base == "mul") &&
+            has_modifier(instruction, "f32")) {
+            const bool ftz = has_modifier(instruction, "ftz");
+            const Value a = float_input(operands.at(1), ftz);
+            const Value b = float_input(operands.at(2), ftz);
+            const SpvOp operation =
+                base == "add" ? SpvOpFAdd :
+                base == "sub" ? SpvOpFSub :
+                SpvOpFMul;
+            Value result = module_.instruction(
+                operation, ValueType::f32, {a.id, b.id});
+            module_.decorate(result.id, SpvDecorationNoContraction);
+            define(operands.at(0), float_output(result, ftz));
+            return;
+        }
+        if (base == "fma" && has_modifier(instruction, "f32")) {
+            const bool ftz = has_modifier(instruction, "ftz");
+            const Value a = float_input(operands.at(1), ftz);
+            const Value b = float_input(operands.at(2), ftz);
+            const Value c = float_input(operands.at(3), ftz);
+            Value result = module_.ext_instruction(
+                ValueType::f32, GLSLstd450Fma, {a.id, b.id, c.id});
+            module_.decorate(result.id, SpvDecorationNoContraction);
+            define(operands.at(0), float_output(result, ftz));
+            return;
+        }
         if (base == "add" || base == "sub" || base == "mad") {
             const Value a =
                 scalar_operand(operands.at(1), ValueType::s32);
@@ -1853,6 +2035,17 @@ private:
                     operation, ValueType::u32, {a.id, b.id}));
             return;
         }
+        if (variant == "setp.gt.ftz.f32") {
+            const Value a = float_input(operands.at(1), true);
+            const Value b = float_input(operands.at(2), true);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpFOrdGreaterThan,
+                    ValueType::boolean,
+                    {a.id, b.id}));
+            return;
+        }
         if (base == "setp") {
             const bool unsigned_compare = has_modifier(instruction, "u32");
             const ValueType type =
@@ -1865,6 +2058,7 @@ private:
             if (variant == "setp.le.u32") operation = SpvOpULessThanEqual;
             if (variant == "setp.eq.s32") operation = SpvOpIEqual;
             if (variant == "setp.ne.s32") operation = SpvOpINotEqual;
+            if (variant == "setp.gt.s32") operation = SpvOpSGreaterThan;
             if (operation == SpvOpNop) {
                 unsupported(instruction, "unsupported comparison");
             }
@@ -1872,6 +2066,21 @@ private:
                 operands.at(0),
                 module_.instruction(
                     operation, ValueType::boolean, {a.id, b.id}));
+            return;
+        }
+        if (variant == "selp.f32") {
+            const Value when_true =
+                scalar_operand(operands.at(1), ValueType::f32);
+            const Value when_false =
+                scalar_operand(operands.at(2), ValueType::f32);
+            const Value condition =
+                scalar_operand(operands.at(3), ValueType::boolean);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpSelect,
+                    ValueType::f32,
+                    {condition.id, when_true.id, when_false.id}));
             return;
         }
         if (variant == "bar.sync") {
@@ -1939,6 +2148,7 @@ private:
     std::uint32_t dynamic_shared_bytes_;
     std::uint32_t local_ = 0u;
     std::map<std::string, StorageSymbol> storage_symbols_;
+    std::map<std::string, std::uint32_t> texture_references_;
 };
 const Json &find_entry(const Json &manifest, const std::string &name)
 {
@@ -1961,7 +2171,8 @@ std::vector<std::uint32_t> emit_oracle(const Json &manifest)
         shared_bytes = std::max(
             shared_bytes, required_shared_bytes(manifest, entry, 0u));
     }
-    SpirvModule module(shared_bytes, module_constant_bytes(manifest));
+    SpirvModule module(
+        shared_bytes, module_constant_bytes(manifest), false);
     const std::uint32_t math = module.allocate_id();
     const std::uint32_t barrier = module.allocate_id();
     const std::uint32_t local = module.allocate_id();
@@ -2013,7 +2224,8 @@ std::vector<std::uint32_t> emit_kernel_entry(
     const Json &entry = find_entry(manifest, entry_name);
     SpirvModule module(
         required_shared_bytes(manifest, entry, dynamic_shared_bytes),
-        module_constant_bytes(manifest));
+        module_constant_bytes(manifest),
+        entry_uses_textures(entry));
     const std::uint32_t function = module.allocate_id();
     KernelEntryLowerer(
         module,

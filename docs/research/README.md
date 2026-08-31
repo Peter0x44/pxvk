@@ -67,5 +67,5 @@ Open probes are tracked rather than dropped:
 | AMD generated-SPIR-V execution | Hardware preflight passes; full oracle deferred until the AMD machine is available | Claiming cross-vendor execution correctness on AMD |
 
 Each probe blocks only the named acceptance point. None blocks the next local
-slice: the remaining finite instruction/helper lowering required by
-trace-ordered `KernelFluidDensity`.
+slice: execute the now-valid 19,884-word `KernelFluidDensity` module against a
+trace-derived native/Vulkan density fixture.

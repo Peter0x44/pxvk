@@ -22,6 +22,7 @@ constexpr VkDeviceSize kMemoryCopyBytes = 2ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kOracleCopyBytes = 514ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kKernelFixtureCopyBytes = 512ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kConstantFixtureCopyBytes = 514ull * sizeof(std::uint32_t);
+constexpr VkDeviceSize kTextureMetadataBytes = 6ull * sizeof(std::uint32_t);
 constexpr VkDeviceSize kReorderFixtureCopyBytes =
     32768ull * sizeof(std::uint32_t);
 constexpr std::size_t kReorderedPositionOffset = 512;
@@ -401,11 +402,22 @@ DeviceResult run_device(
     bool require_memory_result,
     bool kernel_fixture_mode,
     bool reorder_fixture_mode,
-    bool constant_fixture_mode)
+    bool constant_fixture_mode,
+    bool texture_fixture_mode,
+    bool texture_float_fixture_mode)
 {
     DeviceResult result;
     result.index = device_index;
     vkGetPhysicalDeviceProperties(physical_device, &result.properties);
+    const bool selected_texture_mode =
+        texture_fixture_mode || texture_float_fixture_mode;
+    const VkDeviceSize texture_metadata_alignment =
+        std::max<VkDeviceSize>(
+            4u, result.properties.limits.minStorageBufferOffsetAlignment);
+    const VkDeviceSize texture_metadata_offset =
+        ((4096u + texture_metadata_alignment - 1u) /
+         texture_metadata_alignment) *
+        texture_metadata_alignment;
 
     VkDevice device = VK_NULL_HANDLE;
     BufferAllocation device_buffer;
@@ -492,7 +504,9 @@ DeviceResult run_device(
                     ? kKernelFixtureCopyBytes
                     : constant_fixture_mode
                         ? kConstantFixtureCopyBytes
-                        : kMemoryCopyBytes;
+                        : selected_texture_mode
+                            ? texture_metadata_offset + kTextureMetadataBytes
+                            : kMemoryCopyBytes;
         check(
             vkMapMemory(device, staging_buffer.memory, 0, staging_buffer.allocation_size, 0, &mapped),
             "vkMapMemory");
@@ -553,6 +567,29 @@ DeviceResult run_device(
             words[5] = kExpectedConstant[1];
             words[kConstantOutputOffset] = 0xdeadbeefu;
             words[kConstantOutputOffset + 1u] = 0xdeadbeefu;
+        } else if (selected_texture_mode) {
+            const std::size_t output_offset = texture_fixture_mode
+                ? kTextureOutputOffset
+                : kTextureFloatOutputOffset;
+            words[0] = static_cast<std::uint32_t>(
+                output_offset * sizeof(std::uint32_t));
+            for (std::uint32_t row = 0u; row < 8u; ++row) {
+                words[kTextureInputOffset + row] =
+                    0x10000000u + row * 0x100u;
+                for (std::uint32_t component = 0u; component < 4u; ++component) {
+                    words[kTextureFloatInputOffset + row * 4u + component] =
+                        kExpectedFloatTextureInput[row][component];
+                }
+            }
+            std::fill_n(words + output_offset, 12u * 4u, 0xdeadbeefu);
+            auto *metadata = reinterpret_cast<std::uint32_t *>(
+                static_cast<std::uint8_t *>(mapped) + texture_metadata_offset);
+            metadata[0] = static_cast<std::uint32_t>(kTextureInputOffset);
+            metadata[1] = 8u;
+            metadata[2] = 1u;
+            metadata[3] = static_cast<std::uint32_t>(kTextureFloatInputOffset);
+            metadata[4] = 8u;
+            metadata[5] = 4u;
         } else {
             words[0] = kInput;
             words[1] = 0xdeadbeefu;
@@ -585,10 +622,12 @@ DeviceResult run_device(
         }
 
         const std::uint32_t binding_count =
-            ptx_oracle_mode || constant_fixture_mode
-                ? 3u
-                : kernel_fixture_mode || reorder_fixture_mode ? 2u : 1u;
-        std::array<VkDescriptorSetLayoutBinding, 3> bindings = {};
+            selected_texture_mode
+                ? 4u
+                : ptx_oracle_mode || constant_fixture_mode
+                    ? 3u
+                    : kernel_fixture_mode || reorder_fixture_mode ? 2u : 1u;
+        std::array<VkDescriptorSetLayoutBinding, 4> bindings = {};
         for (std::uint32_t binding_index = 0;
              binding_index < binding_count;
              ++binding_index) {
@@ -635,8 +674,8 @@ DeviceResult run_device(
             &descriptor_layout,
         };
         check(vkAllocateDescriptorSets(device, &set_info, &descriptor_set), "vkAllocateDescriptorSets");
-        std::array<VkDescriptorBufferInfo, 3> descriptor_buffer_infos = {};
-        std::array<VkWriteDescriptorSet, 3> descriptor_writes = {};
+        std::array<VkDescriptorBufferInfo, 4> descriptor_buffer_infos = {};
+        std::array<VkWriteDescriptorSet, 4> descriptor_writes = {};
         for (std::uint32_t binding_index = 0;
              binding_index < binding_count;
              ++binding_index) {
@@ -645,6 +684,12 @@ DeviceResult run_device(
                 0,
                 kBufferBytes,
             };
+            if (selected_texture_mode && binding_index == 3u) {
+                descriptor_buffer_infos[binding_index].offset =
+                    texture_metadata_offset;
+                descriptor_buffer_infos[binding_index].range =
+                    kTextureMetadataBytes;
+            }
             descriptor_writes[binding_index] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
@@ -851,6 +896,36 @@ DeviceResult run_device(
                 result.constant.size(),
                 result.constant.begin());
             result.pass = result.constant == kExpectedConstant;
+        } else if (selected_texture_mode) {
+            auto &texture_result = texture_fixture_mode
+                ? result.texture
+                : result.texture_float;
+            const std::size_t output_offset = texture_fixture_mode
+                ? kTextureOutputOffset
+                : kTextureFloatOutputOffset;
+            result.pass = true;
+            for (std::size_t row = 0u; row < texture_result.size(); ++row) {
+                std::copy_n(
+                    words + output_offset + row * 4u,
+                    4u,
+                    texture_result[row].begin());
+                const int coordinate = static_cast<int>(row) - 2;
+                for (std::size_t component = 0u; component < 4u; ++component) {
+                    const std::uint32_t expected =
+                        coordinate < 0 || coordinate >= 8
+                            ? 0u
+                            : texture_fixture_mode
+                                ? component == 0u
+                                    ? 0x10000000u +
+                                          static_cast<std::uint32_t>(coordinate) *
+                                              0x100u
+                                    : 0u
+                                : kExpectedFloatTextureInput[
+                                      static_cast<std::size_t>(coordinate)][component];
+                    result.pass =
+                        result.pass && texture_result[row][component] == expected;
+                }
+            }
         } else {
             result.pass = !require_memory_result ||
                 (result.input_after == kInput && result.result == kExpected);
@@ -924,9 +999,11 @@ DeviceResult run_device(
                     ? "selected kernel fixture result mismatch"
                     : constant_fixture_mode
                         ? "constant kernel fixture result mismatch"
-                        : oracle_mode
-                            ? "standalone oracle result mismatch"
-                            : "integer/global-memory result mismatch";
+                        : selected_texture_mode
+                            ? "selected texture kernel fixture result mismatch"
+                            : oracle_mode
+                                ? "standalone oracle result mismatch"
+                                : "integer/global-memory result mismatch";
         }
     } catch (const std::exception &error) {
         result.error = error.what();
@@ -988,21 +1065,30 @@ int main(int argc, char **argv)
         argc == 4 && std::string(argv[2]) == "--reorder-fixture";
     const bool constant_fixture_mode =
         argc == 4 && std::string(argv[2]) == "--constant-fixture";
+    const bool texture_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--texture-fixture";
+    const bool texture_float_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--texture-float-fixture";
     const bool incomplete_named_mode =
         argc == 3 &&
         (std::string(argv[2]) == "--ptx-oracle" ||
          std::string(argv[2]) == "--kernel-fixture" ||
          std::string(argv[2]) == "--reorder-fixture" ||
-         std::string(argv[2]) == "--constant-fixture");
+         std::string(argv[2]) == "--constant-fixture" ||
+         std::string(argv[2]) == "--texture-fixture" ||
+         std::string(argv[2]) == "--texture-float-fixture");
     if ((argc != 2 && argc != 3 &&
          !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
-         !constant_fixture_mode) ||
+         !constant_fixture_mode && !texture_fixture_mode &&
+         !texture_float_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
                   << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --kernel-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --reorder-fixture <generated.spv>\n"
-                  << "       vulkan-memory-smoke <output.json> --constant-fixture <generated.spv>\n";
+                  << "       vulkan-memory-smoke <output.json> --constant-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --texture-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --texture-float-fixture <generated.spv>\n";
         return 2;
     }
 
@@ -1047,15 +1133,18 @@ int main(int argc, char **argv)
         (argc == 3 && !incomplete_named_mode) || ptx_oracle_mode;
     const bool shader_input_mode =
         oracle_mode || kernel_fixture_mode || reorder_fixture_mode ||
-        constant_fixture_mode;
+        constant_fixture_mode || texture_fixture_mode ||
+        texture_float_fixture_mode;
     const bool require_memory_result =
         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
-        !constant_fixture_mode;
+        !constant_fixture_mode && !texture_fixture_mode &&
+        !texture_float_fixture_mode;
     std::vector<std::uint32_t> shader;
     if (shader_input_mode) {
         const char *shader_path =
             ptx_oracle_mode || kernel_fixture_mode || reorder_fixture_mode ||
-                    constant_fixture_mode
+                    constant_fixture_mode || texture_fixture_mode ||
+                    texture_float_fixture_mode
                 ? argv[3]
                 : argv[2];
         std::ifstream shader_input(shader_path, std::ios::binary | std::ios::ate);
@@ -1095,7 +1184,9 @@ int main(int argc, char **argv)
             require_memory_result,
             kernel_fixture_mode,
             reorder_fixture_mode,
-            constant_fixture_mode);
+            constant_fixture_mode,
+            texture_fixture_mode,
+            texture_float_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -1113,6 +1204,8 @@ int main(int argc, char **argv)
            << (reorder_fixture_mode ? "reorder_kernel_fixture" :
                kernel_fixture_mode ? "selected_kernel_fixture" :
                constant_fixture_mode ? "constant_kernel_fixture" :
+               texture_fixture_mode ? "texture_kernel_fixture" :
+               texture_float_fixture_mode ? "texture_float_kernel_fixture" :
                ptx_oracle_mode ? "ptx_generated_oracle" :
                oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory")
            << "\",\n"
@@ -1134,6 +1227,11 @@ int main(int argc, char **argv)
         output << "  \"kernel\": \"constant_probe\",\n"
                << "  \"expected\": [\"" << hex32(kExpectedConstant[0])
                << "\", \"" << hex32(kExpectedConstant[1]) << "\"],\n";
+    } else if (texture_fixture_mode || texture_float_fixture_mode) {
+        output << "  \"kernel\": \""
+               << (texture_fixture_mode ? "texture_probe" : "texture_float_probe")
+               << "\",\n"
+               << "  \"coordinates\": [-2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9],\n";
     } else {
         output << "  \"input\": \"" << hex32(kInput) << "\",\n"
                << "  \"mask\": \"" << hex32(kMask) << "\",\n"
@@ -1185,6 +1283,22 @@ int main(int argc, char **argv)
             output << "      \"constant\": {\"values\": [\""
                    << hex32(result.constant[0]) << "\", \""
                    << hex32(result.constant[1]) << "\"]},\n";
+        } else if (texture_fixture_mode || texture_float_fixture_mode) {
+            const auto &texture_result = texture_fixture_mode
+                ? result.texture
+                : result.texture_float;
+            output << "      \"texture\": {\"rows\": [\n";
+            for (std::size_t row = 0u; row < texture_result.size(); ++row) {
+                output << "        {\"coord\": " << static_cast<int>(row) - 2
+                       << ", \"value\": [";
+                for (std::size_t component = 0u; component < 4u; ++component) {
+                    output << (component == 0u ? "" : ", ")
+                           << "\"" << hex32(texture_result[row][component]) << "\"";
+                }
+                output << "]}"
+                       << (row + 1u == texture_result.size() ? "\n" : ",\n");
+            }
+            output << "      ]},\n";
         } else {
             output << "      \"input_after\": \"" << hex32(result.input_after) << "\",\n"
                    << "      \"result\": \"" << hex32(result.result) << "\",\n";

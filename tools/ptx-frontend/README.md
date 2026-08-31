@@ -96,8 +96,15 @@ build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
 
 Kernel mode binds the 32-bit CUDA heap at descriptor binding 0, packed
 launch-parameter words at binding 1, and module `.const` storage at read-only
-storage-buffer binding 2 when the selected module declares constants. PTX byte
-addresses remain `u32` byte offsets within their memory space. The
+storage-buffer binding 2 when the selected module declares constants. A
+selected entry containing legacy texture fetches additionally reads binding 3.
+Each manifest texture-reference index owns three `u32` metadata words: base
+heap-word offset, element count, and component count. The current finite
+lowering covers the captured one-dimensional, signed-coordinate, 32-bit
+one-/four-component references. It checks coordinates explicitly, preserves
+in-range `f32` bits, and returns positive-zero components out of bounds.
+
+PTX byte addresses remain `u32` byte offsets within their memory space. The
 dynamic-shared byte count is explicit pipeline input; the emitter combines it
 with module/routine static shared layouts to size the Workgroup arena. Named
 `.shared` symbols resolve to aligned byte offsets in that arena. Named `.local`
@@ -105,9 +112,14 @@ symbols resolve to aligned byte offsets in a per-invocation Function array.
 Named `.const` symbols resolve to aligned byte offsets in binding 2.
 
 Kernel lowering discards an unsupported register bank only when no instruction
-defines or uses any register in that bank. A referenced unsupported type remains
-a deterministic error. This avoids enabling 64-bit SPIR-V solely for
-`KernelFluidDensity`'s declared but unused `.s64` bank.
+defines or uses any register in that bank. A PTX bank declaration bounds a
+virtual-register namespace; it does not assert that every name is live or
+allocate hardware registers. `KernelFluidDensity` declares `%r<497>`,
+`%f<30>`, and `%rd<35>`, while its final instructions reference 357 distinct
+`%rN` names, 23 distinct `%fN` names, and no `%rdN` names. The unused `.s64`
+bank is therefore compiler-output residue, not evidence of a missing operation.
+A referenced unsupported type remains a deterministic error; no `Int64`
+capability was added for this entry.
 
 The current state-machine lowering stores virtual registers in function storage
 and executes one PTX basic block per structured loop iteration. A finite prelude
@@ -230,9 +242,12 @@ The frontend does not yet provide:
 - general type inference beyond declared register banks and the 147 finite
   opcode contracts;
 - reachability or dead-code elimination;
-- SPIR-V emission beyond the project oracle and selected
-  `KernelFluidCalcHashPacked`/`KernelReorderPosVelAndFindCellStartPacked`
-  finite slices;
+- SPIR-V emission beyond the project oracle and the selected finite
+  `KernelFluidCalcHashPacked`, `KernelReorderPosVelAndFindCellStartPacked`, and
+  `KernelFluidDensity` slices;
+- an end-to-end native/Vulkan output differential for `KernelFluidDensity`
+  (its deterministic 19,884-word module currently passes Vulkan 1.2
+  validation);
 - shader caching;
 - CUDA module/runtime integration.
 

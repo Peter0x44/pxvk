@@ -194,8 +194,11 @@ For each of the 17 cataloged PTX hashes:
 The project-owned oracle completes this sequence through direct SPIR-V emission
 and exact Intel/RTX execution. The captured `KernelFluidCalcHashPacked` and
 `KernelReorderPosVelAndFindCellStartPacked` entries also compile, validate, and
-match a paired native CUDA one-particle fixture on Intel and RTX. The other 14
-launched entries remain parse/type/CFG validated rather than lowered.
+match a paired native CUDA one-particle fixture on Intel and RTX.
+`KernelFluidDensity` now compiles deterministically to 19,884 SPIR-V words and
+passes Vulkan 1.2 validation; its trace-derived output differential remains
+open. The other 13 launched entries remain parse/type/CFG validated rather than
+lowered.
 
 The raw PTX remains local. A committed normalized manifest should contain only
 hashes and non-proprietary structural expectations already documented in
@@ -224,9 +227,11 @@ storage through the conservative loop/switch CFG lowering.
 `barrier_cfg_probe.ptx` covers divergent shared-memory setup, predicate
 conjunction, structured reconvergence, and one dynamically uniform workgroup
 barrier. The project oracle additionally covers a 16-byte-aligned `.local`
-symbol with independent state for all 64 invocations. CTest emits both CFG
-manifests and SPIR-V modules; SDK validation and Intel/RTX execution remain
-explicit compiler verification commands.
+symbol with independent state for all 64 invocations. Selected-entry texture
+fixtures cover one-component `u32`, four-component bit-preserving `f32`, and
+signed OOB zero on Intel and RTX. CTest emits both CFG manifests, the direct
+oracle, and three selected oracle SPIR-V modules; SDK validation and device
+execution remain explicit compiler verification commands.
 
 Parser-only cases may use dead code to cover the 27 whole-corpus variants absent
 from launched entries. They do not become execution requirements unless a
