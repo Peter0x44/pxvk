@@ -79,6 +79,7 @@
             "%out",
             "[math_probe_param_0]"
           ],
+          "result_type": "u32",
           "definitions": [
             "%out"
           ],
@@ -96,6 +97,7 @@
             "%f1",
             "0f3F800000"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f1"
           ],
@@ -113,6 +115,7 @@
             "%f2",
             "0f40400000"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f2"
           ],
@@ -133,6 +136,7 @@
             "%f1",
             "%f2"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f3"
           ],
@@ -153,6 +157,7 @@
             "%r1",
             "%f3"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r1"
           ],
@@ -173,6 +178,7 @@
             "[%out+0]",
             "%r1"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -191,6 +197,7 @@
             "%f4",
             "0f00800000"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f4"
           ],
@@ -208,6 +215,7 @@
             "%f5",
             "0f40000000"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f5"
           ],
@@ -228,6 +236,7 @@
             "%f4",
             "%f5"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f6"
           ],
@@ -248,6 +257,7 @@
             "%r2",
             "%f6"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r2"
           ],
@@ -268,6 +278,7 @@
             "[%out+4]",
             "%r2"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -288,6 +299,7 @@
             "%f7",
             "%f2"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f7"
           ],
@@ -307,6 +319,7 @@
             "%r3",
             "%f7"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r3"
           ],
@@ -327,6 +340,7 @@
             "[%out+8]",
             "%r3"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -347,6 +361,7 @@
             "%f8",
             "%f5"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f8"
           ],
@@ -366,6 +381,7 @@
             "%r4",
             "%f8"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r4"
           ],
@@ -386,6 +402,7 @@
             "[%out+12]",
             "%r4"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -404,6 +421,7 @@
             "%f9",
             "0f00000001"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f9"
           ],
@@ -423,6 +441,7 @@
             "%f10",
             "%f9"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f10"
           ],
@@ -442,6 +461,7 @@
             "%r5",
             "%f10"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r5"
           ],
@@ -462,6 +482,7 @@
             "[%out+16]",
             "%r5"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -482,6 +503,7 @@
             "%f11",
             "%f5"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f11"
           ],
@@ -501,6 +523,7 @@
             "%r6",
             "%f11"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r6"
           ],
@@ -521,6 +544,7 @@
             "[%out+20]",
             "%r6"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -539,6 +563,7 @@
             "%f12",
             "0f3F800001"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f12"
           ],
@@ -556,6 +581,7 @@
             "%f13",
             "0f3F7FFFFE"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f13"
           ],
@@ -573,6 +599,7 @@
             "%f14",
             "0fBF800000"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f14"
           ],
@@ -594,6 +621,7 @@
             "%f13",
             "%f14"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f15"
           ],
@@ -615,6 +643,7 @@
             "%r7",
             "%f15"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r7"
           ],
@@ -635,6 +664,7 @@
             "[%out+24]",
             "%r7"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -655,6 +685,7 @@
             "%f12",
             "%f13"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f16"
           ],
@@ -677,6 +708,7 @@
             "%f16",
             "%f14"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f17"
           ],
@@ -697,6 +729,7 @@
             "%r8",
             "%f17"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r8"
           ],
@@ -717,6 +750,7 @@
             "[%out+28]",
             "%r8"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -735,6 +769,7 @@
             "%f18",
             "0fC0700000"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f18"
           ],
@@ -755,6 +790,7 @@
             "%s1",
             "%f18"
           ],
+          "result_type": "s32",
           "definitions": [
             "%s1"
           ],
@@ -774,6 +810,7 @@
             "%r9",
             "%s1"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r9"
           ],
@@ -794,6 +831,7 @@
             "[%out+32]",
             "%r9"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -812,6 +850,7 @@
             "%r10",
             "16777217"
           ],
+          "result_type": "u32",
           "definitions": [
             "%r10"
           ],
@@ -831,6 +870,7 @@
             "%f19",
             "%r10"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f19"
           ],
@@ -850,6 +890,7 @@
             "%r11",
             "%f19"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r11"
           ],
@@ -870,6 +911,7 @@
             "[%out+36]",
             "%r11"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -888,6 +930,7 @@
             "%f1",
             "0f00000001"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f1"
           ],
@@ -905,6 +948,7 @@
             "%f2",
             "0f00000000"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f2"
           ],
@@ -924,6 +968,7 @@
             "%f1",
             "%f2"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f3"
           ],
@@ -944,6 +989,7 @@
             "%r12",
             "%f3"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r12"
           ],
@@ -964,6 +1010,7 @@
             "[%out+40]",
             "%r12"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -982,6 +1029,7 @@
             "%f2",
             "0f3F800000"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f2"
           ],
@@ -1001,6 +1049,7 @@
             "%f1",
             "%f2"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f3"
           ],
@@ -1021,6 +1070,7 @@
             "%r13",
             "%f3"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r13"
           ],
@@ -1041,6 +1091,7 @@
             "[%out+44]",
             "%r13"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -1059,6 +1110,7 @@
             "%f4",
             "0f7FC00000"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f4"
           ],
@@ -1078,6 +1130,7 @@
             "%f4",
             "%f2"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f5"
           ],
@@ -1098,6 +1151,7 @@
             "%r14",
             "%f5"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r14"
           ],
@@ -1118,6 +1172,7 @@
             "[%out+48]",
             "%r14"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -1138,6 +1193,7 @@
             "%f4",
             "%f2"
           ],
+          "result_type": "f32",
           "definitions": [
             "%f6"
           ],
@@ -1158,6 +1214,7 @@
             "%r15",
             "%f6"
           ],
+          "result_type": "b32",
           "definitions": [
             "%r15"
           ],
@@ -1178,6 +1235,7 @@
             "[%out+52]",
             "%r15"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%out",
@@ -1191,6 +1249,7 @@
           "modifiers": [],
           "predicate": "",
           "operands": [],
+          "result_type": "",
           "definitions": [],
           "uses": []
         }
@@ -1311,6 +1370,7 @@
             "%out",
             "[barrier_probe_param_0]"
           ],
+          "result_type": "u32",
           "definitions": [
             "%out"
           ],
@@ -1328,6 +1388,7 @@
             "%thread",
             "%tid.x"
           ],
+          "result_type": "u32",
           "definitions": [
             "%thread"
           ],
@@ -1348,6 +1409,7 @@
             "%thread",
             "1"
           ],
+          "result_type": "u32",
           "definitions": [
             "%value"
           ],
@@ -1368,6 +1430,7 @@
             "%thread",
             "2"
           ],
+          "result_type": "b32",
           "definitions": [
             "%offset"
           ],
@@ -1387,6 +1450,7 @@
             "%address",
             "values"
           ],
+          "result_type": "u32",
           "definitions": [
             "%address"
           ],
@@ -1405,6 +1469,7 @@
             "%address",
             "%offset"
           ],
+          "result_type": "u32",
           "definitions": [
             "%address"
           ],
@@ -1426,6 +1491,7 @@
             "[%address]",
             "%value"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%address",
@@ -1443,6 +1509,7 @@
           "operands": [
             "0"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": []
         },
@@ -1459,6 +1526,7 @@
             "%thread",
             "1"
           ],
+          "result_type": "u32",
           "definitions": [
             "%neighbor"
           ],
@@ -1479,6 +1547,7 @@
             "%neighbor",
             "63"
           ],
+          "result_type": "b32",
           "definitions": [
             "%neighbor"
           ],
@@ -1499,6 +1568,7 @@
             "%neighbor",
             "2"
           ],
+          "result_type": "b32",
           "definitions": [
             "%offset"
           ],
@@ -1518,6 +1588,7 @@
             "%address",
             "values"
           ],
+          "result_type": "u32",
           "definitions": [
             "%address"
           ],
@@ -1536,6 +1607,7 @@
             "%address",
             "%offset"
           ],
+          "result_type": "u32",
           "definitions": [
             "%address"
           ],
@@ -1557,6 +1629,7 @@
             "%value",
             "[%address]"
           ],
+          "result_type": "u32",
           "definitions": [
             "%value"
           ],
@@ -1577,6 +1650,7 @@
             "%thread",
             "2"
           ],
+          "result_type": "b32",
           "definitions": [
             "%offset"
           ],
@@ -1597,6 +1671,7 @@
             "%out",
             "%offset"
           ],
+          "result_type": "u32",
           "definitions": [
             "%address"
           ],
@@ -1618,6 +1693,7 @@
             "[%address]",
             "%value"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%address",
@@ -1631,6 +1707,7 @@
           "modifiers": [],
           "predicate": "",
           "operands": [],
+          "result_type": "",
           "definitions": [],
           "uses": []
         }
@@ -1733,6 +1810,7 @@
             "%out",
             "[texture_probe_param_0]"
           ],
+          "result_type": "u32",
           "definitions": [
             "%out"
           ],
@@ -1750,6 +1828,7 @@
             "%thread",
             "%tid.x"
           ],
+          "result_type": "u32",
           "definitions": [
             "%thread"
           ],
@@ -1770,6 +1849,7 @@
             "%thread",
             "2"
           ],
+          "result_type": "s32",
           "definitions": [
             "%coord"
           ],
@@ -1792,6 +1872,7 @@
             "{%r1,%r2,%r3,%r4}",
             "[probe_tex,{%coord}]"
           ],
+          "result_type": "u32",
           "definitions": [
             "%r1",
             "%r2",
@@ -1817,6 +1898,7 @@
             "16",
             "%out"
           ],
+          "result_type": "s32",
           "definitions": [
             "%address"
           ],
@@ -1839,6 +1921,7 @@
             "[%address]",
             "{%r1,%r2,%r3,%r4}"
           ],
+          "result_type": "",
           "definitions": [],
           "uses": [
             "%address",
@@ -1855,6 +1938,7 @@
           "modifiers": [],
           "predicate": "",
           "operands": [],
+          "result_type": "",
           "definitions": [],
           "uses": []
         }

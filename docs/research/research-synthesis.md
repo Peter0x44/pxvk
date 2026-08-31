@@ -192,13 +192,17 @@ before pipeline creation. The runtime does not ship or invoke `spirv-val`.
 Direct emission avoids a GLSL/HLSL text round trip and a runtime shader compiler,
 which would obscure PTX operation boundaries and contraction controls.
 
-LLVM was reconsidered after the whole-corpus parser pass and remains excluded.
-It would not remove the PTX grammar/semantic frontend, upstream LLVM does not
-directly supply this Vulkan SPIR-V contract, and an LLVM-to-SPIR-V bridge would
-still need the same FTZ, fusion, barrier-scope, texture-bounds, and u32-offset
-controls. ZLUDA uses LLVM because its destination is AMDGPU/HIP code objects;
-that load-bearing reason does not apply here.
-
+Modern upstream LLVM does include a SPIR-V backend, so LLVM is not excluded on
+capability grounds. Its documented Vulkan path supports `spirv-unknown-vulkan`
+triples, Vulkan buffer target-extension types, SPIR-V 1.5/Vulkan 1.2
+environments, and KHR float-control extensions. It still would not remove this
+PTX semantic frontend, and adopting LLVM would add LLVM IR construction,
+legalization, a large build/runtime dependency, and another place to audit FTZ,
+fusion, barrier scope, texture bounds, and u32 offsets. No SPIR-V-capable `llc`
+is installed on the reference workstation. Direct emission remains the first
+implementation path; LLVM is a credible fallback if SSA/legalization grows
+beyond the finite emitter. See the official
+[LLVM SPIR-V backend guide](https://llvm.org/docs/SPIRVUsage.html).
 Cache keys include PTX hash, entry name, translator version, device
 vendor/device/driver key, enabled float path, block size, and dynamic shared
 size. Start with an in-memory cache; a disk cache is not required for the oracle
@@ -433,8 +437,8 @@ parameter offset/size/alignment, effective static shared size, and static local
 size matches `mirrors-edge-ptx-corpus-analysis.json`. This includes the two
 module-scope shared allocations that contribute to launched entry totals.
 
-The project-owned oracle IR manifest SHA-256 is
-`68a4bcd276d473e7dce26468422b9e3fd2868701bc93dc9c75449ad631aca4dd`.
+The project-owned value-typed oracle IR manifest SHA-256 is
+`7ad88143948504e12d6cb0f2eae59fd1521749dab79237bd4511e064d2361054`.
 The redistributable structural corpus manifest is
 `tools/ptx-frontend/expected/corpus-manifest.json`, SHA-256
 `b46479bf9a21121b448216eacfa66344551ddfeee60f352f6d9dc536e7682cde`.
@@ -503,11 +507,11 @@ behavior.
 
 ## Architecture gate conclusion
 
-The reference-system Vulkan oracle and whole-corpus grammar, metadata, CFG, and
-register-dataflow gates are complete. The next gate is value-type propagation
-and SPIR-V emission of the project-owned oracle from this IR. Proprietary
-entries remain parse-only until that emitted oracle matches the existing
-Vulkan fixture.
+The reference-system Vulkan oracle and whole-corpus grammar, metadata, CFG,
+register-dataflow, and finite result/use-type gates are complete. The next gate
+is direct SPIR-V emission of the project-owned oracle from this IR.
+Proprietary entries remain parse-only until that emitted oracle matches the
+existing Vulkan fixture.
 
 The gate is not open for a claim that Mirror's Edge runs on Vulkan, AMD
 generated-SPIR-V execution, AMD game integration, or translated PhysX

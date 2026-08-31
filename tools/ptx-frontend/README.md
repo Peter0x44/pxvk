@@ -119,7 +119,7 @@ Validated failures include:
 SHA-256:
 
 ```text
-68a4bcd276d473e7dce26468422b9e3fd2868701bc93dc9c75449ad631aca4dd
+7ad88143948504e12d6cb0f2eae59fd1521749dab79237bd4511e064d2361054
 ```
 
 ### Corpus manifest
@@ -152,13 +152,20 @@ All 16 launched entries match the independent captured analysis for packed
 parameter offsets/sizes/alignments, effective static shared memory, and static
 local memory.
 
+Every result-producing instruction records an inferred finite PTX result type.
+Definitions are checked against declared register-bank widths/categories,
+including widening loads, `mul.wide`, `clz.b64`, and split bit destinations.
+Register uses are checked against finite opcode operand contracts for memory,
+conversion, comparison, selection, texture, shift/extract, and arithmetic
+forms. All 147 corpus variants pass these contracts.
+
 ## Current exclusions
 
 The frontend does not yet provide:
 
 - SSA construction or phi placement;
-- value-type propagation beyond declared register banks and opcode modifiers;
-- semantic validation of every operand count/type relationship;
+- general type inference beyond declared register banks and the 147 finite
+  opcode contracts;
 - reachability or dead-code elimination;
 - SPIR-V emission;
 - shader caching;

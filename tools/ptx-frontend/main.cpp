@@ -864,22 +864,260 @@ bool register_is_declared(const Entry &routine, const std::string &name)
     return false;
 }
 
+std::string declared_register_type(const Entry &routine, const std::string &name)
+{
+    static const std::set<std::string> special_registers = {
+        "%tid.x", "%ntid.x", "%ctaid.x", "%nctaid.x",
+    };
+    if (special_registers.count(name) != 0) {
+        return "u32";
+    }
+    for (const RegisterBank &bank : routine.register_banks) {
+        if (bank.count == 1 && name == bank.prefix) {
+            return bank.type.substr(1);
+        }
+        if (bank.count > 1 && name.rfind(bank.prefix, 0) == 0) {
+            const std::string suffix = name.substr(bank.prefix.size());
+            if (suffix.empty() ||
+                std::any_of(suffix.begin(), suffix.end(), [](char value) {
+                    return std::isdigit(static_cast<unsigned char>(value)) == 0;
+                })) {
+                continue;
+            }
+            const std::size_t index = static_cast<std::size_t>(std::stoul(suffix));
+            if (index < bank.count) {
+                return bank.type.substr(1);
+            }
+        }
+    }
+    return "";
+}
+
+bool is_value_type(const std::string &modifier)
+{
+    static const std::set<std::string> types = {
+        "b8", "b16", "b32", "b64", "u8", "u16", "u32", "u64",
+        "s8", "s16", "s32", "s64", "f32", "f64", "pred",
+    };
+    return types.count(modifier) != 0;
+}
+
+std::size_t type_width(const std::string &type)
+{
+    if (type == "pred") {
+        return 1;
+    }
+    std::size_t index = 0;
+    while (index < type.size() &&
+           std::isalpha(static_cast<unsigned char>(type[index])) != 0) {
+        ++index;
+    }
+    return index == type.size() ? 0 : static_cast<std::size_t>(std::stoul(type.substr(index)));
+}
+
+std::string instruction_result_type(const Instruction &instruction)
+{
+    if (!instruction_defines_destination(instruction)) {
+        return "";
+    }
+    if (instruction.base == "setp") {
+        return "pred";
+    }
+    if (instruction.base == "clz") {
+        return "u32";
+    }
+    if (instruction.base == "mul" &&
+        std::find(instruction.modifiers.begin(), instruction.modifiers.end(), "wide") !=
+            instruction.modifiers.end()) {
+        for (auto modifier = instruction.modifiers.rbegin();
+             modifier != instruction.modifiers.rend(); ++modifier) {
+            if (is_value_type(*modifier)) {
+                const char prefix = (*modifier)[0];
+                return std::string(1, prefix) + std::to_string(type_width(*modifier) * 2);
+            }
+        }
+    }
+    std::vector<std::string> types;
+    for (const std::string &modifier : instruction.modifiers) {
+        if (is_value_type(modifier)) {
+            types.push_back(modifier);
+        }
+    }
+    if (types.empty()) {
+        return "";
+    }
+    if ((instruction.base == "cvt" || instruction.base == "tex") && types.size() >= 2) {
+        return types[types.size() - 2];
+    }
+    return types.back();
+}
+
+bool register_type_accepts(
+    const std::string &declared,
+    const std::string &result,
+    const std::string &instruction_base)
+{
+    if (declared.empty() || result.empty()) {
+        return false;
+    }
+    if (declared == result) {
+        return true;
+    }
+    const std::size_t declared_width = type_width(declared);
+    const std::size_t result_width = type_width(result);
+    const bool declared_integer =
+        declared[0] == 'b' || declared[0] == 'u' || declared[0] == 's';
+    const bool result_integer =
+        result[0] == 'b' || result[0] == 'u' || result[0] == 's';
+    if (instruction_base == "ld" && declared_integer && result_integer &&
+        declared_width >= result_width) {
+        return true;
+    }
+    if (declared_width != result_width) {
+        return false;
+    }
+    if (result[0] == 'b') {
+        return true;
+    }
+    return declared_integer && result_integer;
+}
+
+
+std::string instruction_use_type(const Instruction &instruction, std::size_t operand_index)
+{
+    if (operand_index >= instruction.operands.size()) {
+        return "";
+    }
+    if (!instruction.operands[operand_index].empty() &&
+        instruction.operands[operand_index].front() == '[') {
+        return "u32";
+    }
+    std::vector<std::string> types;
+    for (const std::string &modifier : instruction.modifiers) {
+        if (is_value_type(modifier)) {
+            types.push_back(modifier);
+        }
+    }
+    const std::string last_type = types.empty() ? "" : types.back();
+    if (instruction.base == "st") {
+        return operand_index == 0 ? "u32" : last_type;
+    }
+    if (instruction.base == "ld") {
+        return operand_index == 1 ? "u32" : "";
+    }
+    if (instruction.base == "cvt") {
+        return operand_index == 1 ? last_type : "";
+    }
+    if (instruction.base == "setp") {
+        return operand_index == 0 ? "" : last_type;
+    }
+    if (instruction.base == "selp") {
+        if (operand_index == 3) {
+            return "pred";
+        }
+        return operand_index == 0 ? "" : instruction_result_type(instruction);
+    }
+    if (instruction.base == "shl" || instruction.base == "shr") {
+        return operand_index == 2 ? "u32" :
+            (operand_index == 1 ? instruction_result_type(instruction) : "");
+    }
+    if (instruction.base == "bfe") {
+        return operand_index >= 2 ? "u32" :
+            (operand_index == 1 ? instruction_result_type(instruction) : "");
+    }
+    if (instruction.base == "tex") {
+        return operand_index == 0 ? "" : last_type;
+    }
+    if (instruction.base == "clz") {
+        return operand_index == 1 ? last_type : "";
+    }
+    if (instruction_defines_destination(instruction) && operand_index > 0) {
+        if (instruction.base == "mul" &&
+            std::find(instruction.modifiers.begin(), instruction.modifiers.end(), "wide") !=
+                instruction.modifiers.end()) {
+            return last_type;
+        }
+        return instruction_result_type(instruction);
+    }
+    return "";
+}
+
+bool operand_type_accepts(
+    const std::string &declared,
+    const std::string &expected,
+    const Instruction &instruction)
+{
+    if (declared.empty() || expected.empty()) {
+        return true;
+    }
+    if (declared == expected) {
+        return true;
+    }
+    const std::size_t declared_width = type_width(declared);
+    const std::size_t expected_width = type_width(expected);
+    const bool declared_integer =
+        declared[0] == 'b' || declared[0] == 'u' || declared[0] == 's';
+    const bool expected_integer =
+        expected[0] == 'b' || expected[0] == 'u' || expected[0] == 's';
+    if (expected[0] == 'b') {
+        return declared_width == expected_width;
+    }
+    if (instruction.base == "st" && declared_integer && expected_integer) {
+        return declared_width >= expected_width;
+    }
+    return declared_integer && expected_integer && declared_width == expected_width;
+}
 void validate_routine_dataflow(const Entry &routine)
 {
     for (const Instruction &instruction : routine.instructions) {
         const auto def_use = instruction_def_use(instruction);
+        const std::string result_type = instruction_result_type(instruction);
+        const bool split_bit_destination =
+            instruction.base == "mov" && !result_type.empty() && result_type[0] == 'b' &&
+            def_use.first.size() > 1;
         for (const std::string &name : def_use.first) {
-            if (!register_is_declared(routine, name)) {
+            const std::string declared_type = declared_register_type(routine, name);
+            if (declared_type.empty()) {
                 throw std::runtime_error(
                     routine.name + ": definition of undeclared register '" + name +
                     "' at line " + std::to_string(instruction.line));
             }
-        }
-        for (const std::string &name : def_use.second) {
-            if (!register_is_declared(routine, name)) {
+            const bool compatible = register_type_accepts(
+                declared_type, result_type, instruction.base);
+            const bool compatible_split = split_bit_destination &&
+                type_width(declared_type) * def_use.first.size() == type_width(result_type);
+            if (!compatible && !compatible_split) {
                 throw std::runtime_error(
-                    routine.name + ": use of undeclared register '" + name +
-                    "' at line " + std::to_string(instruction.line));
+                    routine.name + ": result type '" + result_type +
+                    "' is incompatible with register '" + name + "' type '" +
+                    declared_type + "' at line " + std::to_string(instruction.line));
+            }
+        }
+        for (const std::string &name : registers_in(instruction.predicate)) {
+            const std::string declared_type = declared_register_type(routine, name);
+            if (declared_type != "pred") {
+                throw std::runtime_error(
+                    routine.name + ": predicate register '" + name +
+                    "' does not have type pred at line " +
+                    std::to_string(instruction.line));
+            }
+        }
+        for (std::size_t operand = 0; operand < instruction.operands.size(); ++operand) {
+            const std::string expected_type = instruction_use_type(instruction, operand);
+            for (const std::string &name : registers_in(instruction.operands[operand])) {
+                const std::string declared_type = declared_register_type(routine, name);
+                if (declared_type.empty()) {
+                    throw std::runtime_error(
+                        routine.name + ": use of undeclared register '" + name +
+                        "' at line " + std::to_string(instruction.line));
+                }
+                if (!operand_type_accepts(declared_type, expected_type, instruction)) {
+                    throw std::runtime_error(
+                        routine.name + ": operand type '" + expected_type +
+                        "' is incompatible with register '" + name + "' type '" +
+                        declared_type + "' at line " +
+                        std::to_string(instruction.line));
+                }
             }
         }
     }
@@ -1027,6 +1265,7 @@ Json routine_to_json(const Entry &routine)
             {"modifiers", instruction.modifiers},
             {"predicate", instruction.predicate},
             {"operands", instruction.operands},
+            {"result_type", instruction_result_type(instruction)},
             {"definitions", def_use.first},
             {"uses", def_use.second},
         });

@@ -52,7 +52,7 @@ framework, runtime language, shader compiler, or architecture.
 | `tools/nvcuda-trace/tests/injected_smoke.c` | Startup-injected `nvcuda.dll` discovery and calls | Shape for launcher/injection validation |
 | `tools/vulkan-probe/main.c` | x86 loader, device features, and quantitative limits | Input to startup-gate tests, not a compute-correctness test |
 | `tools/vulkan-probe/memory_smoke.cpp` plus `oracle.spv` | Generated SPIR-V, real 32 MiB buffers, f32/FMA/conversion, workgroup barrier, and integer texture output exactly match CUDA on Intel and RTX | Completed reference-system standalone Vulkan semantic gate; preserve for deferred AMD run |
-| `tools/ptx-frontend/main.cpp` | Strict parser normalizes all 17 modules and validates 4,174 basic blocks, 5,935 CFG edges, all label targets, and all register def/use references; all 16 launched layouts match independent analysis | Completed whole-corpus grammar/metadata/CFG/dataflow gate; next propagate value types and emit SPIR-V |
+| `tools/ptx-frontend/main.cpp` | Strict parser validates all 17 modules, 4,174 blocks, 5,935 edges, all label/register references, and finite result/use-type contracts for all 147 variants; all 16 launched layouts match independent analysis | Completed whole-corpus grammar/metadata/CFG/dataflow/type gate; next emit SPIR-V |
 | 17 local captured PTX modules | Complete corpus accepted by both ZLUDA and the project frontend; hashes remain local/cataloged | Local parse/normalization coverage without committing proprietary PTX |
 | Three native game traces | Fluid, deformable, and confirmed broken-glass execution | Route and workload-presence oracle |
 
@@ -465,7 +465,7 @@ a developer's memory.
 | Claim | Required evidence |
 |---|---|
 | CUDA facade initializes | PE32 export/ABI smoke, Dark lifecycle, startup gate, clean teardown |
-| PTX grammar/dataflow covers the target | all 17 local modules parse; all label/register references resolve; all 16 launched layouts match independent analysis |
+| PTX grammar/dataflow covers the target | all 17 local modules parse; all label/register/type references resolve; all 16 launched layouts match independent analysis |
 | PTX semantic emission covers the target | the project-owned oracle emits matching SPIR-V, then all 16 launched entries emit valid SPIR-V |
 | Vulkan semantics are viable on the reference system | committed CUDA-oracle differential passes on RTX and Intel Vulkan, with every mismatch classified |
 | Cross-vendor AMD execution is validated | the same generated SPIR-V/oracle output passes on the AMD Radeon 8060S |
