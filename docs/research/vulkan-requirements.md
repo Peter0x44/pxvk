@@ -98,6 +98,13 @@ RTX both returned native `0xa8800000`. The combined result is
 `tools/vulkan-probe/expected/reference-workstation/oracle.json`, SHA-256
 `42a8778edb77a7a74429e30fc2ec68c87c677ac0b9ca51a604539b07a8953968`.
 
+The direct compiler slice now reproduces that result from
+`tools/cuda-oracle/probe.ptx`: the frontend emits schema-4 structured IR and
+the project emitter produces a deterministic 2,599-word SPIR-V 1.5 binary.
+SDK validation passes, and the generated module matches every math, barrier,
+and texture field on Intel and RTX. The original GLSL/assembly oracle remains
+the independent Vulkan-side reference rather than compiler input.
+
 ### Observed device results
 
 | Property | Intel UHD Graphics | RTX 3070 Laptop |

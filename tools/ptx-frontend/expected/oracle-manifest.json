@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "source_bytes": 3337,
   "ptx_version": "4.1",
   "target": "sm_52",
@@ -79,6 +79,21 @@
             "%out",
             "[math_probe_param_0]"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%out"
+            },
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "symbol",
+                  "name": "math_probe_param_0"
+                }
+              ]
+            }
+          ],
           "result_type": "u32",
           "definitions": [
             "%out"
@@ -97,6 +112,17 @@
             "%f1",
             "0f3F800000"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f1"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 1065353216
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f1"
@@ -114,6 +140,17 @@
           "operands": [
             "%f2",
             "0f40400000"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f2"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 1077936128
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -136,6 +173,20 @@
             "%f1",
             "%f2"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f3"
+            },
+            {
+              "kind": "register",
+              "name": "%f1"
+            },
+            {
+              "kind": "register",
+              "name": "%f2"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f3"
@@ -156,6 +207,16 @@
           "operands": [
             "%r1",
             "%f3"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r1"
+            },
+            {
+              "kind": "register",
+              "name": "%f3"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -178,6 +239,28 @@
             "[%out+0]",
             "%r1"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r1"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -197,6 +280,17 @@
             "%f4",
             "0f00800000"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f4"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 8388608
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f4"
@@ -214,6 +308,17 @@
           "operands": [
             "%f5",
             "0f40000000"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f5"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 1073741824
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -236,6 +341,20 @@
             "%f4",
             "%f5"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f6"
+            },
+            {
+              "kind": "register",
+              "name": "%f4"
+            },
+            {
+              "kind": "register",
+              "name": "%f5"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f6"
@@ -256,6 +375,16 @@
           "operands": [
             "%r2",
             "%f6"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r2"
+            },
+            {
+              "kind": "register",
+              "name": "%f6"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -278,6 +407,28 @@
             "[%out+4]",
             "%r2"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 4
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r2"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -299,6 +450,16 @@
             "%f7",
             "%f2"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f7"
+            },
+            {
+              "kind": "register",
+              "name": "%f2"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f7"
@@ -318,6 +479,16 @@
           "operands": [
             "%r3",
             "%f7"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r3"
+            },
+            {
+              "kind": "register",
+              "name": "%f7"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -340,6 +511,28 @@
             "[%out+8]",
             "%r3"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 8
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r3"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -361,6 +554,16 @@
             "%f8",
             "%f5"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f8"
+            },
+            {
+              "kind": "register",
+              "name": "%f5"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f8"
@@ -380,6 +583,16 @@
           "operands": [
             "%r4",
             "%f8"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r4"
+            },
+            {
+              "kind": "register",
+              "name": "%f8"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -402,6 +615,28 @@
             "[%out+12]",
             "%r4"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 12
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r4"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -420,6 +655,17 @@
           "operands": [
             "%f9",
             "0f00000001"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f9"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 1
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -441,6 +687,16 @@
             "%f10",
             "%f9"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f10"
+            },
+            {
+              "kind": "register",
+              "name": "%f9"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f10"
@@ -460,6 +716,16 @@
           "operands": [
             "%r5",
             "%f10"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r5"
+            },
+            {
+              "kind": "register",
+              "name": "%f10"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -482,6 +748,28 @@
             "[%out+16]",
             "%r5"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 16
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r5"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -503,6 +791,16 @@
             "%f11",
             "%f5"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f11"
+            },
+            {
+              "kind": "register",
+              "name": "%f5"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f11"
@@ -522,6 +820,16 @@
           "operands": [
             "%r6",
             "%f11"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r6"
+            },
+            {
+              "kind": "register",
+              "name": "%f11"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -544,6 +852,28 @@
             "[%out+20]",
             "%r6"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 20
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r6"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -563,6 +893,17 @@
             "%f12",
             "0f3F800001"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f12"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 1065353217
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f12"
@@ -581,6 +922,17 @@
             "%f13",
             "0f3F7FFFFE"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f13"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 1065353214
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f13"
@@ -598,6 +950,17 @@
           "operands": [
             "%f14",
             "0fBF800000"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f14"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 3212836864
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -621,6 +984,24 @@
             "%f13",
             "%f14"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f15"
+            },
+            {
+              "kind": "register",
+              "name": "%f12"
+            },
+            {
+              "kind": "register",
+              "name": "%f13"
+            },
+            {
+              "kind": "register",
+              "name": "%f14"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f15"
@@ -643,6 +1024,16 @@
             "%r7",
             "%f15"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r7"
+            },
+            {
+              "kind": "register",
+              "name": "%f15"
+            }
+          ],
           "result_type": "b32",
           "definitions": [
             "%r7"
@@ -664,6 +1055,28 @@
             "[%out+24]",
             "%r7"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 24
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r7"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -684,6 +1097,20 @@
             "%f16",
             "%f12",
             "%f13"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f16"
+            },
+            {
+              "kind": "register",
+              "name": "%f12"
+            },
+            {
+              "kind": "register",
+              "name": "%f13"
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -708,6 +1135,20 @@
             "%f16",
             "%f14"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f17"
+            },
+            {
+              "kind": "register",
+              "name": "%f16"
+            },
+            {
+              "kind": "register",
+              "name": "%f14"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f17"
@@ -728,6 +1169,16 @@
           "operands": [
             "%r8",
             "%f17"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r8"
+            },
+            {
+              "kind": "register",
+              "name": "%f17"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -750,6 +1201,28 @@
             "[%out+28]",
             "%r8"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 28
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r8"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -768,6 +1241,17 @@
           "operands": [
             "%f18",
             "0fC0700000"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f18"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 3228565504
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -790,6 +1274,16 @@
             "%s1",
             "%f18"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%s1"
+            },
+            {
+              "kind": "register",
+              "name": "%f18"
+            }
+          ],
           "result_type": "s32",
           "definitions": [
             "%s1"
@@ -809,6 +1303,16 @@
           "operands": [
             "%r9",
             "%s1"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r9"
+            },
+            {
+              "kind": "register",
+              "name": "%s1"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -831,6 +1335,28 @@
             "[%out+32]",
             "%r9"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 32
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r9"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -849,6 +1375,16 @@
           "operands": [
             "%r10",
             "16777217"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r10"
+            },
+            {
+              "kind": "integer",
+              "value": 16777217
+            }
           ],
           "result_type": "u32",
           "definitions": [
@@ -870,6 +1406,16 @@
             "%f19",
             "%r10"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f19"
+            },
+            {
+              "kind": "register",
+              "name": "%r10"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f19"
@@ -889,6 +1435,16 @@
           "operands": [
             "%r11",
             "%f19"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r11"
+            },
+            {
+              "kind": "register",
+              "name": "%f19"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -911,6 +1467,28 @@
             "[%out+36]",
             "%r11"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 36
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r11"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -930,6 +1508,17 @@
             "%f1",
             "0f00000001"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f1"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 1
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f1"
@@ -947,6 +1536,17 @@
           "operands": [
             "%f2",
             "0f00000000"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f2"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 0
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -967,6 +1567,20 @@
             "%f3",
             "%f1",
             "%f2"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f3"
+            },
+            {
+              "kind": "register",
+              "name": "%f1"
+            },
+            {
+              "kind": "register",
+              "name": "%f2"
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -989,6 +1603,16 @@
             "%r12",
             "%f3"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r12"
+            },
+            {
+              "kind": "register",
+              "name": "%f3"
+            }
+          ],
           "result_type": "b32",
           "definitions": [
             "%r12"
@@ -1010,6 +1634,28 @@
             "[%out+40]",
             "%r12"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 40
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r12"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -1028,6 +1674,17 @@
           "operands": [
             "%f2",
             "0f3F800000"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f2"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 1065353216
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -1048,6 +1705,20 @@
             "%f3",
             "%f1",
             "%f2"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f3"
+            },
+            {
+              "kind": "register",
+              "name": "%f1"
+            },
+            {
+              "kind": "register",
+              "name": "%f2"
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -1070,6 +1741,16 @@
             "%r13",
             "%f3"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r13"
+            },
+            {
+              "kind": "register",
+              "name": "%f3"
+            }
+          ],
           "result_type": "b32",
           "definitions": [
             "%r13"
@@ -1091,6 +1772,28 @@
             "[%out+44]",
             "%r13"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 44
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r13"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -1109,6 +1812,17 @@
           "operands": [
             "%f4",
             "0f7FC00000"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f4"
+            },
+            {
+              "kind": "float_bits",
+              "type": "f32",
+              "bits": 2143289344
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -1129,6 +1843,20 @@
             "%f5",
             "%f4",
             "%f2"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f5"
+            },
+            {
+              "kind": "register",
+              "name": "%f4"
+            },
+            {
+              "kind": "register",
+              "name": "%f2"
+            }
           ],
           "result_type": "f32",
           "definitions": [
@@ -1151,6 +1879,16 @@
             "%r14",
             "%f5"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r14"
+            },
+            {
+              "kind": "register",
+              "name": "%f5"
+            }
+          ],
           "result_type": "b32",
           "definitions": [
             "%r14"
@@ -1171,6 +1909,28 @@
           "operands": [
             "[%out+48]",
             "%r14"
+          ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 48
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r14"
+            }
           ],
           "result_type": "",
           "definitions": [],
@@ -1193,6 +1953,20 @@
             "%f4",
             "%f2"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%f6"
+            },
+            {
+              "kind": "register",
+              "name": "%f4"
+            },
+            {
+              "kind": "register",
+              "name": "%f2"
+            }
+          ],
           "result_type": "f32",
           "definitions": [
             "%f6"
@@ -1213,6 +1987,16 @@
           "operands": [
             "%r15",
             "%f6"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%r15"
+            },
+            {
+              "kind": "register",
+              "name": "%f6"
+            }
           ],
           "result_type": "b32",
           "definitions": [
@@ -1235,6 +2019,28 @@
             "[%out+52]",
             "%r15"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "add",
+                  "left": {
+                    "kind": "register",
+                    "name": "%out"
+                  },
+                  "right": {
+                    "kind": "integer",
+                    "value": 52
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%r15"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -1249,6 +2055,7 @@
           "modifiers": [],
           "predicate": "",
           "operands": [],
+          "structured_operands": [],
           "result_type": "",
           "definitions": [],
           "uses": []
@@ -1370,6 +2177,21 @@
             "%out",
             "[barrier_probe_param_0]"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%out"
+            },
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "symbol",
+                  "name": "barrier_probe_param_0"
+                }
+              ]
+            }
+          ],
           "result_type": "u32",
           "definitions": [
             "%out"
@@ -1387,6 +2209,16 @@
           "operands": [
             "%thread",
             "%tid.x"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "register",
+              "name": "%tid.x"
+            }
           ],
           "result_type": "u32",
           "definitions": [
@@ -1409,6 +2241,20 @@
             "%thread",
             "1"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%value"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ],
           "result_type": "u32",
           "definitions": [
             "%value"
@@ -1430,6 +2276,20 @@
             "%thread",
             "2"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%offset"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ],
           "result_type": "b32",
           "definitions": [
             "%offset"
@@ -1450,6 +2310,16 @@
             "%address",
             "values"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "symbol",
+              "name": "values"
+            }
+          ],
           "result_type": "u32",
           "definitions": [
             "%address"
@@ -1468,6 +2338,20 @@
             "%address",
             "%address",
             "%offset"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "register",
+              "name": "%offset"
+            }
           ],
           "result_type": "u32",
           "definitions": [
@@ -1491,6 +2375,21 @@
             "[%address]",
             "%value"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%address"
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%value"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -1509,6 +2408,12 @@
           "operands": [
             "0"
           ],
+          "structured_operands": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": []
@@ -1525,6 +2430,20 @@
             "%neighbor",
             "%thread",
             "1"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%neighbor"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 1
+            }
           ],
           "result_type": "u32",
           "definitions": [
@@ -1547,6 +2466,20 @@
             "%neighbor",
             "63"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%neighbor"
+            },
+            {
+              "kind": "register",
+              "name": "%neighbor"
+            },
+            {
+              "kind": "integer",
+              "value": 63
+            }
+          ],
           "result_type": "b32",
           "definitions": [
             "%neighbor"
@@ -1568,6 +2501,20 @@
             "%neighbor",
             "2"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%offset"
+            },
+            {
+              "kind": "register",
+              "name": "%neighbor"
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ],
           "result_type": "b32",
           "definitions": [
             "%offset"
@@ -1588,6 +2535,16 @@
             "%address",
             "values"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "symbol",
+              "name": "values"
+            }
+          ],
           "result_type": "u32",
           "definitions": [
             "%address"
@@ -1606,6 +2563,20 @@
             "%address",
             "%address",
             "%offset"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "register",
+              "name": "%offset"
+            }
           ],
           "result_type": "u32",
           "definitions": [
@@ -1629,6 +2600,21 @@
             "%value",
             "[%address]"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%value"
+            },
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%address"
+                }
+              ]
+            }
+          ],
           "result_type": "u32",
           "definitions": [
             "%value"
@@ -1650,6 +2636,20 @@
             "%thread",
             "2"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%offset"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
+          ],
           "result_type": "b32",
           "definitions": [
             "%offset"
@@ -1670,6 +2670,20 @@
             "%address",
             "%out",
             "%offset"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "register",
+              "name": "%out"
+            },
+            {
+              "kind": "register",
+              "name": "%offset"
+            }
           ],
           "result_type": "u32",
           "definitions": [
@@ -1693,6 +2707,21 @@
             "[%address]",
             "%value"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%address"
+                }
+              ]
+            },
+            {
+              "kind": "register",
+              "name": "%value"
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -1707,6 +2736,7 @@
           "modifiers": [],
           "predicate": "",
           "operands": [],
+          "structured_operands": [],
           "result_type": "",
           "definitions": [],
           "uses": []
@@ -1810,6 +2840,21 @@
             "%out",
             "[texture_probe_param_0]"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%out"
+            },
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "symbol",
+                  "name": "texture_probe_param_0"
+                }
+              ]
+            }
+          ],
           "result_type": "u32",
           "definitions": [
             "%out"
@@ -1827,6 +2872,16 @@
           "operands": [
             "%thread",
             "%tid.x"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "register",
+              "name": "%tid.x"
+            }
           ],
           "result_type": "u32",
           "definitions": [
@@ -1848,6 +2903,20 @@
             "%coord",
             "%thread",
             "2"
+          ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%coord"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 2
+            }
           ],
           "result_type": "s32",
           "definitions": [
@@ -1871,6 +2940,47 @@
           "operands": [
             "{%r1,%r2,%r3,%r4}",
             "[probe_tex,{%coord}]"
+          ],
+          "structured_operands": [
+            {
+              "kind": "list",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%r1"
+                },
+                {
+                  "kind": "register",
+                  "name": "%r2"
+                },
+                {
+                  "kind": "register",
+                  "name": "%r3"
+                },
+                {
+                  "kind": "register",
+                  "name": "%r4"
+                }
+              ]
+            },
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "symbol",
+                  "name": "probe_tex"
+                },
+                {
+                  "kind": "list",
+                  "values": [
+                    {
+                      "kind": "register",
+                      "name": "%coord"
+                    }
+                  ]
+                }
+              ]
+            }
           ],
           "result_type": "u32",
           "definitions": [
@@ -1898,6 +3008,24 @@
             "16",
             "%out"
           ],
+          "structured_operands": [
+            {
+              "kind": "register",
+              "name": "%address"
+            },
+            {
+              "kind": "register",
+              "name": "%thread"
+            },
+            {
+              "kind": "integer",
+              "value": 16
+            },
+            {
+              "kind": "register",
+              "name": "%out"
+            }
+          ],
           "result_type": "s32",
           "definitions": [
             "%address"
@@ -1921,6 +3049,38 @@
             "[%address]",
             "{%r1,%r2,%r3,%r4}"
           ],
+          "structured_operands": [
+            {
+              "kind": "memory",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%address"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "values": [
+                {
+                  "kind": "register",
+                  "name": "%r1"
+                },
+                {
+                  "kind": "register",
+                  "name": "%r2"
+                },
+                {
+                  "kind": "register",
+                  "name": "%r3"
+                },
+                {
+                  "kind": "register",
+                  "name": "%r4"
+                }
+              ]
+            }
+          ],
           "result_type": "",
           "definitions": [],
           "uses": [
@@ -1938,6 +3098,7 @@
           "modifiers": [],
           "predicate": "",
           "operands": [],
+          "structured_operands": [],
           "result_type": "",
           "definitions": [],
           "uses": []

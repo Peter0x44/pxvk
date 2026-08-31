@@ -203,6 +203,25 @@ is installed on the reference workstation. Direct emission remains the first
 implementation path; LLVM is a credible fallback if SSA/legalization grows
 beyond the finite emitter. See the official
 [LLVM SPIR-V backend guide](https://llvm.org/docs/SPIRVUsage.html).
+
+The first vertical slice now emits a 2,599-word SPIR-V 1.5 module directly from
+the schema-4 structured IR for `tools/cuda-oracle/probe.ptx`. The module uses
+one 64-thread Vulkan entry point to invoke the original one-thread math,
+64-thread barrier, and 12-thread texture routines against the oracle binding
+profile. SDK `spirv-val --target-env vulkan1.2` accepts the binary, and Intel
+UHD plus RTX 3070 executions match every native CUDA math, barrier, and texture
+field. This proves the direct path for the oracle subset only; it does not yet
+compile a proprietary PhysX entry.
+
+The module declares `RoundingModeRTE` for float32. All three probed target GPUs
+advertise that property. A conversion-only software fallback is possible, but
+would not cover `fma.rn` and the other correctly-rounded float operations; a
+complete fallback would require software floating-point lowering. That added
+backend is not justified while float32 RTE remains an evidence-backed target
+requirement. Storage-buffer 8/16-bit capabilities remain preferred when a
+lowered narrow access benefits from them, but they are unrelated to the
+float32 execution-mode contract.
+
 Cache keys include PTX hash, entry name, translator version, device
 vendor/device/driver key, enabled float path, block size, and dynamic shared
 size. Start with an in-memory cache; a disk cache is not required for the oracle
@@ -437,8 +456,8 @@ parameter offset/size/alignment, effective static shared size, and static local
 size matches `mirrors-edge-ptx-corpus-analysis.json`. This includes the two
 module-scope shared allocations that contribute to launched entry totals.
 
-The project-owned value-typed oracle IR manifest SHA-256 is
-`7ad88143948504e12d6cb0f2eae59fd1521749dab79237bd4511e064d2361054`.
+The project-owned structured, value-typed oracle IR manifest SHA-256 is
+`be46ffaf026d5982c107434ea80a5009c75a664ee3f1f7cc3d5f76e41751d696`.
 The redistributable structural corpus manifest is
 `tools/ptx-frontend/expected/corpus-manifest.json`, SHA-256
 `b46479bf9a21121b448216eacfa66344551ddfeee60f352f6d9dc536e7682cde`.
@@ -447,8 +466,8 @@ Raw proprietary PTX remains local.
 The frontend now preserves labels, builds 4,174 deterministic basic blocks and
 5,935 successor edges, and records register definitions/uses per instruction.
 Every branch target and every register reference resolves across all 17
-modules. It does not yet perform SSA/phi construction, full value-type
-propagation, or SPIR-V emission.
+modules. The oracle path additionally emits direct SPIR-V. Whole-corpus
+SSA/phi construction, full value propagation, and SPIR-V lowering remain open.
 
 Build and run:
 
@@ -458,6 +477,8 @@ cmake --build build/ptx-frontend --config Release
 build/ptx-frontend/Release/ptx-frontend.exe --self-test
 build/ptx-frontend/Release/ptx-frontend.exe `
   tools/cuda-oracle/probe.ptx oracle-manifest.json
+build/ptx-frontend/Release/ptx-oracle-emitter.exe `
+  oracle-manifest.json generated-oracle.spv
 build/ptx-frontend/Release/ptx-frontend.exe --corpus `
   path/to/extracted/ptx corpus-manifest.json
 ```

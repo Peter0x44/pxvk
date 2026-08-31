@@ -1218,6 +1218,108 @@ Json parameters_to_json(const std::vector<Parameter> &parameters)
     return output;
 }
 
+std::vector<std::string> split_top_level_operands(const std::string &text)
+{
+    std::vector<std::string> output;
+    std::size_t begin = 0;
+    std::size_t depth = 0;
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        const char value = text[index];
+        if (value == '{' || value == '[' || value == '(') {
+            ++depth;
+        } else if (value == '}' || value == ']' || value == ')') {
+            if (depth == 0) {
+                throw std::runtime_error("unbalanced structured operand");
+            }
+            --depth;
+        } else if (value == ',' && depth == 0) {
+            output.push_back(text.substr(begin, index - begin));
+            begin = index + 1;
+        }
+    }
+    if (depth != 0) {
+        throw std::runtime_error("unbalanced structured operand");
+    }
+    output.push_back(text.substr(begin));
+    return output;
+}
+
+Json structured_operand_to_json(const std::string &operand)
+{
+    if (operand.size() >= 2 && operand.front() == '{' && operand.back() == '}') {
+        Json values = Json::array();
+        for (const std::string &value :
+             split_top_level_operands(operand.substr(1, operand.size() - 2))) {
+            values.push_back(structured_operand_to_json(value));
+        }
+        return {{"kind", "list"}, {"values", std::move(values)}};
+    }
+    if (operand.size() >= 2 && operand.front() == '[' && operand.back() == ']') {
+        Json values = Json::array();
+        for (const std::string &value :
+             split_top_level_operands(operand.substr(1, operand.size() - 2))) {
+            values.push_back(structured_operand_to_json(value));
+        }
+        return {{"kind", "memory"}, {"values", std::move(values)}};
+    }
+
+    std::size_t depth = 0;
+    for (std::size_t index = 1; index < operand.size(); ++index) {
+        const char value = operand[index];
+        if (value == '{' || value == '[' || value == '(') {
+            ++depth;
+        } else if (value == '}' || value == ']' || value == ')') {
+            if (depth == 0) {
+                throw std::runtime_error("unbalanced structured operand expression");
+            }
+            --depth;
+        } else if (value == '+' && depth == 0) {
+            return {
+                {"kind", "add"},
+                {"left", structured_operand_to_json(operand.substr(0, index))},
+                {"right", structured_operand_to_json(operand.substr(index + 1))},
+            };
+        }
+    }
+    if (depth != 0) {
+        throw std::runtime_error("unbalanced structured operand expression");
+    }
+
+    if (!operand.empty() && operand.front() == '%') {
+        return {{"kind", "register"}, {"name", operand}};
+    }
+    if (operand.size() == 10 && operand.rfind("0f", 0) == 0 &&
+        std::all_of(operand.begin() + 2, operand.end(), [](char value) {
+            return std::isxdigit(static_cast<unsigned char>(value)) != 0;
+        })) {
+        return {
+            {"kind", "float_bits"},
+            {"type", "f32"},
+            {"bits", static_cast<std::uint32_t>(
+                std::stoul(operand.substr(2), nullptr, 16))},
+        };
+    }
+    std::size_t digit = !operand.empty() && operand.front() == '-' ? 1 : 0;
+    if (digit < operand.size() &&
+        std::all_of(operand.begin() + static_cast<std::ptrdiff_t>(digit),
+                    operand.end(),
+                    [](char value) {
+                        return std::isdigit(static_cast<unsigned char>(value)) != 0;
+                    })) {
+        return {{"kind", "integer"}, {"value", std::stoll(operand)}};
+    }
+    return {{"kind", "symbol"}, {"name", operand}};
+}
+
+Json structured_operands_to_json(const std::vector<std::string> &operands)
+{
+    Json output = Json::array();
+    for (const std::string &operand : operands) {
+        output.push_back(structured_operand_to_json(operand));
+    }
+    return output;
+}
+
 Json routine_to_json(const Entry &routine)
 {
     validate_routine_dataflow(routine);
@@ -1265,6 +1367,7 @@ Json routine_to_json(const Entry &routine)
             {"modifiers", instruction.modifiers},
             {"predicate", instruction.predicate},
             {"operands", instruction.operands},
+            {"structured_operands", structured_operands_to_json(instruction.operands)},
             {"result_type", instruction_result_type(instruction)},
             {"definitions", def_use.first},
             {"uses", def_use.second},
@@ -1280,7 +1383,7 @@ Json routine_to_json(const Entry &routine)
 Json module_to_json(const Module &module, std::size_t source_bytes)
 {
     Json output;
-    output["schema_version"] = 3;
+    output["schema_version"] = 4;
     output["source_bytes"] = source_bytes;
     output["ptx_version"] = module.version;
     output["target"] = module.target;

@@ -24,19 +24,22 @@ PTX bytes
   -> strict module/routine AST
   -> parameter and storage layouts
   -> labels and normalized instructions
+  -> structured and typed operands
   -> basic-block CFG
   -> per-instruction register definitions and uses
   -> deterministic JSON manifests
+  -> direct SPIR-V binary emission for the project oracle slice
 ```
 
-The next stage will consume this IR to emit SPIR-V. It must not reparse operand
-strings independently.
+`ptx-oracle-emitter` consumes schema-4 structured operands. It does not parse
+the retained diagnostic operand strings.
 
 ## Build
 
 CMake fetches pinned nlohmann/json commit
-`9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03`. That dependency is used only for
-JSON serialization; PTX grammar, validation, CFG construction, and dataflow are
+`9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03` and SPIRV-Headers commit
+`29981f65241605e08b0ede4cfeb999fe3b723c6a`. PTX grammar, validation, CFG
+construction, dataflow, semantic lowering, and binary emission are
 project-owned.
 
 MSVC Win32:
@@ -73,6 +76,30 @@ build/ptx-frontend/Release/ptx-frontend.exe `
   tools/cuda-oracle/probe.ptx `
   oracle-manifest.json
 ```
+
+Emit the project oracle with explicit float32 RTE control:
+
+```powershell
+build/ptx-frontend/Release/ptx-oracle-emitter.exe `
+  oracle-manifest.json `
+  generated-oracle.spv
+```
+
+
+Validate and execute the module:
+
+```powershell
+spirv-val.exe --target-env vulkan1.2 generated-oracle.spv
+build/vulkan-probe/Release/vulkan-memory-smoke.exe `
+  generated-oracle-results.json `
+  --ptx-oracle generated-oracle.spv
+```
+
+The module declares the SPIR-V `RoundingModeRTE` capability and a float32
+`RoundingModeRTE` execution mode. Native float32 RTE is an evidence-backed
+target requirement and is supported by the Intel, NVIDIA, and AMD devices
+already probed. Explicit software FTZ normalization remains necessary because
+native float32 FTZ is not available on every target device.
 
 A local directory containing extracted PTX:
 
@@ -112,14 +139,15 @@ Validated failures include:
 - parameter and storage layouts;
 - register banks and types;
 - labels;
-- normalized instruction base/modifiers/operands;
+- normalized diagnostic operands and backend-consumed structured operands;
+- normalized instruction base/modifiers;
 - register definitions and uses;
 - basic blocks and successor edges.
 
 SHA-256:
 
 ```text
-7ad88143948504e12d6cb0f2eae59fd1521749dab79237bd4511e064d2361054
+be46ffaf026d5982c107434ea80a5009c75a664ee3f1f7cc3d5f76e41751d696
 ```
 
 ### Corpus manifest
@@ -167,7 +195,7 @@ The frontend does not yet provide:
 - general type inference beyond declared register banks and the 147 finite
   opcode contracts;
 - reachability or dead-code elimination;
-- SPIR-V emission;
+- SPIR-V emission beyond the three-entry project oracle slice;
 - shader caching;
 - CUDA module/runtime integration.
 

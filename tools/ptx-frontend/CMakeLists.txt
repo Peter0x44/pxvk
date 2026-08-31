@@ -12,18 +12,44 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
+set(SPIRV_HEADERS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(SPIRV_HEADERS_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    SPIRVHeaders
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers.git
+    GIT_TAG 29981f65241605e08b0ede4cfeb999fe3b723c6a
+)
+FetchContent_MakeAvailable(SPIRVHeaders)
+
 add_executable(ptx-frontend main.cpp)
 target_compile_features(ptx-frontend PRIVATE cxx_std_17)
 target_link_libraries(ptx-frontend PRIVATE nlohmann_json::nlohmann_json)
 
+add_executable(ptx-oracle-emitter oracle_emitter.cpp)
+target_compile_features(ptx-oracle-emitter PRIVATE cxx_std_17)
+target_link_libraries(
+    ptx-oracle-emitter
+    PRIVATE nlohmann_json::nlohmann_json SPIRV-Headers::SPIRV-Headers
+)
+
 enable_testing()
 add_test(NAME ptx-frontend-self-test COMMAND ptx-frontend --self-test)
+add_test(
+    NAME ptx-oracle-emitter
+    COMMAND ptx-oracle-emitter
+        "${CMAKE_CURRENT_SOURCE_DIR}/expected/oracle-manifest.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/oracle-explicit-rte.spv"
+)
 if(MSVC)
-    target_compile_definitions(ptx-frontend PRIVATE _CRT_SECURE_NO_WARNINGS)
-    target_compile_options(ptx-frontend PRIVATE /W4 /permissive-)
+    foreach(target ptx-frontend ptx-oracle-emitter)
+        target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
+        target_compile_options(${target} PRIVATE /W4 /permissive-)
+    endforeach()
 else()
-    target_compile_options(ptx-frontend PRIVATE -Wall -Wextra -Wpedantic)
-    if(MINGW)
-        target_link_options(ptx-frontend PRIVATE -static-libgcc -static-libstdc++)
-    endif()
+    foreach(target ptx-frontend ptx-oracle-emitter)
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        if(MINGW)
+            target_link_options(${target} PRIVATE -static-libgcc -static-libstdc++)
+        endif()
+    endforeach()
 endif()

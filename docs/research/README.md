@@ -63,8 +63,9 @@ Open probes are tracked rather than dropped:
 | Minimal non-NVIDIA NVAPI interface set | Deferred to game-integration validation | Running the original PhysX runtime without NVIDIA |
 | CUDA host-call thread IDs | Deferred runtime-hardening evidence | Claiming observed single-thread assumptions or optimizing locking |
 | PhysX-off server-room control | Deferred attribution check | Claiming individual particle launches represent only glass |
-| Vulkan differential against committed CUDA oracle | Complete on Intel/RTX: every f32, conversion, barrier, and integer-texture field matches bit-for-bit | Accepting reference-system standalone PTX semantic lowering |
+| Vulkan differential against committed CUDA oracle | Complete on Intel/RTX from PTX-derived SPIR-V: every f32, conversion, barrier, and integer-texture field matches bit-for-bit | Accepting reference-system standalone PTX semantic lowering |
 | AMD generated-SPIR-V execution | Hardware preflight passes; full oracle deferred until the AMD machine is available | Claiming cross-vendor execution correctness on AMD |
 
 Each probe blocks only the named acceptance point. None blocks the next local
-slice: finite PTX frontend development on the Intel/RTX workstation.
+slice: selecting and lowering one captured PhysX entry with a deterministic
+fixture.

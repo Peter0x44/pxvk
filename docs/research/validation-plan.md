@@ -190,6 +190,10 @@ For each of the 17 cataloged PTX hashes:
 6. reject an unsupported instruction or directive with the module hash, entry,
    source location, and exact form.
 
+The project-owned oracle now completes this sequence through direct SPIR-V
+emission and exact Intel/RTX execution. Whole-corpus steps 3–5 remain open:
+the proprietary modules are still parse/type/CFG validated rather than lowered.
+
 The raw PTX remains local. A committed normalized manifest should contain only
 hashes and non-proprietary structural expectations already documented in
 `mirrors-edge-ptx-corpus.md`.

@@ -352,7 +352,8 @@ DeviceResult run_device(
     std::uint32_t device_index,
     VkPhysicalDevice physical_device,
     const std::vector<std::uint32_t> &shader,
-    bool oracle_mode)
+    bool oracle_mode,
+    bool require_memory_result)
 {
     DeviceResult result;
     result.index = device_index;
@@ -681,7 +682,8 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        result.pass = result.input_after == kInput && result.result == kExpected;
+        result.pass = !require_memory_result ||
+            (result.input_after == kInput && result.result == kExpected);
         if (oracle_mode) {
             std::copy_n(words + kMathOffset, result.math.size(), result.math.begin());
             std::copy_n(words + kBarrierOffset, result.barrier.size(), result.barrier.begin());
@@ -768,8 +770,13 @@ DeviceResult run_device(
 
 int main(int argc, char **argv)
 {
-    if (argc != 2 && argc != 3) {
-        std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n";
+    const bool ptx_oracle_mode =
+        argc == 4 && std::string(argv[2]) == "--ptx-oracle";
+    const bool incomplete_ptx_mode =
+        argc == 3 && std::string(argv[2]) == "--ptx-oracle";
+    if ((argc != 2 && argc != 3 && !ptx_oracle_mode) || incomplete_ptx_mode) {
+        std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
+                  << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n";
         return 2;
     }
 
@@ -810,10 +817,12 @@ int main(int argc, char **argv)
     std::vector<VkPhysicalDevice> devices(device_count);
     check(vkEnumeratePhysicalDevices(instance, &device_count, devices.data()), "vkEnumeratePhysicalDevices");
 
-    const bool oracle_mode = argc == 3;
+    const bool oracle_mode = argc >= 3;
+    const bool require_memory_result = !ptx_oracle_mode;
     std::vector<std::uint32_t> shader;
     if (oracle_mode) {
-        std::ifstream shader_input(argv[2], std::ios::binary | std::ios::ate);
+        const char *shader_path = ptx_oracle_mode ? argv[3] : argv[2];
+        std::ifstream shader_input(shader_path, std::ios::binary | std::ios::ate);
         if (!shader_input) {
             vkDestroyInstance(instance, nullptr);
             std::cerr << "failed to open SPIR-V input file\n";
@@ -841,7 +850,8 @@ int main(int argc, char **argv)
     results.reserve(device_count);
     bool all_passed = true;
     for (std::uint32_t index = 0; index < device_count; ++index) {
-        DeviceResult result = run_device(index, devices[index], shader, oracle_mode);
+        DeviceResult result = run_device(
+            index, devices[index], shader, oracle_mode, require_memory_result);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -855,7 +865,10 @@ int main(int argc, char **argv)
     output << "{\n"
            << "  \"schema_version\": 1,\n"
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
-           << "  \"test\": \"" << (oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory") << "\",\n"
+           << "  \"test\": \""
+           << (ptx_oracle_mode ? "ptx_generated_oracle" :
+               oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory")
+           << "\",\n"
            << "  \"buffer_bytes\": " << kBufferBytes << ",\n"
            << "  \"input\": \"" << hex32(kInput) << "\",\n"
            << "  \"mask\": \"" << hex32(kMask) << "\",\n"
