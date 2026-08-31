@@ -27,30 +27,28 @@ That DLL contains:
 | `.nv_fatb` | 2,104,736 B | Seventeen concatenated CUDA fatbins |
 | `.nvFatBi` | 272 B | Fatbin registration metadata/wrappers |
 
-A copy can be extracted without launching the game:
+The project extractor reads the adjacent fatbin records directly and decodes
+their raw LZ4 PTX payloads without a CUDA toolkit:
 
-```bat
-copy "C:\Program Files (x86)\NVIDIA Corporation\PhysX\Engine\v2.8.0\PhysXCore.dll" tmp\PhysXCore.dll
-objcopy --dump-section .nv_fatb=tmp\physxcore.nv_fatb ^
-        --dump-section .nvFatBi=tmp\physxcore.nvFatBi ^
-        tmp\PhysXCore.dll
+```powershell
+python .\extract-physx-ptx.py `
+  "C:\Program Files (x86)\NVIDIA Corporation\PhysX\Engine\v2.8.0\PhysXCore.dll" `
+  .\local-ptx
 ```
 
-The `.nv_fatb` section begins with a valid `0xba55ed50` header and consists of
-17 adjacent `header_size + files_size` records with no gaps. Every raw fatbin
-dumped by the project tracer byte-for-byte matches one of those 17 static
-records. Trace ordering varies, but the hash sets are identical.
+It writes 17 stable `fatbin_####.ptx` files plus `manifest.json`, including the
+source DLL hash, fatbin offsets, PTX hashes, and entry names. The `.nv_fatb`
+section consists of 17 adjacent `header_size + files_size` records with no
+gaps. Every raw fatbin dumped by the project tracer byte-for-byte matches one
+static record. Trace load order varies, but the PTX hash sets are identical.
 
 CUDA 13.3 `cuobjdump --dump-ptx` cannot process the DLL because support for an
-embedded `sm_20` image was removed. The current tool exits with:
+embedded `sm_20` image was removed. The project script handles only the classic
+fatbin v1/PTX forms observed here: uncompressed payloads and raw LZ4 payloads.
+It intentionally rejects newer Zstd records rather than broadening into a
+general CUDA extractor.
 
-```text
-cuobjdump fatal: Support for 'sm_20' has been removed. Please use CUDA toolkit 9.1 or earlier.
-```
-
-This does not block extraction. The project tracer saves each raw fatbin, and
-ZLUDA's parser split the same records into PTX and ELF images. The normalized
-analysis is preserved locally as
+The normalized analysis is preserved locally as
 `tmp/evidence/mirrors-edge-ptx-corpus-analysis.json`, SHA-256
 `6ce4c5c05c45ceb9f010d3575f06cb9785420f9f3083197542be8b253f600da5`.
 Raw fatbins and PTX remain local because they are proprietary runtime material.

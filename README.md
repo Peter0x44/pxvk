@@ -18,8 +18,8 @@ See [`docs/charter.md`](docs/charter.md) for scope and
 Requirements:
 
 - Windows with a 32-bit Vulkan loader and AMD x86 Vulkan driver installed;
-- PowerShell, CMake, Git, and either an i686 MinGW toolchain or Visual Studio
-  with Win32 C++ tools;
+- PowerShell, Python 3.9 or newer, CMake, Git, and either an i686 MinGW
+  toolchain or Visual Studio with Win32 C++ tools;
 - network access on the first configure so CMake can fetch pinned dependencies.
 
 The Vulkan path has no CUDA or NVIDIA dependency. From the repository root,
@@ -42,15 +42,52 @@ semantic oracles plus constant and integer/float texture fixtures. Results are
 written under `test-output/results/`. `spirv-val.exe` is used when it is on
 `PATH`; Vulkan execution remains mandatory either way.
 
-Captured game PTX is proprietary and is not committed. If the three locally
-extracted files are available in one directory, add the four trace-shaped
-fluid fixtures with:
+Captured game PTX is proprietary and is not committed. The observed kernels are
+embedded in the registered PhysX 2.8.0 `PhysXCore.dll`, not
+`MirrorsEdge.exe`. Extract all 17 modules offline:
 
 ```powershell
-.\run-tests.ps1 -CapturedPtxDir C:\path\to\extracted\ptx
+python .\extract-physx-ptx.py `
+  "C:\Program Files (x86)\NVIDIA Corporation\PhysX\Engine\v2.8.0\PhysXCore.dll" `
+  .\local-ptx
 ```
 
-That directory must contain `module_0013_01_05.ptx`,
-`module_0010_01_05.ptx`, and `module_0016_01_05.ptx`. The added run compiles
-and executes calc-hash, reorder, density, and force on the AMD Vulkan device.
-Any failed device or exact result returns a nonzero process exit code.
+The extractor needs no CUDA toolkit. It emits stable `fatbin_####.ptx` files
+plus a source/module hash manifest. Keep that output local. Add the four
+trace-shaped fluid fixtures by passing either this directory or a ZLUDA trace
+module directory:
+
+```powershell
+.\run-tests.ps1 -CapturedPtxDir .\local-ptx
+```
+
+The suite resolves modules by their PTX entry names rather than trace-specific
+module numbers, then compiles and executes calc-hash, reorder, density, and
+force. Any failed device or exact result returns a nonzero process exit code.
+
+## Reference results
+
+Each runner still writes a focused JSON report for failure diagnosis. The
+committed reference is one deterministic bundle:
+`tools/reference/expected/reference-workstation.json`. It contains the two
+native CUDA reports and all ten Vulkan reports under stable keys.
+
+Compare a complete local run against it:
+
+```powershell
+.\run-tests.ps1 -CapturedPtxDir .\local-ptx `
+  -ReferenceBundle .\tools\reference\expected\reference-workstation.json
+```
+
+After classifying a deliberate result change, the same command with
+`-AcceptReferenceBundle` replaces only the Vulkan section. To assemble a new
+bundle or replace native CUDA evidence, generate both native runner JSON files
+and run:
+
+```powershell
+python .\tools\build-reference-bundle.py `
+  --vulkan-results .\test-output\results `
+  --cuda-oracle .\native-oracle.json `
+  --cuda-physx .\native-physx.json `
+  --output .\tools\reference\expected\reference-workstation.json
+```

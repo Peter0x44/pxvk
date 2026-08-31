@@ -45,7 +45,7 @@ framework, runtime language, shader compiler, or architecture.
 | Asset | Current evidence | Role in the plan |
 |---|---|---|
 | `tools/cuda-oracle/probe.ptx` | Native PTX microkernels for f32, barrier, aligned local memory, module constants, and `u32`/`f32` texture behavior | Run unchanged through native CUDA and the Vulkan translator |
-| `tools/cuda-oracle/expected/rtx3070-driver610.88.json` | Committed exact NVIDIA result bits | Primary standalone semantic fixture |
+| `tools/reference/expected/reference-workstation.json` key `cuda.semantic_oracle` | Committed exact NVIDIA result bits | Primary standalone semantic fixture |
 | `tools/cuda-oracle/main.c` | PE32/i386 Driver API launcher | Native reference runner and shape for a backend runner |
 | `tools/nvcuda-trace/tests/launch_params_test.c` | Standard/reversed packed launch tokens and malformed/unreadable inputs | Preserve `pxvk_parse_launch_extra` behavior; extend only when the launch ABI changes |
 | `tools/nvcuda-trace/tests/proxy_smoke.c` | `LoadLibrary`, export lookup, `cuInit`, and enumeration | Shape for an out-of-process pxvk facade smoke test |
@@ -56,11 +56,12 @@ framework, runtime language, shader compiler, or architecture.
 | 17 local captured PTX modules | Complete corpus accepted by both ZLUDA and the project frontend; hashes remain local/cataloged | Local parse/normalization coverage without committing proprietary PTX |
 | Three native game traces | Fluid, deformable, and confirmed broken-glass execution | Route and workload-presence oracle |
 
-The committed CUDA oracle SHA-256 is
+The original CUDA oracle report SHA-256 is
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Its JSON contains 14 named f32 results, 64-element barrier and local-memory
-results, two module-constant payloads, and 12 signed-coordinate rows for each
-integer and float texture.
+It is stored with the native PhysX pipeline and all reference Vulkan reports in
+the single reference bundle. Its payload contains 14 named f32 results,
+64-element barrier and local-memory results, two module-constant payloads, and
+12 signed-coordinate rows for each integer and float texture.
 
 ## Validation layers
 

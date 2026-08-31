@@ -99,18 +99,17 @@ The generated integer/global-memory shader then allocated one 32 MiB
 device-local buffer and one 32 MiB host-visible staging buffer per device.
 Intel and RTX both returned exact `0xc7b13c62` while preserving the input guard.
 The 123-word module passed `spirv-val --target-env vulkan1.2`; three runs
-produced byte-identical JSON. The committed result is
-`tools/vulkan-probe/expected/reference-workstation/memory-smoke.json`, SHA-256
-`4527312167c098277ba0422cfcd87d48a5578fdeeea3883234dbac0bbed2d2a0`.
+produced byte-identical JSON. The report is stored at
+`vulkan.memory_smoke` in the reference bundle.
 
 The combined 64-thread oracle then matched native CUDA math, barrier,
 invocation-private local-memory, and integer/float texture fields on both
 devices. Intel exposed one load-bearing SPIR-V rule: GLSL.std.450 `Fma`
 returned the separately rounded zero until its result was decorated
 `NoContraction`; with the decoration Intel and RTX both returned native
-`0xa8800000`. The combined result is
-`tools/vulkan-probe/expected/reference-workstation/oracle.json`, SHA-256
-`782856f86951d704e40feceb0394321a444f7877b6623f6601700f8fcb271073`.
+`0xa8800000`. The combined report is stored at
+`vulkan.semantic_oracle_static` in
+`tools/reference/expected/reference-workstation.json`.
 
 The direct compiler slice now reproduces that result from
 `tools/cuda-oracle/probe.ptx`: the frontend emits schema-5 structured IR and

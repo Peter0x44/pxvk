@@ -7,23 +7,16 @@ the PTX floating-point, workgroup-barrier, invocation-private local-memory,
 module constant-memory, and legacy integer/float linear-texture semantics that
 are most backend-sensitive in the Mirror's Edge corpus.
 
-Implemented at:
+Implemented by `tools/cuda-oracle/main.c` and `probe.ptx`. The runner emits a
+standalone JSON report; `tools/build-reference-bundle.py` stores it at
+`cuda.semantic_oracle` in
+`tools/reference/expected/reference-workstation.json`.
 
-```text
-tools/cuda-oracle/
-├── CMakeLists.txt
-├── main.c
-├── probe.ptx
-└── expected/rtx3070-driver610.88.json
-```
-
-The committed result fixture has SHA-256:
-
-```text
-38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011
-```
-
-Three native executions produced byte-identical JSON.
+The original native report had SHA-256
+`38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
+Three native executions produced byte-identical JSON. The combined reference
+bundle has SHA-256
+`770f454e263514c1e2118f3f5d2d7b683dcae33e7d0dc464f378ce857a3f1690`.
 
 ## Environment
 
@@ -53,7 +46,7 @@ build\cuda-oracle\cuda-oracle.exe ^
   native-result.json
 ```
 
-The output can be compared byte-for-byte with the committed fixture.
+The output is supplied to `tools/build-reference-bundle.py --cuda-oracle`.
 
 ## Probe questions and decisions
 
@@ -231,13 +224,9 @@ on Intel UHD and RTX 3070 Vulkan:
 Intel initially returned zero for the fused FMA because GLSL.std.450 `Fma`
 without `NoContraction` may be split. Decorating the FMA result explicitly
 restored native `0xa8800000`; the separate multiply/add remained zero on both
-devices. Native CUDA evidence is
-`tools/cuda-oracle/expected/rtx3070-driver610.88.json`, SHA-256
-`38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-The PTX-generated Vulkan result is
-`tools/vulkan-probe/expected/reference-workstation/ptx-generated-oracle.json`,
-SHA-256
-`60f74896d5ac3af9682a5b5960c2587f7303b0e8252d33689749ea40b950056f`.
+devices. Native CUDA evidence is stored at `cuda.semantic_oracle`; the
+PTX-generated Vulkan result is stored at `vulkan.semantic_oracle_ptx` in
+`tools/reference/expected/reference-workstation.json`.
 
 ## Remaining native probes
 

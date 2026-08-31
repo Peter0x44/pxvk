@@ -4,6 +4,8 @@ param(
     [string]$Toolchain = "MinGW",
     [string]$OutputDir = "",
     [string]$CapturedPtxDir = "",
+    [string]$ReferenceBundle = "",
+    [switch]$AcceptReferenceBundle,
     [string]$Generator = "",
     [string]$CCompiler = "i686-w64-mingw32-gcc",
     [string]$CxxCompiler = "i686-w64-mingw32-g++",
@@ -89,6 +91,25 @@ function Validate-SpirvIfAvailable {
     }
 }
 
+function Resolve-PtxForEntry {
+    param(
+        [Parameter(Mandatory = $true)][string]$Directory,
+        [Parameter(Mandatory = $true)][string]$Entry
+    )
+
+    $matches = @(
+        Get-ChildItem -LiteralPath $Directory -Filter "*.ptx" -File |
+            Where-Object {
+                [System.IO.File]::ReadAllText($_.FullName).Contains($Entry)
+            }
+    )
+    if ($matches.Count -ne 1) {
+        throw ("Expected one PTX file containing '{0}' under {1}; found {2}" -f
+            $Entry, $Directory, $matches.Count)
+    }
+    return $matches[0].FullName
+}
+
 $repoDir = [System.IO.Path]::GetFullPath($PSScriptRoot)
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = Join-Path $repoDir "test-output"
@@ -170,14 +191,19 @@ Invoke-Checked $memorySmoke @(
 
 if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $CapturedPtxDir = [System.IO.Path]::GetFullPath($CapturedPtxDir)
-    $module0013 = Join-Path $CapturedPtxDir "module_0013_01_05.ptx"
-    $module0010 = Join-Path $CapturedPtxDir "module_0010_01_05.ptx"
-    $module0016 = Join-Path $CapturedPtxDir "module_0016_01_05.ptx"
-    foreach ($path in @($module0013, $module0010, $module0016)) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "Captured PTX input not found: $path"
-        }
+    if (-not (Test-Path -LiteralPath $CapturedPtxDir -PathType Container)) {
+        throw "Captured or extracted PTX directory not found: $CapturedPtxDir"
     }
+
+    $calcHashEntry = "_Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj"
+    $reorderEntry = "_Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej"
+    $densityEntry = "_Z19KernelFluidDensityD17PxgFixedSizeArrayIfES0_15DensityDebugGPUPiS_IK6float4ES_IKjES7_S7_S7_"
+    $forceEntry = "_Z17KernelFluidForceD17PxgFixedSizeArrayI12PxcVectorPadE13ForceDebugGPUPiS_IK6float4ES6_S_IKfES_IKjESA_SA_SA_"
+
+    $calcHashPtx = Resolve-PtxForEntry $CapturedPtxDir $calcHashEntry
+    $reorderPtx = Resolve-PtxForEntry $CapturedPtxDir $reorderEntry
+    $densityPtx = Resolve-PtxForEntry $CapturedPtxDir $densityEntry
+    $forcePtx = Resolve-PtxForEntry $CapturedPtxDir $forceEntry
 
     Write-Host "Compiling and running the local captured PhysX fixtures..."
     $module0013Manifest = Join-Path $resultDir "module-0013-manifest.json"
@@ -188,14 +214,12 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $densitySpirv = Join-Path $resultDir "fluid-density.spv"
     $forceSpirv = Join-Path $resultDir "fluid-force.spv"
 
-    $calcHashEntry = "_Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj"
-    $reorderEntry = "_Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej"
-    $densityEntry = "_Z19KernelFluidDensityD17PxgFixedSizeArrayIfES0_15DensityDebugGPUPiS_IK6float4ES_IKjES7_S7_S7_"
-    $forceEntry = "_Z17KernelFluidForceD17PxgFixedSizeArrayI12PxcVectorPadE13ForceDebugGPUPiS_IK6float4ES6_S_IKfES_IKjESA_SA_SA_"
-
-    Invoke-Checked $frontend @($module0013, $module0013Manifest)
-    Invoke-Checked $frontend @($module0010, $module0010Manifest)
-    Invoke-Checked $frontend @($module0016, $module0016Manifest)
+    Invoke-Checked $frontend @($calcHashPtx, $module0013Manifest)
+    if ($reorderPtx -ne $calcHashPtx) {
+        throw "Calc-hash and reorder entries must reside in one PTX module"
+    }
+    Invoke-Checked $frontend @($densityPtx, $module0010Manifest)
+    Invoke-Checked $frontend @($forcePtx, $module0016Manifest)
     Invoke-Checked $emitter @(
         "--entry", $calcHashEntry, "64", "0", $module0013Manifest, $calcHashSpirv
     )
@@ -234,9 +258,43 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     )
 }
 
+if ($AcceptReferenceBundle -and [string]::IsNullOrWhiteSpace($ReferenceBundle)) {
+    $ReferenceBundle = Join-Path $repoDir "tools\reference\expected\reference-workstation.json"
+}
+if (-not [string]::IsNullOrWhiteSpace($ReferenceBundle)) {
+    if ([string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
+        throw "Reference bundle validation requires -CapturedPtxDir for all Vulkan reports"
+    }
+    $ReferenceBundle = [System.IO.Path]::GetFullPath($ReferenceBundle)
+    if (-not (Test-Path -LiteralPath $ReferenceBundle -PathType Leaf)) {
+        throw "Reference bundle not found: $ReferenceBundle"
+    }
+
+    $candidateBundle = Join-Path $resultDir "reference-bundle-candidate.json"
+    Invoke-Checked "python" @(
+        (Join-Path $repoDir "tools\build-reference-bundle.py"),
+        "--vulkan-results", $resultDir,
+        "--base", $ReferenceBundle,
+        "--output", $candidateBundle
+    )
+    if ($AcceptReferenceBundle) {
+        Copy-Item -LiteralPath $candidateBundle -Destination $ReferenceBundle -Force
+        Write-Host "Accepted reference bundle: $ReferenceBundle"
+    }
+    else {
+        $candidateHash = (Get-FileHash -LiteralPath $candidateBundle -Algorithm SHA256).Hash
+        $referenceHash = (Get-FileHash -LiteralPath $ReferenceBundle -Algorithm SHA256).Hash
+        if ($candidateHash -ne $referenceHash) {
+            throw "Generated reports differ from the reference bundle: $ReferenceBundle"
+        }
+        Write-Host "PASS: generated reports match $ReferenceBundle"
+    }
+    Remove-Item -LiteralPath $candidateBundle -Force
+}
+
 Write-Host ""
 Write-Host "PASS: pxvk portable suite"
 Write-Host "Results: $resultDir"
 if ([string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
-    Write-Host "Captured PhysX fixtures were not run; pass -CapturedPtxDir to add them."
+    Write-Host "Captured PhysX fixtures were not run; pass -CapturedPtxDir with traced or extracted PTX to add them."
 }

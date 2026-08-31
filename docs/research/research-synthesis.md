@@ -250,10 +250,10 @@ independently shows a 1,024-byte device-to-device update into density's
 
 The selected-entry path independently emits the same `constant_probe` through
 `KernelEntryLowerer` as a 446-word module with bindings 0/1/2. Vulkan 1.2
-validation passes, and both local GPUs match the native payloads. The committed
-fixture is
-`tools/vulkan-probe/expected/reference-workstation/constant-kernel.json`,
-SHA-256
+validation passes, and both local GPUs match the native payloads. The report is
+stored at `vulkan.constant_memory` in
+`tools/reference/expected/reference-workstation.json`; its original standalone
+SHA-256 was
 `b00dfe683ae265e8569be15aa05a2dabfd0ca4633d2b8c500f34dee5753620da`.
 
 Selected legacy texture fetches add read-only storage-buffer binding 3. Each
@@ -264,7 +264,9 @@ out of bounds, and bitcasts `f32` words without arithmetic conversion. A
 729-word selected `u32` fixture covers the captured one-component layout; a
 773-word selected `f32` fixture covers the captured four-component layout and
 preserves negative zero, subnormals, infinities, and NaN payloads. Coordinates
--2 through 9 match on Intel and RTX. The committed fixture hashes are:
+-2 through 9 match on Intel and RTX. The reports are stored at
+`vulkan.texture_u32` and `vulkan.texture_f32` in the reference bundle. Their
+original standalone hashes were:
 
 - integer: `f2f2af01930991fe61a4db237a7e0978953b26ab283331627b7c6bc90f349eb3`;
 - float: `66fc00584b8371d0c7028bfcbc981c019ce4401b90ae1af1a55229eb4cb3f11b`.
@@ -323,8 +325,9 @@ Native RTX produces:
 
 The Vulkan density and force fixtures start from the corresponding deterministic
 post-reorder/post-density state and bind separate constant and texture-metadata
-descriptor ranges. Intel UHD and RTX 3070 match every native output bit. The
-committed evidence hashes are:
+descriptor ranges. Intel UHD and RTX 3070 match every native output bit. These
+reports are bundled under `cuda.physx_fluid_pipeline` and the four
+`vulkan.fluid_*` keys. Their original standalone evidence hashes are:
 
 - native four-kernel CUDA pipeline:
   `b27ef7d9030bcdff2a77d84e4df7af2a95766a1fe920bb74d4696e6cd3b8cb2c`;
@@ -527,8 +530,8 @@ exports and no proprietary inputs.
 4. Dispatch it, read exact results, and emit deterministic JSON.
 5. Add the existing f32 cases, 64-thread barrier, and unsigned integer texture
    cases without changing expected field names.
-6. Compare against
-   `tools/cuda-oracle/expected/rtx3070-driver610.88.json`.
+6. Compare against `cuda.semantic_oracle` in
+   `tools/reference/expected/reference-workstation.json`.
 7. Run each passing physical device independently.
 
 ### Current status
@@ -545,8 +548,8 @@ adds the required `NoContraction` decoration to the GLSL.std.450 `Fma`, assemble
 Intel split the FMA and returned zero while RTX happened to fuse it; the patched
 module returns native `0xa8800000` on both.
 
-The committed result is
-`tools/vulkan-probe/expected/reference-workstation/oracle.json`, SHA-256
+The committed report is `vulkan.semantic_oracle_static` in the reference
+bundle. Its original standalone SHA-256 was
 `782856f86951d704e40feceb0394321a444f7877b6623f6601700f8fcb271073`.
 The SPIR-V SHA-256 is
 `37782524d39e89aea01ce1b7c51462259fc14637ee7cd28bab7396186b37bb2a`.
