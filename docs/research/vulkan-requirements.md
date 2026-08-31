@@ -132,19 +132,28 @@ one-component `u32` and 773-word four-component `f32` fixtures both pass Vulkan
 1.2 validation and match on Intel and RTX, including exact negative-zero,
 subnormal, infinity, and NaN-payload bits.
 
-The captured 19,884-word `KernelFluidDensity` module exercises the combined
+The captured 17,768-word `KernelFluidDensity` module exercises the combined
 bindings 0/1/2/3 contract. A one-particle fixture uses the trace-observed
 1,024-byte constant update, 64-element position/hash textures,
 524,288-element cell tables, and local size 192. With synthetic exact constants
 that make the self contribution `2.0f`, native RTX and translated Intel/RTX all
 return direct and remapped density bits `0x40000000`.
 
-The captured 30,375-word `KernelFluidForce` module uses the same four bindings
+The captured 27,835-word `KernelFluidForce` module uses the same four bindings
 with six texture metadata records and local size 128. Synthetic time step
 `1.0f`, zero damping/acceleration, and maximum velocity `100.0f` make the
 one-particle self-neighbor produce the exact force vector
 `[0x40800000, 0x40a00000, 0x40c00000, 0x00000000]`. Native RTX and translated
 Intel/RTX match bit-for-bit.
+
+All three captured deformable entries now use the same heap/parameter/constant
+model. The 175,407-word collision shader additionally declares binding 3 for 17
+texture metadata records and uses 4,097 bytes of static shared memory. Its
+no-shape focused fixture still crosses all five barriers and matches native
+particle initialization and collision state on Intel and RTX. The 80,354-word
+solver shader uses the captured 7,072-byte dynamic shared allocation. Narrow
+PTX registers and subword memory operations are represented with explicit
+32-bit masks/extracts, so these entries do not require Vulkan 8/16-bit storage.
 
 ### Observed device results
 
@@ -430,12 +439,15 @@ first implementation slice should remain small:
 4. run the existing f32, barrier, and integer-texture oracle cases through
    Vulkan and compare outputs.
 
-Do not accept translated real kernels until:
+Translated real-kernel acceptance now has:
 
-- the standalone Vulkan differential classifies every oracle mismatch;
-- the native integer and float texture probes fix both linear-fetch contracts;
-- deterministic fluid hash/reorder fixtures cover two real translated kernels;
-- a deformable fixture remains required before accepting corresponding kernels.
+- a standalone Vulkan differential with every oracle mismatch classified;
+- native integer and float texture probes fixing both linear-fetch contracts;
+- deterministic fluid calc-hash/reorder/density/force fixtures;
+- exact native/Vulkan deformable-update, collision, and solver fixtures,
+  including static/dynamic shared memory and repeated barriers.
+
+A complete ordered deformable step remains the workload-family gate.
 
 The remaining queried-only export, NVAPI, threading, and PhysX-off trace probes
 are integration or hardening gates, not Vulkan device-capability blockers.

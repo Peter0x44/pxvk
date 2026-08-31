@@ -121,22 +121,29 @@ bank is therefore compiler-output residue, not evidence of a missing operation.
 A referenced unsupported type remains a deterministic error; no `Int64`
 capability was added for this entry.
 
-The current state-machine lowering stores virtual registers in function storage
-and executes one PTX basic block per structured loop iteration. A finite prelude
-structurizes the paired reorder kernel's divergent shared-memory setup so all
-invocations reconverge before its sole workgroup barrier. This is intentionally
-conservative; SSA and general structured CFG reconstruction remain later
-optimizations.
+The current state-machine lowering computes CFG liveness and reuses function
+storage only for non-interfering PTX registers with the same scalar type and
+logical width. It executes one PTX basic block per structured loop iteration.
+Entries containing barriers run each invocation until its next barrier,
+reconverge at one structured workgroup barrier, and resume from the saved
+program counter. This is intentionally conservative; SSA and general structured
+CFG reconstruction remain later optimizations.
 
 `KernelFluidForce` extends selected-entry lowering with the finite
 `setp.lt.ftz.f32`, `setp.leu.ftz.f32`, `setp.neu.ftz.f32`,
 `max.ftz.f32`, `rcp.approx.ftz.f32`, `sqrt.approx.ftz.f32`, and
 `div.full.ftz.f32` forms. Its 499 PTX instructions lower to a deterministic
-30,375-word module with local size 128, 108 bytes of invocation-local storage,
+27,835-word module with local size 128, 108 bytes of invocation-local storage,
 module constants, and six texture metadata records. The redistributable
-`force_math_probe.ptx` exercises these added forms; local captured module 0016
-execution is available through `run-tests.ps1 -CapturedPtxDir`.
+`force_math_probe.ptx` exercises these added forms.
 
+`KernelDeformableUberCollision` adds finite scalar/vector subword memory,
+16-bit select/comparison, float comparison/minimum, five-barrier, and
+17-texture-reference coverage. Its 3,662 instructions lower to a deterministic
+175,407-word module with local size 64 and 4,097 bytes of static shared memory.
+The redistributable `collision_types_probe.ptx` retains the added instruction
+forms; local captured execution is available through
+`run-tests.ps1 -CapturedPtxDir`.
 
 Validate and execute the module:
 

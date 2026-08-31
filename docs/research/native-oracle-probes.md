@@ -14,9 +14,10 @@ standalone JSON report; `tools/build-reference-bundle.py` stores it at
 
 The original native report had SHA-256
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Three native executions produced byte-identical JSON. The combined reference
+Five native runner reports are stored in the deterministic reference bundle,
+including the focused fluid and all three deformable workload reports. The
 bundle has SHA-256
-`770f454e263514c1e2118f3f5d2d7b683dcae33e7d0dc464f378ce857a3f1690`.
+`3e5267ccd703fc6a18af5a36ec785382dadd495f9dc0e849e3a590149b4b59b1`.
 
 ## Environment
 
@@ -47,6 +48,54 @@ build\cuda-oracle\cuda-oracle.exe ^
 ```
 
 The output is supplied to `tools/build-reference-bundle.py --cuda-oracle`.
+
+The focused deformable report uses the extracted PhysX module on the native
+NVIDIA reference system:
+
+```powershell
+cmake -S tools/cuda-physx-fixture -B build/cuda-physx-fixture -A Win32
+cmake --build build/cuda-physx-fixture --config Release
+.\build\cuda-physx-fixture\Release\cuda-deformable-fixture.exe `
+  .\local-ptx\fatbin_0016.ptx `
+  .\native-deformable.json
+```
+
+The runner launches `PxgCudaDeformableUpdate` with one synthetic instance,
+checks exact output bits and guard ranges, and supplies its report to
+`tools/build-reference-bundle.py --cuda-deformable`.
+
+The solver fixture uses the extracted solver module and its captured 7,072-byte
+dynamic-shared launch shape:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-deformable-solver-fixture.exe `
+  .\local-ptx\fatbin_0017.ptx `
+  .\native-deformable-solver.json
+```
+
+It launches `KernelDeformableUberSolver<512>` for one synthetic particle with
+zero constraint iterations. The entry still crosses its workgroup barriers,
+updates the particle/delta state, and writes the exact 64-byte solver record.
+Every live range is guarded. The native report SHA-256 is
+`83d4b38dd4112716e63311a06b7d040e9275c44654fd1bae6dbdefb33009c040`;
+the report is supplied as `--cuda-deformable-solver`.
+
+The collision fixture uses the extracted collision module:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-deformable-collision-fixture.exe `
+  .\local-ptx\fatbin_0015.ptx `
+  .\native-deformable-collision.json
+```
+
+It launches `KernelDeformableUberCollision` for one synthetic particle and no
+shapes. The focused path copies the two particle vectors, clears collision
+vectors/state, crosses all five barriers, and reaches response processing. All
+17 live heap ranges are guarded. The exact collision scalar words are
+`[0xbf800000, 0x00000000, 0x0000ffff, 0x00000000]`; three native runs were
+byte-identical. The native report SHA-256 is
+`0413b0348b49fe1b69376e6ed049f7011c2781366e3311ade51b5daaa0287369`;
+the report is supplied as `--cuda-deformable-collision`.
 
 ## Probe questions and decisions
 
@@ -232,8 +281,8 @@ PTX-generated Vulkan result is stored at `vulkan.semantic_oracle_ptx` in
 
 Still open at their later acceptance gates:
 
-1. **Captured workload output:** the synthetic fluid hash/reorder pair is
-   complete; captured in-game state and one deformable input/output remain.
+1. **Captured workload output:** focused synthetic fluid and deformable
+   differentials are complete; captured in-game state and complete steps remain.
 2. **Queried-only exports:** determine whether null symbols are accepted or
    whether not-supported stubs are required. ZLUDA proves stubs work.
 3. **NVAPI gate:** determine the smallest interface set required by the current

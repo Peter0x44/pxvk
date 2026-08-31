@@ -105,6 +105,36 @@ add_test(
 )
 set_tests_properties(
     ptx-force-math-emitter PROPERTIES DEPENDS ptx-force-math-frontend)
+add_test(
+    NAME ptx-solver-types-frontend
+    COMMAND ptx-frontend
+        "${CMAKE_CURRENT_SOURCE_DIR}/solver_types_probe.ptx"
+        "${CMAKE_CURRENT_BINARY_DIR}/solver-types-probe-manifest.json"
+)
+add_test(
+    NAME ptx-solver-types-emitter
+    COMMAND ptx-spirv-emitter
+        --entry solver_types_probe 1 0
+        "${CMAKE_CURRENT_BINARY_DIR}/solver-types-probe-manifest.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/solver-types-probe.spv"
+)
+set_tests_properties(
+    ptx-solver-types-emitter PROPERTIES DEPENDS ptx-solver-types-frontend)
+add_test(
+    NAME ptx-collision-types-frontend
+    COMMAND ptx-frontend
+        "${CMAKE_CURRENT_SOURCE_DIR}/collision_types_probe.ptx"
+        "${CMAKE_CURRENT_BINARY_DIR}/collision-types-probe-manifest.json"
+)
+add_test(
+    NAME ptx-collision-types-emitter
+    COMMAND ptx-spirv-emitter
+        --entry collision_types_probe 1 0
+        "${CMAKE_CURRENT_BINARY_DIR}/collision-types-probe-manifest.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/collision-types-probe.spv"
+)
+set_tests_properties(
+    ptx-collision-types-emitter PROPERTIES DEPENDS ptx-collision-types-frontend)
 if(MSVC)
     foreach(target ptx-frontend ptx-spirv-emitter)
         target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)

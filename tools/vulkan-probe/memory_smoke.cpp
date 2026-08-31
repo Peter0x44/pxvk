@@ -65,6 +65,73 @@ constexpr VkDeviceSize kForceTextureMetadataBytes =
 constexpr std::array<std::uint32_t, 4> kExpectedForce = {
     0x40800000u, 0x40a00000u, 0x40c00000u, 0u,
 };
+constexpr std::size_t kDeformablePackedBaseOffset = 64;
+constexpr std::size_t kDeformablePositionOffset = 128;
+constexpr std::size_t kDeformableMotionOffset = 160;
+constexpr std::size_t kDeformableFlagsOffset = 193;
+constexpr std::size_t kDeformableIgnoredOffset = 225;
+constexpr VkDeviceSize kDeformablePayloadBytes = 256u * sizeof(std::uint32_t);
+constexpr VkDeviceSize kDeformableConstantBytes = 7168u;
+constexpr std::uint32_t kGuardBefore = 0x13579bdfu;
+constexpr std::uint32_t kGuardAfter = 0x2468ace0u;
+constexpr std::array<std::uint32_t, 4> kExpectedDeformablePosition = {
+    0x3f800000u, 0x40000000u, 0x40400000u, 0u,
+};
+constexpr std::array<std::uint32_t, 4> kExpectedDeformableMotion = {
+    0x40440000u, 0x408c0000u, 0x40c80000u, 0x40e00000u,
+};
+constexpr std::size_t kSolverAOffset = 32;
+constexpr std::size_t kSolverBOffset = 48;
+constexpr std::size_t kSolverCOffset = 64;
+constexpr std::size_t kSolverPositionOffset = 80;
+constexpr std::size_t kSolverFlagsOffset = 96;
+constexpr std::size_t kSolverPackedOffset = 112;
+constexpr std::size_t kSolverOutputOffset = 128;
+constexpr VkDeviceSize kSolverPayloadBytes = 256u * sizeof(std::uint32_t);
+constexpr VkDeviceSize kSolverConstantBytes = 5888u;
+constexpr std::array<std::uint32_t, 4> kExpectedSolverA = {
+    0x3f800000u, 0x40000000u, 0x40400000u, 0u,
+};
+constexpr std::array<std::uint32_t, 4> kExpectedSolverPosition = {
+    0xc1100000u, 0xc1100000u, 0xc1100000u, 0u,
+};
+constexpr std::array<std::uint32_t, 16> kExpectedSolverOutput = {
+    0x3f800000u, 0x40000000u, 0x40400000u, 0x00000400u,
+    0x41f00000u, 0x41f80000u, 0x42000000u, 0xabcdef01u,
+    0xc1100000u, 0xc1100000u, 0xc1100000u, 0x00000000u,
+    0x41a00000u, 0x41a80000u, 0x41b00000u, 0x00000000u,
+};
+constexpr std::size_t kCollisionBatchOffset = 8;
+constexpr std::size_t kCollisionInputPositionOffset = 20;
+constexpr std::size_t kCollisionInputMotionOffset = 28;
+constexpr std::size_t kCollisionOutput8Offset = 36;
+constexpr std::size_t kCollisionOutput12Offset = 44;
+constexpr std::size_t kCollisionOutput20Offset = 52;
+constexpr std::size_t kCollisionFlagsOffset = 56;
+constexpr std::size_t kCollisionOutputPositionOffset = 60;
+constexpr std::size_t kCollisionOutputMotionOffset = 68;
+constexpr std::size_t kCollisionVector40Offset = 76;
+constexpr std::size_t kCollisionVector44Offset = 84;
+constexpr std::size_t kCollisionScalar48Offset = 92;
+constexpr std::size_t kCollisionScalar52Offset = 96;
+constexpr std::size_t kCollisionScalar56Offset = 100;
+constexpr std::size_t kCollisionScalar60Offset = 104;
+constexpr std::size_t kCollisionVector64Offset = 108;
+constexpr std::size_t kCollisionActiveOffset = 116;
+constexpr VkDeviceSize kCollisionPayloadBytes =
+    192u * sizeof(std::uint32_t);
+constexpr VkDeviceSize kCollisionConstantBytes = 17992u;
+constexpr VkDeviceSize kCollisionTextureMetadataBytes =
+    17u * 3u * sizeof(std::uint32_t);
+constexpr std::array<std::uint32_t, 4> kExpectedCollisionPosition = {
+    0x3f800000u, 0x40000000u, 0x40400000u, 0x40800000u,
+};
+constexpr std::array<std::uint32_t, 4> kExpectedCollisionMotion = {
+    0x40a00000u, 0x40c00000u, 0x40e00000u, 0x41000000u,
+};
+constexpr std::array<std::uint32_t, 4> kExpectedCollisionScalars = {
+    0xbf800000u, 0x00000000u, 0x0000ffffu, 0x00000000u,
+};
 constexpr std::array<std::uint32_t, 4> kExpectedReorderedPosition = {
     0x3f800000u, 0x40000000u, 0x40400000u, 0u,
 };
@@ -431,6 +498,18 @@ struct DeviceResult {
     std::uint32_t density = 0;
     std::uint32_t remapped_density = 0;
     std::array<std::uint32_t, 4> force = {};
+    std::array<std::uint32_t, 4> deformable_position = {};
+    std::array<std::uint32_t, 4> deformable_motion = {};
+    std::uint32_t deformable_flags = 0;
+    bool deformable_guards_intact = false;
+    std::array<std::uint32_t, 4> solver_a = {};
+    std::array<std::uint32_t, 4> solver_position = {};
+    std::array<std::uint32_t, 16> solver_output = {};
+    bool solver_guards_intact = false;
+    std::array<std::uint32_t, 4> collision_position = {};
+    std::array<std::uint32_t, 4> collision_motion = {};
+    std::array<std::uint32_t, 4> collision_scalars = {};
+    bool collision_guards_intact = false;
     std::string error;
 };
 
@@ -447,7 +526,10 @@ DeviceResult run_device(
     bool texture_fixture_mode,
     bool texture_float_fixture_mode,
     bool density_fixture_mode,
-    bool force_fixture_mode)
+    bool force_fixture_mode,
+    bool deformable_fixture_mode,
+    bool solver_fixture_mode,
+    bool collision_fixture_mode)
 {
     DeviceResult result;
     result.index = device_index;
@@ -465,7 +547,16 @@ DeviceResult run_device(
         align_up(
             density_constant_offset + kDensityConstantBytes,
             texture_metadata_alignment);
-
+    const VkDeviceSize deformable_constant_offset =
+        align_up(kDeformablePayloadBytes, texture_metadata_alignment);
+    const VkDeviceSize solver_constant_offset =
+        align_up(kSolverPayloadBytes, texture_metadata_alignment);
+    const VkDeviceSize collision_constant_offset =
+        align_up(kCollisionPayloadBytes, texture_metadata_alignment);
+    const VkDeviceSize collision_texture_metadata_offset =
+        align_up(
+            collision_constant_offset + kCollisionConstantBytes,
+            texture_metadata_alignment);
     VkDevice device = VK_NULL_HANDLE;
     BufferAllocation device_buffer;
     BufferAllocation staging_buffer;
@@ -551,22 +642,187 @@ DeviceResult run_device(
                     ? kKernelFixtureCopyBytes
                     : constant_fixture_mode
                         ? kConstantFixtureCopyBytes
-                        : force_fixture_mode
-                            ? density_texture_metadata_offset +
-                                  kForceTextureMetadataBytes
-                            : density_fixture_mode
-                                ? density_texture_metadata_offset +
-                                      kDensityTextureMetadataBytes
-                                : selected_texture_mode
-                                    ? texture_metadata_offset +
-                                          kTextureMetadataBytes
-                                    : kMemoryCopyBytes;
+                        : collision_fixture_mode
+                            ? collision_texture_metadata_offset +
+                                  kCollisionTextureMetadataBytes
+                            : solver_fixture_mode
+                                ? solver_constant_offset + kSolverConstantBytes
+                                : deformable_fixture_mode
+                                    ? deformable_constant_offset +
+                                          kDeformableConstantBytes
+                                    : force_fixture_mode
+                                        ? density_texture_metadata_offset +
+                                              kForceTextureMetadataBytes
+                                        : density_fixture_mode
+                                            ? density_texture_metadata_offset +
+                                                  kDensityTextureMetadataBytes
+                                            : selected_texture_mode
+                                                ? texture_metadata_offset +
+                                                      kTextureMetadataBytes
+                                                : kMemoryCopyBytes;
         check(
             vkMapMemory(device, staging_buffer.memory, 0, staging_buffer.allocation_size, 0, &mapped),
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        if (force_fixture_mode) {
+        if (collision_fixture_mode) {
+            words[0] = 0u;
+            const auto initialize = [&](std::size_t offset,
+                                        std::initializer_list<std::uint32_t> values) {
+                words[offset - 1u] = kGuardBefore;
+                std::copy(values.begin(), values.end(), words + offset);
+                words[offset + values.size()] = kGuardAfter;
+            };
+            initialize(kCollisionBatchOffset, {0x00010000u, 0u});
+            initialize(
+                kCollisionInputPositionOffset,
+                {0x3f800000u, 0x40000000u, 0x40400000u, 0x40800000u});
+            initialize(
+                kCollisionInputMotionOffset,
+                {0x40a00000u, 0x40c00000u, 0x40e00000u, 0x41000000u});
+            for (const std::size_t offset : {
+                     kCollisionOutput8Offset,
+                     kCollisionOutput12Offset,
+                     kCollisionOutputPositionOffset,
+                     kCollisionOutputMotionOffset,
+                     kCollisionVector40Offset,
+                     kCollisionVector44Offset,
+                     kCollisionVector64Offset,
+                 }) {
+                initialize(
+                    offset,
+                    {0xaaaaaaaau, 0xbbbbbbbbu, 0xccccccccu, 0xddddddddu});
+            }
+            for (const std::size_t offset : {
+                     kCollisionOutput20Offset,
+                     kCollisionScalar48Offset,
+                     kCollisionScalar52Offset,
+                     kCollisionScalar56Offset,
+                     kCollisionScalar60Offset,
+                 }) {
+                initialize(offset, {0xfeedfaceu});
+            }
+            initialize(kCollisionFlagsOffset, {0u});
+            initialize(kCollisionActiveOffset, {1u});
+
+            auto *constants = reinterpret_cast<std::uint32_t *>(
+                static_cast<std::uint8_t *>(mapped) +
+                collision_constant_offset);
+            const auto byte_offset = [](std::size_t offset) {
+                return static_cast<std::uint32_t>(
+                    offset * sizeof(std::uint32_t));
+            };
+            constants[0] = byte_offset(kCollisionInputPositionOffset);
+            constants[1] = byte_offset(kCollisionInputMotionOffset);
+            constants[2] = byte_offset(kCollisionOutput8Offset);
+            constants[3] = byte_offset(kCollisionOutput12Offset);
+            constants[5] = byte_offset(kCollisionOutput20Offset);
+            constants[6] = byte_offset(kCollisionFlagsOffset);
+            constants[8] = byte_offset(kCollisionOutputPositionOffset);
+            constants[9] = byte_offset(kCollisionOutputMotionOffset);
+            constants[10] = byte_offset(kCollisionVector40Offset);
+            constants[11] = byte_offset(kCollisionVector44Offset);
+            constants[12] = byte_offset(kCollisionScalar48Offset);
+            constants[13] = byte_offset(kCollisionScalar52Offset);
+            constants[14] = byte_offset(kCollisionScalar56Offset);
+            constants[15] = byte_offset(kCollisionScalar60Offset);
+            constants[16] = byte_offset(kCollisionVector64Offset);
+            constants[17] = byte_offset(kCollisionActiveOffset);
+            constants[4480u + 17u] = byte_offset(kCollisionBatchOffset);
+        } else if (solver_fixture_mode) {
+            words[0] = 0u;
+            words[1] = 0u;
+            words[2] = static_cast<std::uint32_t>(
+                kSolverOutputOffset * sizeof(std::uint32_t));
+            words[3] = 0u;
+
+            const auto initialize = [&](std::size_t offset,
+                                        std::initializer_list<std::uint32_t> values) {
+                words[offset - 1u] = kGuardBefore;
+                std::copy(values.begin(), values.end(), words + offset);
+                words[offset + values.size()] = kGuardAfter;
+            };
+            initialize(
+                kSolverAOffset,
+                {0x41200000u, 0x41300000u, 0x41400000u, 0u});
+            initialize(
+                kSolverBOffset,
+                {0x41a00000u, 0x41a80000u, 0x41b00000u, 0u});
+            initialize(
+                kSolverCOffset,
+                {0x41f00000u, 0x41f80000u, 0x42000000u, 0u});
+            initialize(
+                kSolverPositionOffset,
+                {0x3f800000u, 0x40000000u, 0x40400000u, 0x40800000u});
+            initialize(kSolverFlagsOffset, {0x00000400u});
+            initialize(kSolverPackedOffset, {0xabcdef01u});
+            words[kSolverOutputOffset - 1u] = kGuardBefore;
+            std::fill_n(words + kSolverOutputOffset, 16u, 0u);
+            words[kSolverOutputOffset + 16u] = kGuardAfter;
+
+            auto *constants = reinterpret_cast<std::uint32_t *>(
+                static_cast<std::uint8_t *>(mapped) +
+                solver_constant_offset);
+            constants[1] = 1u;
+            constants[8] = 0x3f800000u;
+            constants[9] = 0u;
+            constants[14] = static_cast<std::uint32_t>(
+                kSolverAOffset * sizeof(std::uint32_t));
+            constants[15] = static_cast<std::uint32_t>(
+                kSolverPositionOffset * sizeof(std::uint32_t));
+            constants[16] = static_cast<std::uint32_t>(
+                kSolverBOffset * sizeof(std::uint32_t));
+            constants[17] = static_cast<std::uint32_t>(
+                kSolverCOffset * sizeof(std::uint32_t));
+            constants[18] = static_cast<std::uint32_t>(
+                kSolverCOffset * sizeof(std::uint32_t));
+            constants[21] = static_cast<std::uint32_t>(
+                kSolverFlagsOffset * sizeof(std::uint32_t));
+            constants[22] = static_cast<std::uint32_t>(
+                kSolverPackedOffset * sizeof(std::uint32_t));
+        } else if (deformable_fixture_mode) {
+            words[0] = static_cast<std::uint32_t>(
+                (kDeformablePackedBaseOffset + 1u) * sizeof(std::uint32_t));
+            words[1] = 1u;
+            words[2] = static_cast<std::uint32_t>(
+                kDeformableIgnoredOffset * sizeof(std::uint32_t));
+            words[kDeformablePackedBaseOffset] = kGuardBefore;
+            words[kDeformablePackedBaseOffset + 1u] = 0xfeedfaceu;
+            words[kDeformablePackedBaseOffset + 2u] = kGuardAfter;
+            words[kDeformablePositionOffset - 1u] = kGuardBefore;
+            words[kDeformablePositionOffset] = 0x3f800000u;
+            words[kDeformablePositionOffset + 1u] = 0x40000000u;
+            words[kDeformablePositionOffset + 2u] = 0x40400000u;
+            words[kDeformablePositionOffset + 3u] = 0u;
+            words[kDeformablePositionOffset + 4u] = kGuardAfter;
+            words[kDeformableMotionOffset - 1u] = kGuardBefore;
+            words[kDeformableMotionOffset] = 0x40800000u;
+            words[kDeformableMotionOffset + 1u] = 0x40a00000u;
+            words[kDeformableMotionOffset + 2u] = 0x40c00000u;
+            words[kDeformableMotionOffset + 3u] = 0x40e00000u;
+            words[kDeformableMotionOffset + 4u] = kGuardAfter;
+            words[kDeformableFlagsOffset - 1u] = kGuardBefore;
+            words[kDeformableFlagsOffset] = 0x00000014u;
+            words[kDeformableFlagsOffset + 1u] = kGuardAfter;
+            words[kDeformableIgnoredOffset - 1u] = kGuardBefore;
+            words[kDeformableIgnoredOffset] = 0xcafebabeu;
+            words[kDeformableIgnoredOffset + 1u] = kGuardAfter;
+
+            auto *constants = reinterpret_cast<std::uint32_t *>(
+                static_cast<std::uint8_t *>(mapped) +
+                deformable_constant_offset);
+            constants[0] = 0x3e800000u;
+            constants[1] = 0xbf000000u;
+            constants[2] = 0x3f800000u;
+            constants[7] = 1u;
+            constants[15] = 0x3f000000u;
+            constants[16] = static_cast<std::uint32_t>(
+                kDeformablePositionOffset * sizeof(std::uint32_t));
+            constants[17] = static_cast<std::uint32_t>(
+                kDeformableMotionOffset * sizeof(std::uint32_t));
+            constants[22] = static_cast<std::uint32_t>(
+                kDeformableFlagsOffset * sizeof(std::uint32_t));
+        } else if (force_fixture_mode) {
             words[0] = static_cast<std::uint32_t>(
                 kForceOutputOffset * sizeof(std::uint32_t));
             words[1] = 1u;
@@ -825,9 +1081,11 @@ DeviceResult run_device(
         }
 
         const std::uint32_t binding_count =
-            selected_texture_mode || density_fixture_mode || force_fixture_mode
+            selected_texture_mode || density_fixture_mode ||
+                    force_fixture_mode || collision_fixture_mode
                 ? 4u
-                : ptx_oracle_mode || constant_fixture_mode
+                : ptx_oracle_mode || constant_fixture_mode ||
+                          deformable_fixture_mode || solver_fixture_mode
                     ? 3u
                     : kernel_fixture_mode || reorder_fixture_mode ? 2u : 1u;
         std::array<VkDescriptorSetLayoutBinding, 4> bindings = {};
@@ -887,7 +1145,27 @@ DeviceResult run_device(
                 0,
                 kBufferBytes,
             };
-            if ((density_fixture_mode || force_fixture_mode) &&
+            if (collision_fixture_mode && binding_index == 2u) {
+                descriptor_buffer_infos[binding_index].offset =
+                    collision_constant_offset;
+                descriptor_buffer_infos[binding_index].range =
+                    kCollisionConstantBytes;
+            } else if (collision_fixture_mode && binding_index == 3u) {
+                descriptor_buffer_infos[binding_index].offset =
+                    collision_texture_metadata_offset;
+                descriptor_buffer_infos[binding_index].range =
+                    kCollisionTextureMetadataBytes;
+            } else if (solver_fixture_mode && binding_index == 2u) {
+                descriptor_buffer_infos[binding_index].offset =
+                    solver_constant_offset;
+                descriptor_buffer_infos[binding_index].range =
+                    kSolverConstantBytes;
+            } else if (deformable_fixture_mode && binding_index == 2u) {
+                descriptor_buffer_infos[binding_index].offset =
+                    deformable_constant_offset;
+                descriptor_buffer_infos[binding_index].range =
+                    kDeformableConstantBytes;
+            } else if ((density_fixture_mode || force_fixture_mode) &&
                 binding_index == 2u) {
                 descriptor_buffer_infos[binding_index].offset =
                     density_constant_offset;
@@ -1085,7 +1363,140 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        if (force_fixture_mode) {
+        if (collision_fixture_mode) {
+            std::copy_n(
+                words + kCollisionOutputPositionOffset,
+                result.collision_position.size(),
+                result.collision_position.begin());
+            std::copy_n(
+                words + kCollisionOutputMotionOffset,
+                result.collision_motion.size(),
+                result.collision_motion.begin());
+            const std::array<std::size_t, 4> scalar_offsets = {
+                kCollisionScalar48Offset,
+                kCollisionScalar52Offset,
+                kCollisionScalar56Offset,
+                kCollisionScalar60Offset,
+            };
+            for (std::size_t index = 0u;
+                 index < scalar_offsets.size();
+                 ++index) {
+                result.collision_scalars[index] = words[scalar_offsets[index]];
+            }
+            const auto guards_match =
+                [&](std::size_t offset, std::size_t count) {
+                    return words[offset - 1u] == kGuardBefore &&
+                        words[offset + count] == kGuardAfter;
+                };
+            result.collision_guards_intact =
+                guards_match(kCollisionBatchOffset, 2u) &&
+                guards_match(kCollisionInputPositionOffset, 4u) &&
+                guards_match(kCollisionInputMotionOffset, 4u) &&
+                guards_match(kCollisionOutput8Offset, 4u) &&
+                guards_match(kCollisionOutput12Offset, 4u) &&
+                guards_match(kCollisionOutput20Offset, 1u) &&
+                guards_match(kCollisionFlagsOffset, 1u) &&
+                guards_match(kCollisionOutputPositionOffset, 4u) &&
+                guards_match(kCollisionOutputMotionOffset, 4u) &&
+                guards_match(kCollisionVector40Offset, 4u) &&
+                guards_match(kCollisionVector44Offset, 4u) &&
+                guards_match(kCollisionScalar48Offset, 1u) &&
+                guards_match(kCollisionScalar52Offset, 1u) &&
+                guards_match(kCollisionScalar56Offset, 1u) &&
+                guards_match(kCollisionScalar60Offset, 1u) &&
+                guards_match(kCollisionVector64Offset, 4u) &&
+                guards_match(kCollisionActiveOffset, 1u);
+            const std::array<std::uint32_t, 4> zero_vector = {};
+            result.pass =
+                result.collision_position == kExpectedCollisionPosition &&
+                result.collision_motion == kExpectedCollisionMotion &&
+                result.collision_scalars == kExpectedCollisionScalars &&
+                std::equal(
+                    words + kCollisionOutput8Offset,
+                    words + kCollisionOutput8Offset + 4u,
+                    zero_vector.begin()) &&
+                std::equal(
+                    words + kCollisionOutput12Offset,
+                    words + kCollisionOutput12Offset + 4u,
+                    zero_vector.begin()) &&
+                words[kCollisionOutput20Offset] == 0xbf800000u &&
+                words[kCollisionFlagsOffset] == 0u &&
+                std::equal(
+                    words + kCollisionVector40Offset,
+                    words + kCollisionVector40Offset + 4u,
+                    zero_vector.begin()) &&
+                std::equal(
+                    words + kCollisionVector44Offset,
+                    words + kCollisionVector44Offset + 4u,
+                    zero_vector.begin()) &&
+                std::equal(
+                    words + kCollisionVector64Offset,
+                    words + kCollisionVector64Offset + 4u,
+                    zero_vector.begin()) &&
+                words[kCollisionActiveOffset] == 0u &&
+                result.collision_guards_intact;
+        } else if (solver_fixture_mode) {
+            std::copy_n(
+                words + kSolverAOffset,
+                result.solver_a.size(),
+                result.solver_a.begin());
+            std::copy_n(
+                words + kSolverPositionOffset,
+                result.solver_position.size(),
+                result.solver_position.begin());
+            std::copy_n(
+                words + kSolverOutputOffset,
+                result.solver_output.size(),
+                result.solver_output.begin());
+            const auto guards_match =
+                [&](std::size_t offset, std::size_t count) {
+                    return words[offset - 1u] == kGuardBefore &&
+                        words[offset + count] == kGuardAfter;
+                };
+            result.solver_guards_intact =
+                guards_match(kSolverAOffset, 4u) &&
+                guards_match(kSolverBOffset, 4u) &&
+                guards_match(kSolverCOffset, 4u) &&
+                guards_match(kSolverPositionOffset, 4u) &&
+                guards_match(kSolverFlagsOffset, 1u) &&
+                guards_match(kSolverPackedOffset, 1u) &&
+                guards_match(kSolverOutputOffset, 16u);
+            result.pass =
+                result.solver_a == kExpectedSolverA &&
+                result.solver_position == kExpectedSolverPosition &&
+                result.solver_output == kExpectedSolverOutput &&
+                words[kSolverFlagsOffset] == 0x00000400u &&
+                words[kSolverPackedOffset] == 0xabcdef01u &&
+                result.solver_guards_intact;
+        } else if (deformable_fixture_mode) {
+            std::copy_n(
+                words + kDeformablePositionOffset,
+                result.deformable_position.size(),
+                result.deformable_position.begin());
+            std::copy_n(
+                words + kDeformableMotionOffset,
+                result.deformable_motion.size(),
+                result.deformable_motion.begin());
+            result.deformable_flags = words[kDeformableFlagsOffset];
+            result.deformable_guards_intact =
+                words[kDeformablePackedBaseOffset] == kGuardBefore &&
+                words[kDeformablePackedBaseOffset + 1u] == 0xfeedfaceu &&
+                words[kDeformablePackedBaseOffset + 2u] == kGuardAfter &&
+                words[kDeformablePositionOffset - 1u] == kGuardBefore &&
+                words[kDeformablePositionOffset + 4u] == kGuardAfter &&
+                words[kDeformableMotionOffset - 1u] == kGuardBefore &&
+                words[kDeformableMotionOffset + 4u] == kGuardAfter &&
+                words[kDeformableFlagsOffset - 1u] == kGuardBefore &&
+                words[kDeformableFlagsOffset + 1u] == kGuardAfter &&
+                words[kDeformableIgnoredOffset - 1u] == kGuardBefore &&
+                words[kDeformableIgnoredOffset] == 0xcafebabeu &&
+                words[kDeformableIgnoredOffset + 1u] == kGuardAfter;
+            result.pass =
+                result.deformable_position == kExpectedDeformablePosition &&
+                result.deformable_motion == kExpectedDeformableMotion &&
+                result.deformable_flags == 0u &&
+                result.deformable_guards_intact;
+        } else if (force_fixture_mode) {
             std::copy_n(
                 words + kForceOutputOffset,
                 result.force.size(),
@@ -1224,21 +1635,27 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = force_fixture_mode
-                ? "force kernel fixture result mismatch"
-                : density_fixture_mode
-                    ? "density kernel fixture result mismatch"
-                    : reorder_fixture_mode
-                        ? "reorder kernel fixture result mismatch"
-                        : kernel_fixture_mode
-                            ? "selected kernel fixture result mismatch"
-                            : constant_fixture_mode
-                                ? "constant kernel fixture result mismatch"
-                                : selected_texture_mode
-                                    ? "selected texture kernel fixture result mismatch"
-                                    : oracle_mode
-                                        ? "standalone oracle result mismatch"
-                                        : "integer/global-memory result mismatch";
+            result.error = collision_fixture_mode
+                ? "deformable collision fixture result mismatch"
+                : solver_fixture_mode
+                    ? "deformable solver fixture result mismatch"
+                    : deformable_fixture_mode
+                        ? "deformable update fixture result mismatch"
+                        : force_fixture_mode
+                            ? "force kernel fixture result mismatch"
+                            : density_fixture_mode
+                                ? "density kernel fixture result mismatch"
+                                : reorder_fixture_mode
+                                    ? "reorder kernel fixture result mismatch"
+                                    : kernel_fixture_mode
+                                        ? "selected kernel fixture result mismatch"
+                                        : constant_fixture_mode
+                                            ? "constant kernel fixture result mismatch"
+                                            : selected_texture_mode
+                                                ? "selected texture kernel fixture result mismatch"
+                                                : oracle_mode
+                                                    ? "standalone oracle result mismatch"
+                                                    : "integer/global-memory result mismatch";
         }
     } catch (const std::exception &error) {
         result.error = error.what();
@@ -1308,6 +1725,12 @@ int main(int argc, char **argv)
         argc == 4 && std::string(argv[2]) == "--density-fixture";
     const bool force_fixture_mode =
         argc == 4 && std::string(argv[2]) == "--force-fixture";
+    const bool deformable_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--deformable-fixture";
+    const bool solver_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--deformable-solver-fixture";
+    const bool collision_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--deformable-collision-fixture";
     const bool incomplete_named_mode =
         argc == 3 &&
         (std::string(argv[2]) == "--ptx-oracle" ||
@@ -1317,12 +1740,16 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--texture-fixture" ||
          std::string(argv[2]) == "--texture-float-fixture" ||
          std::string(argv[2]) == "--density-fixture" ||
-         std::string(argv[2]) == "--force-fixture");
+         std::string(argv[2]) == "--force-fixture" ||
+         std::string(argv[2]) == "--deformable-fixture" ||
+         std::string(argv[2]) == "--deformable-solver-fixture" ||
+         std::string(argv[2]) == "--deformable-collision-fixture");
     if ((argc != 2 && argc != 3 &&
          !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
          !constant_fixture_mode && !texture_fixture_mode &&
          !texture_float_fixture_mode && !density_fixture_mode &&
-         !force_fixture_mode) ||
+         !force_fixture_mode && !deformable_fixture_mode &&
+         !solver_fixture_mode && !collision_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
                   << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n"
@@ -1332,7 +1759,10 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --texture-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --texture-float-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --density-fixture <generated.spv>\n"
-                  << "       vulkan-memory-smoke <output.json> --force-fixture <generated.spv>\n";
+                  << "       vulkan-memory-smoke <output.json> --force-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --deformable-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --deformable-solver-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --deformable-collision-fixture <generated.spv>\n";
         return 2;
     }
 
@@ -1379,19 +1809,22 @@ int main(int argc, char **argv)
         oracle_mode || kernel_fixture_mode || reorder_fixture_mode ||
         constant_fixture_mode || texture_fixture_mode ||
         texture_float_fixture_mode || density_fixture_mode ||
-        force_fixture_mode;
+        force_fixture_mode || deformable_fixture_mode || solver_fixture_mode ||
+        collision_fixture_mode;
     const bool require_memory_result =
         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
         !constant_fixture_mode && !texture_fixture_mode &&
         !texture_float_fixture_mode && !density_fixture_mode &&
-        !force_fixture_mode;
+        !force_fixture_mode && !deformable_fixture_mode &&
+        !solver_fixture_mode && !collision_fixture_mode;
     std::vector<std::uint32_t> shader;
     if (shader_input_mode) {
         const char *shader_path =
             ptx_oracle_mode || kernel_fixture_mode || reorder_fixture_mode ||
                     constant_fixture_mode || texture_fixture_mode ||
                     texture_float_fixture_mode || density_fixture_mode ||
-                    force_fixture_mode
+                    force_fixture_mode || deformable_fixture_mode ||
+                    solver_fixture_mode || collision_fixture_mode
                 ? argv[3]
                 : argv[2];
         std::ifstream shader_input(shader_path, std::ios::binary | std::ios::ate);
@@ -1435,7 +1868,10 @@ int main(int argc, char **argv)
             texture_fixture_mode,
             texture_float_fixture_mode,
             density_fixture_mode,
-            force_fixture_mode);
+            force_fixture_mode,
+            deformable_fixture_mode,
+            solver_fixture_mode,
+            collision_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -1450,7 +1886,10 @@ int main(int argc, char **argv)
            << "  \"schema_version\": 1,\n"
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
            << "  \"test\": \""
-           << (force_fixture_mode ? "force_kernel_fixture" :
+           << (collision_fixture_mode ? "deformable_collision_fixture" :
+               solver_fixture_mode ? "deformable_solver_fixture" :
+               deformable_fixture_mode ? "deformable_update_fixture" :
+               force_fixture_mode ? "force_kernel_fixture" :
                density_fixture_mode ? "density_kernel_fixture" :
                reorder_fixture_mode ? "reorder_kernel_fixture" :
                kernel_fixture_mode ? "selected_kernel_fixture" :
@@ -1461,7 +1900,34 @@ int main(int argc, char **argv)
                oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory")
            << "\",\n"
            << "  \"buffer_bytes\": " << kBufferBytes << ",\n";
-    if (force_fixture_mode) {
+    if (collision_fixture_mode) {
+        output << "  \"kernel\": \"KernelDeformableUberCollision\",\n"
+               << "  \"particle_count\": 1,\n"
+               << "  \"shape_count\": 0,\n"
+               << "  \"static_shared_bytes\": 4097,\n"
+               << "  \"expected_collision_scalar_bits\": ["
+                  "\"0xbf800000\", \"0x00000000\", "
+                  "\"0x0000ffff\", \"0x00000000\"],\n";
+    } else if (solver_fixture_mode) {
+        output << "  \"kernel\": \"KernelDeformableUberSolver<512>\",\n"
+               << "  \"particle_count\": 1,\n"
+               << "  \"iteration_count\": 0,\n"
+               << "  \"dynamic_shared_bytes\": 7072,\n";
+    } else if (deformable_fixture_mode) {
+        output << "  \"kernel\": \"PxgCudaDeformableUpdate\",\n"
+               << "  \"instance_count\": 1,\n"
+               << "  \"acceleration_bits\": [\"0x3e800000\", "
+                  "\"0xbf000000\", \"0x3f800000\"],\n"
+               << "  \"time_step_bits\": \"0x3f000000\",\n"
+               << "  \"input_position_bits\": [\"0x3f800000\", "
+                  "\"0x40000000\", \"0x40400000\", \"0x00000000\"],\n"
+               << "  \"input_motion_bits\": [\"0x40800000\", "
+                  "\"0x40a00000\", \"0x40c00000\", \"0x40e00000\"],\n"
+               << "  \"input_flags\": \"0x00000014\",\n"
+               << "  \"expected_motion_bits\": [\"0x40440000\", "
+                  "\"0x408c0000\", \"0x40c80000\", \"0x40e00000\"],\n"
+               << "  \"expected_flags\": \"0x00000000\",\n";
+    } else if (force_fixture_mode) {
         output << "  \"kernel\": \"KernelFluidForce\",\n"
                << "  \"position_bits\": [\"0x3f800000\", \"0x40000000\", "
                   "\"0x40400000\", \"0x00000000\"],\n"
@@ -1531,7 +1997,84 @@ int main(int argc, char **argv)
                << (result.device_memory_local ? "true" : "false") << ",\n"
                << "      \"staging_host_coherent\": "
                << (result.staging_coherent ? "true" : "false") << ",\n";
-        if (force_fixture_mode) {
+        if (collision_fixture_mode) {
+            output << "      \"output_position_bits\": [";
+            for (std::size_t component = 0u;
+                 component < result.collision_position.size();
+                 ++component) {
+                output << (component == 0u ? "" : ", ")
+                       << "\"" << hex32(result.collision_position[component])
+                       << "\"";
+            }
+            output << "],\n"
+                   << "      \"output_motion_bits\": [";
+            for (std::size_t component = 0u;
+                 component < result.collision_motion.size();
+                 ++component) {
+                output << (component == 0u ? "" : ", ")
+                       << "\"" << hex32(result.collision_motion[component])
+                       << "\"";
+            }
+            output << "],\n"
+                   << "      \"collision_scalar_bits\": [";
+            for (std::size_t component = 0u;
+                 component < result.collision_scalars.size();
+                 ++component) {
+                output << (component == 0u ? "" : ", ")
+                       << "\"" << hex32(result.collision_scalars[component])
+                       << "\"";
+            }
+            output << "],\n"
+                   << "      \"guards_intact\": "
+                   << (result.collision_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (solver_fixture_mode) {
+            output << "      \"output_bits\": [";
+            for (std::size_t component = 0u;
+                 component < result.solver_output.size();
+                 ++component) {
+                output << (component == 0u ? "" : ", ")
+                       << "\"" << hex32(result.solver_output[component])
+                       << "\"";
+            }
+            output << "],\n"
+                   << "      \"position_bits\": [";
+            for (std::size_t component = 0u;
+                 component < result.solver_position.size();
+                 ++component) {
+                output << (component == 0u ? "" : ", ")
+                       << "\"" << hex32(result.solver_position[component])
+                       << "\"";
+            }
+            output << "],\n"
+                   << "      \"guards_intact\": "
+                   << (result.solver_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (deformable_fixture_mode) {
+            output << "      \"output_position_bits\": [";
+            for (std::size_t component = 0u;
+                 component < result.deformable_position.size();
+                 ++component) {
+                output << (component == 0u ? "" : ", ")
+                       << "\"" << hex32(result.deformable_position[component])
+                       << "\"";
+            }
+            output << "],\n"
+                   << "      \"output_motion_bits\": [";
+            for (std::size_t component = 0u;
+                 component < result.deformable_motion.size();
+                 ++component) {
+                output << (component == 0u ? "" : ", ")
+                       << "\"" << hex32(result.deformable_motion[component])
+                       << "\"";
+            }
+            output << "],\n"
+                   << "      \"output_flags\": \""
+                   << hex32(result.deformable_flags) << "\",\n"
+                   << "      \"guards_intact\": "
+                   << (result.deformable_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (force_fixture_mode) {
             output << "      \"force_bits\": [";
             for (std::size_t component = 0u;
                  component < result.force.size();

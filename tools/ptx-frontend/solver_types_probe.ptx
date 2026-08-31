@@ -1,0 +1,34 @@
+.version 4.1
+.target sm_52
+.address_size 32
+
+.visible .entry solver_types_probe(
+    .param .u32 solver_types_probe_param_0,
+    .param .s8 solver_types_probe_param_1
+)
+{
+    .reg .pred %p<4>;
+    .reg .s16 %rs<8>;
+    .reg .s32 %r<12>;
+    .reg .f32 %f<6>;
+
+    ld.param.u32 %r1, [solver_types_probe_param_0];
+    ld.param.s8 %r2, [solver_types_probe_param_1];
+    ld.global.v4.u16 {%rs1, %rs2, %rs3, %rs4}, [%r1];
+    mov.u16 %rs5, 65535;
+    cvt.s32.s16 %r3, %rs5;
+    cvt.u16.u32 %rs6, %r2;
+    and.b16 %rs7, %rs1, %rs2;
+    or.b16 %rs7, %rs7, %rs3;
+    setp.lt.s16 %p1, %rs5, %rs6;
+    setp.eq.s16 %p2, %rs1, %rs2;
+    or.pred %p3, %p1, %p2;
+    mul.wide.s16 %r4, %rs5, %rs6;
+    mov.f32 %f1, 0f40800000;
+    neg.ftz.f32 %f2, %f1;
+    abs.ftz.f32 %f3, %f2;
+    rsqrt.approx.ftz.f32 %f4, %f1;
+    selp.b32 %r5, %r3, %r4, %p3;
+    st.global.v4.u32 [%r1], {%r2, %r3, %r4, %r5};
+    ret;
+}

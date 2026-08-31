@@ -19,6 +19,9 @@ VULKAN_REPORTS = {
     "fluid_reorder": "fluid-reorder.json",
     "fluid_density": "fluid-density.json",
     "fluid_force": "fluid-force.json",
+    "deformable_update": "deformable-update.json",
+    "deformable_solver": "deformable-solver.json",
+    "deformable_collision": "deformable-collision.json",
 }
 
 
@@ -61,6 +64,21 @@ def parse_args() -> argparse.Namespace:
         "--cuda-physx", type=Path, help="generated cuda-physx-fixture result"
     )
     parser.add_argument(
+        "--cuda-deformable",
+        type=Path,
+        help="generated cuda-deformable-fixture result",
+    )
+    parser.add_argument(
+        "--cuda-deformable-solver",
+        type=Path,
+        help="generated cuda-deformable-solver-fixture result",
+    )
+    parser.add_argument(
+        "--cuda-deformable-collision",
+        type=Path,
+        help="generated cuda-deformable-collision-fixture result",
+    )
+    parser.add_argument(
         "--base",
         type=Path,
         help="existing bundle whose native CUDA reports and profile are retained",
@@ -90,10 +108,33 @@ def main() -> int:
         if args.cuda_physx
         else base.get("cuda", {}).get("physx_fluid_pipeline") if base else None
     )
-    if cuda_oracle is None or cuda_physx is None:
+    cuda_deformable = (
+        load_json(args.cuda_deformable.resolve())
+        if args.cuda_deformable
+        else base.get("cuda", {}).get("deformable_update") if base else None
+    )
+    cuda_deformable_solver = (
+        load_json(args.cuda_deformable_solver.resolve())
+        if args.cuda_deformable_solver
+        else base.get("cuda", {}).get("deformable_solver") if base else None
+    )
+    cuda_deformable_collision = (
+        load_json(args.cuda_deformable_collision.resolve())
+        if args.cuda_deformable_collision
+        else base.get("cuda", {}).get("deformable_collision") if base else None
+    )
+    if (
+        cuda_oracle is None
+        or cuda_physx is None
+        or cuda_deformable is None
+        or cuda_deformable_solver is None
+        or cuda_deformable_collision is None
+    ):
         raise SystemExit(
-            "a new bundle requires --cuda-oracle and --cuda-physx; "
-            "otherwise supply --base"
+            "a new bundle requires --cuda-oracle, --cuda-physx, "
+            "--cuda-deformable, --cuda-deformable-solver, and "
+            "--cuda-deformable-collision; otherwise supply --base containing "
+            "all five"
         )
 
     profile = base.get("profile", args.profile) if base else args.profile
@@ -103,6 +144,9 @@ def main() -> int:
         "cuda": {
             "semantic_oracle": cuda_oracle,
             "physx_fluid_pipeline": cuda_physx,
+            "deformable_update": cuda_deformable,
+            "deformable_solver": cuda_deformable_solver,
+            "deformable_collision": cuda_deformable_collision,
         },
         "vulkan": load_vulkan_reports(args.vulkan_results.resolve()),
     }

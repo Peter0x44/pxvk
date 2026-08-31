@@ -11,6 +11,7 @@
 #include <map>
 #include <stdexcept>
 #include <limits>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -169,7 +170,14 @@ public:
             return {type, found->second};
         }
         const std::uint32_t result = allocate_id();
-        emit(declarations_, SpvOpConstant, {type_id(type), result, bits});
+        if (type == ValueType::boolean) {
+            emit(
+                declarations_,
+                bits == 0u ? SpvOpConstantFalse : SpvOpConstantTrue,
+                {type_id(type), result});
+        } else {
+            emit(declarations_, SpvOpConstant, {type_id(type), result, bits});
+        }
         constants_.emplace(key, result);
         return {type, result};
     }
@@ -450,6 +458,21 @@ public:
             {shared_, index.id});
         function_instruction(SpvOpStore, {pointer.id, stored.id});
     }
+    void atomic_exchange_shared(Value word_index, Value value)
+    {
+        const Value index = coerce(word_index, ValueType::u32);
+        const Value stored = coerce(value, ValueType::u32);
+        const Value pointer = instruction_with_type(
+            SpvOpAccessChain,
+            type_ptr_workgroup_u32_,
+            {shared_, index.id});
+        const Value scope = constant(ValueType::u32, 2u);
+        const Value semantics = constant(ValueType::u32, 0x108u);
+        instruction(
+            SpvOpAtomicExchange,
+            ValueType::u32,
+            {pointer.id, scope.id, semantics.id, stored.id});
+    }
 
     Value load_shared(Value word_index)
     {
@@ -675,7 +698,10 @@ private:
 
 ValueType parse_type(const std::string &type)
 {
-    if (type == ".u32" || type == ".b32") return ValueType::u32;
+    if (type == ".u32" || type == ".b32" ||
+        type == ".u16" || type == ".b16" || type == ".s16") {
+        return ValueType::u32;
+    }
     if (type == ".s32") return ValueType::s32;
     if (type == ".f32") return ValueType::f32;
     if (type == ".pred") return ValueType::boolean;
@@ -1277,14 +1303,16 @@ public:
             local_ = module_.function_u32_array(
                 entry_.at("static_local_bytes").get<std::uint32_t>());
         }
+        if (has_barrier()) {
+            lower_barrier_cfg();
+            module_.end_function();
+            return;
+        }
         const std::uint32_t pc = module_.function_variable(ValueType::u32);
         const Json &blocks = entry_.at("cfg").at("blocks");
         const std::uint32_t exit_pc = static_cast<std::uint32_t>(blocks.size());
-        barrier_prelude_ = has_barrier();
-        const Value initial_pc = barrier_prelude_
-            ? lower_uniform_barrier_prelude(exit_pc)
-            : module_.constant(ValueType::u32, 0u);
-        module_.store_variable(pc, initial_pc, ValueType::u32);
+        module_.store_variable(
+            pc, module_.constant(ValueType::u32, 0u), ValueType::u32);
 
         const std::uint32_t loop_header = module_.allocate_id();
         const std::uint32_t dispatch = module_.allocate_id();
@@ -1363,6 +1391,7 @@ private:
     struct RegisterVariable {
         ValueType type;
         std::uint32_t id;
+        std::uint32_t bit_width;
     };
     struct StorageSymbol {
         std::uint32_t offset;
@@ -1402,95 +1431,160 @@ private:
         return false;
     }
 
-    void lower_block_instructions(std::uint32_t block, bool skip_terminal)
-    {
-        const Json &description = entry_.at("cfg").at("blocks").at(block);
-        const std::size_t begin =
-            description.at("instruction_begin").get<std::size_t>();
-        std::size_t end =
-            description.at("instruction_end").get<std::size_t>();
-        if (skip_terminal) {
-            --end;
-        }
-        for (std::size_t index = begin; index < end; ++index) {
-            lower_instruction(entry_.at("instructions").at(index));
-        }
-    }
-
-    Value lower_uniform_barrier_prelude(std::uint32_t exit_pc)
+    void lower_barrier_cfg()
     {
         const Json &blocks = entry_.at("cfg").at("blocks");
         const Json &instructions = entry_.at("instructions");
-        if (blocks.size() < 5u ||
-            instructions.at(
-                blocks.at(4).at("instruction_begin").get<std::size_t>())
-                    .at("variant").get<std::string>() != "bar.sync") {
-            throw std::runtime_error(
-                "selected-kernel barrier CFG is outside the finite prelude shape");
+        const std::uint32_t exit_pc =
+            static_cast<std::uint32_t>(blocks.size());
+        const std::uint32_t pc = module_.function_variable(ValueType::u32);
+        const std::uint32_t phase_done =
+            module_.function_variable(ValueType::boolean);
+        const std::uint32_t finished =
+            module_.function_variable(ValueType::boolean);
+        module_.store_variable(
+            pc, module_.constant(ValueType::u32, 0u), ValueType::u32);
+        module_.store_variable(
+            finished,
+            module_.constant(ValueType::boolean, 0u),
+            ValueType::boolean);
+
+        const std::uint32_t outer_header = module_.allocate_id();
+        const std::uint32_t inner_header = module_.allocate_id();
+        const std::uint32_t dispatch = module_.allocate_id();
+        const std::uint32_t switch_merge = module_.allocate_id();
+        const std::uint32_t inner_continue = module_.allocate_id();
+        const std::uint32_t inner_merge = module_.allocate_id();
+        const std::uint32_t barrier_label = module_.allocate_id();
+        const std::uint32_t barrier_merge = module_.allocate_id();
+        const std::uint32_t outer_continue = module_.allocate_id();
+        const std::uint32_t outer_merge = module_.allocate_id();
+        const std::uint32_t invalid_case = module_.allocate_id();
+        std::vector<std::uint32_t> case_labels(blocks.size());
+        for (std::uint32_t &label : case_labels) {
+            label = module_.allocate_id();
         }
 
-        lower_block_instructions(0u, true);
-        const std::size_t block0_end =
-            blocks.at(0).at("instruction_end").get<std::size_t>();
-        const Value inactive =
-            predicate_value(
-                instructions.at(block0_end - 1u)
-                    .at("predicate").get<std::string>());
-        const std::uint32_t active_label = module_.allocate_id();
-        const std::uint32_t active_merge = module_.allocate_id();
+        module_.function_instruction(SpvOpBranch, {outer_header});
+        module_.function_instruction(SpvOpLabel, {outer_header});
+        module_.function_instruction(
+            SpvOpLoopMerge,
+            {outer_merge, outer_continue, SpvLoopControlMaskNone});
+        module_.function_instruction(SpvOpBranch, {inner_header});
+        module_.function_instruction(SpvOpLabel, {inner_header});
+        module_.function_instruction(
+            SpvOpLoopMerge,
+            {inner_merge, inner_continue, SpvLoopControlMaskNone});
+        module_.function_instruction(SpvOpBranch, {dispatch});
+        module_.function_instruction(SpvOpLabel, {dispatch});
+        const Value selector = module_.load_variable(pc, ValueType::u32);
         module_.function_instruction(
             SpvOpSelectionMerge,
-            {active_merge, SpvSelectionControlMaskNone});
+            {switch_merge, SpvSelectionControlMaskNone});
+        std::vector<std::uint32_t> switch_operands = {
+            selector.id, invalid_case,
+        };
+        for (std::uint32_t block = 0u; block < case_labels.size(); ++block) {
+            switch_operands.push_back(block);
+            switch_operands.push_back(case_labels[block]);
+        }
+        module_.function_instruction(SpvOpSwitch, switch_operands);
+
+        for (std::uint32_t block = 0u; block < case_labels.size(); ++block) {
+            module_.function_instruction(SpvOpLabel, {case_labels[block]});
+            const Json &description = blocks.at(block);
+            const std::size_t begin =
+                description.at("instruction_begin").get<std::size_t>();
+            const std::size_t end =
+                description.at("instruction_end").get<std::size_t>();
+            for (std::size_t index = begin; index < end; ++index) {
+                const Json &instruction = instructions.at(index);
+                const std::string base =
+                    instruction.at("base").get<std::string>();
+                if (base != "bra" && base != "ret" && base != "bar") {
+                    lower_instruction(instruction);
+                }
+            }
+            const Json &terminal = instructions.at(end - 1u);
+            const std::string terminal_base =
+                terminal.at("base").get<std::string>();
+            const bool exits =
+                terminal_base == "ret" ||
+                description.at("successors").empty();
+            module_.store_variable(
+                pc, next_block(block, terminal, exit_pc), ValueType::u32);
+            module_.store_variable(
+                finished,
+                module_.constant(ValueType::boolean, exits ? 1u : 0u),
+                ValueType::boolean);
+            module_.store_variable(
+                phase_done,
+                module_.constant(
+                    ValueType::boolean,
+                    exits || terminal_base == "bar" ? 1u : 0u),
+                ValueType::boolean);
+            module_.function_instruction(SpvOpBranch, {switch_merge});
+        }
+
+        module_.function_instruction(SpvOpLabel, {invalid_case});
+        module_.store_variable(
+            pc, module_.constant(ValueType::u32, exit_pc), ValueType::u32);
+        module_.store_variable(
+            finished,
+            module_.constant(ValueType::boolean, 1u),
+            ValueType::boolean);
+        module_.store_variable(
+            phase_done,
+            module_.constant(ValueType::boolean, 1u),
+            ValueType::boolean);
+        module_.function_instruction(SpvOpBranch, {switch_merge});
+
+        module_.function_instruction(SpvOpLabel, {switch_merge});
+        const Value phase_complete =
+            module_.load_variable(phase_done, ValueType::boolean);
         module_.function_instruction(
             SpvOpBranchConditional,
-            {inactive.id, active_merge, active_label});
-        module_.function_instruction(SpvOpLabel, {active_label});
+            {phase_complete.id, inner_merge, inner_continue});
+        module_.function_instruction(SpvOpLabel, {inner_continue});
+        module_.function_instruction(SpvOpBranch, {inner_header});
+        module_.function_instruction(SpvOpLabel, {inner_merge});
 
-        lower_block_instructions(1u, true);
-        const std::size_t block1_end =
-            blocks.at(1).at("instruction_end").get<std::size_t>();
-        const Value skip_previous =
-            predicate_value(
-                instructions.at(block1_end - 1u)
-                    .at("predicate").get<std::string>());
-        const std::uint32_t previous_label = module_.allocate_id();
-        const std::uint32_t previous_merge = module_.allocate_id();
+        const Value done =
+            module_.load_variable(finished, ValueType::boolean);
         module_.function_instruction(
             SpvOpSelectionMerge,
-            {previous_merge, SpvSelectionControlMaskNone});
+            {barrier_merge, SpvSelectionControlMaskNone});
         module_.function_instruction(
             SpvOpBranchConditional,
-            {skip_previous.id, previous_merge, previous_label});
-        module_.function_instruction(SpvOpLabel, {previous_label});
-        lower_block_instructions(2u, true);
-        lower_block_instructions(3u, false);
-        module_.function_instruction(SpvOpBranch, {previous_merge});
-        module_.function_instruction(SpvOpLabel, {previous_merge});
-        module_.function_instruction(SpvOpBranch, {active_merge});
-        module_.function_instruction(SpvOpLabel, {active_merge});
-
+            {done.id, barrier_merge, barrier_label});
+        module_.function_instruction(SpvOpLabel, {barrier_label});
         const Value workgroup = module_.constant(ValueType::u32, 2u);
         const Value semantics = module_.constant(ValueType::u32, 0x108u);
         module_.function_instruction(
             SpvOpControlBarrier,
             {workgroup.id, workgroup.id, semantics.id});
-
-        const std::size_t barrier_end =
-            blocks.at(4).at("instruction_end").get<std::size_t>();
-        return next_block(
-            4u, instructions.at(barrier_end - 1u), exit_pc);
+        module_.function_instruction(SpvOpBranch, {barrier_merge});
+        module_.function_instruction(SpvOpLabel, {barrier_merge});
+        module_.function_instruction(
+            SpvOpBranchConditional,
+            {done.id, outer_merge, outer_continue});
+        module_.function_instruction(SpvOpLabel, {outer_continue});
+        module_.function_instruction(SpvOpBranch, {outer_header});
+        module_.function_instruction(SpvOpLabel, {outer_merge});
     }
 
     void declare_registers()
     {
-        std::map<std::string, bool> referenced;
+        std::set<std::string> referenced;
         for (const Json &instruction : entry_.at("instructions")) {
             for (const char *field : {"definitions", "uses"}) {
                 for (const Json &name : instruction.at(field)) {
-                    referenced.emplace(name.get<std::string>(), true);
+                    referenced.emplace(name.get<std::string>());
                 }
             }
         }
+
+        std::map<std::string, std::pair<ValueType, std::uint32_t>> descriptors;
         for (const Json &bank : entry_.at("register_banks")) {
             const std::string prefix = bank.at("prefix").get<std::string>();
             const std::string type_name = bank.at("type").get<std::string>();
@@ -1498,27 +1592,182 @@ private:
             const bool supported =
                 type_name == ".pred" || type_name == ".u32" ||
                 type_name == ".s32" || type_name == ".b32" ||
-                type_name == ".f32";
-            bool bank_referenced = false;
-            for (std::size_t index = 0u; index < count && !bank_referenced; ++index) {
+                type_name == ".u16" || type_name == ".s16" ||
+                type_name == ".b16" || type_name == ".f32";
+            std::vector<std::string> names;
+            for (std::size_t index = 0u; index < count; ++index) {
                 const std::string name =
                     count == 1u ? prefix : prefix + std::to_string(index);
-                bank_referenced = referenced.find(name) != referenced.end();
+                if (referenced.find(name) != referenced.end()) {
+                    names.push_back(name);
+                }
             }
-            if (!supported && !bank_referenced) {
+            if (names.empty()) {
                 continue;
+            }
+            if (!supported) {
+                parse_type(type_name);
             }
             const ValueType type = parse_type(type_name);
-            if (count == 1u) {
-                variables_.emplace(
-                    prefix, RegisterVariable{type, module_.function_variable(type)});
-                continue;
+            const std::uint32_t bit_width =
+                type_name == ".u16" || type_name == ".s16" ||
+                        type_name == ".b16"
+                    ? 16u
+                    : 32u;
+            for (const std::string &name : names) {
+                descriptors.emplace(
+                    name, std::make_pair(type, bit_width));
             }
-            for (std::size_t index = 0u; index < count; ++index) {
-                variables_.emplace(
-                    prefix + std::to_string(index),
-                    RegisterVariable{type, module_.function_variable(type)});
+        }
+
+        const Json &blocks = entry_.at("cfg").at("blocks");
+        const Json &instructions = entry_.at("instructions");
+        std::vector<std::set<std::string>> block_use(blocks.size());
+        std::vector<std::set<std::string>> block_def(blocks.size());
+        std::vector<std::set<std::string>> live_in(blocks.size());
+        std::vector<std::set<std::string>> live_out(blocks.size());
+        for (std::size_t block = 0u; block < blocks.size(); ++block) {
+            const std::size_t begin =
+                blocks.at(block).at("instruction_begin").get<std::size_t>();
+            const std::size_t end =
+                blocks.at(block).at("instruction_end").get<std::size_t>();
+            for (std::size_t index = begin; index < end; ++index) {
+                for (const Json &name_json : instructions.at(index).at("uses")) {
+                    const std::string name = name_json.get<std::string>();
+                    if (descriptors.find(name) != descriptors.end() &&
+                        block_def[block].find(name) == block_def[block].end()) {
+                        block_use[block].insert(name);
+                    }
+                }
+                for (const Json &name_json :
+                     instructions.at(index).at("definitions")) {
+                    const std::string name = name_json.get<std::string>();
+                    if (descriptors.find(name) != descriptors.end()) {
+                        block_def[block].insert(name);
+                    }
+                }
             }
+        }
+
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (std::size_t reverse = blocks.size(); reverse > 0u; --reverse) {
+                const std::size_t block = reverse - 1u;
+                std::set<std::string> next_out;
+                for (const Json &successor :
+                     blocks.at(block).at("successors")) {
+                    const std::string id = successor.get<std::string>();
+                    if (id.size() < 2u || id.front() != 'b') {
+                        throw std::runtime_error(
+                            "invalid CFG block id '" + id + "'");
+                    }
+                    const std::size_t successor_index =
+                        static_cast<std::size_t>(std::stoul(id.substr(1u)));
+                    next_out.insert(
+                        live_in.at(successor_index).begin(),
+                        live_in.at(successor_index).end());
+                }
+                std::set<std::string> next_in = block_use[block];
+                for (const std::string &name : next_out) {
+                    if (block_def[block].find(name) == block_def[block].end()) {
+                        next_in.insert(name);
+                    }
+                }
+                if (next_out != live_out[block] ||
+                    next_in != live_in[block]) {
+                    live_out[block] = std::move(next_out);
+                    live_in[block] = std::move(next_in);
+                    changed = true;
+                }
+            }
+        }
+
+        std::map<std::string, std::set<std::string>> interference;
+        for (const auto &descriptor : descriptors) {
+            interference.emplace(
+                descriptor.first, std::set<std::string>{});
+        }
+        for (std::size_t block = 0u; block < blocks.size(); ++block) {
+            std::set<std::string> live = live_out[block];
+            const std::size_t begin =
+                blocks.at(block).at("instruction_begin").get<std::size_t>();
+            const std::size_t end =
+                blocks.at(block).at("instruction_end").get<std::size_t>();
+            for (std::size_t reverse = end; reverse > begin; --reverse) {
+                const Json &instruction = instructions.at(reverse - 1u);
+                for (const Json &name_json : instruction.at("definitions")) {
+                    const std::string name = name_json.get<std::string>();
+                    const auto descriptor = descriptors.find(name);
+                    if (descriptor == descriptors.end()) {
+                        continue;
+                    }
+                    for (const std::string &other : live) {
+                        if (other == name ||
+                            descriptors.at(other) != descriptor->second) {
+                            continue;
+                        }
+                        interference[name].insert(other);
+                        interference[other].insert(name);
+                    }
+                }
+                for (const Json &name_json : instruction.at("definitions")) {
+                    live.erase(name_json.get<std::string>());
+                }
+                for (const Json &name_json : instruction.at("uses")) {
+                    const std::string name = name_json.get<std::string>();
+                    if (descriptors.find(name) != descriptors.end()) {
+                        live.insert(name);
+                    }
+                }
+            }
+        }
+
+        std::vector<std::string> order;
+        order.reserve(descriptors.size());
+        for (const auto &descriptor : descriptors) {
+            order.push_back(descriptor.first);
+        }
+        std::sort(
+            order.begin(),
+            order.end(),
+            [&](const std::string &left, const std::string &right) {
+                const std::size_t left_degree = interference[left].size();
+                const std::size_t right_degree = interference[right].size();
+                return left_degree != right_degree
+                    ? left_degree > right_degree
+                    : left < right;
+            });
+
+        std::map<std::string, std::size_t> colors;
+        std::map<
+            std::pair<ValueType, std::uint32_t>,
+            std::vector<std::uint32_t>> slots;
+        for (const std::string &name : order) {
+            std::set<std::size_t> unavailable;
+            for (const std::string &neighbor : interference[name]) {
+                const auto color = colors.find(neighbor);
+                if (color != colors.end()) {
+                    unavailable.insert(color->second);
+                }
+            }
+            std::size_t color = 0u;
+            while (unavailable.find(color) != unavailable.end()) {
+                ++color;
+            }
+            colors.emplace(name, color);
+            const auto descriptor = descriptors.at(name);
+            auto &type_slots = slots[descriptor];
+            while (type_slots.size() <= color) {
+                type_slots.push_back(
+                    module_.function_variable(descriptor.first));
+            }
+            variables_.emplace(
+                name,
+                RegisterVariable{
+                    descriptor.first,
+                    type_slots[color],
+                    descriptor.second});
         }
     }
 
@@ -1548,11 +1797,67 @@ private:
         return module_.load_variable(source.id, source.type);
     }
 
+    Value mask_low_bits(Value value, std::uint32_t bit_width)
+    {
+        const Value bits = module_.coerce(value, ValueType::u32);
+        const std::uint32_t mask =
+            bit_width == 32u ? 0xffffffffu : (1u << bit_width) - 1u;
+        return module_.instruction(
+            SpvOpBitwiseAnd,
+            ValueType::u32,
+            {bits.id, module_.constant(ValueType::u32, mask).id});
+    }
+
+    Value sign_extend(Value value, std::uint32_t bit_width)
+    {
+        const std::uint32_t shift = 32u - bit_width;
+        const Value shifted = module_.instruction(
+            SpvOpShiftLeftLogical,
+            ValueType::u32,
+            {module_.coerce(value, ValueType::u32).id,
+             module_.constant(ValueType::u32, shift).id});
+        return module_.instruction(
+            SpvOpShiftRightArithmetic,
+            ValueType::s32,
+            {module_.coerce(shifted, ValueType::s32).id,
+             module_.constant(ValueType::u32, shift).id});
+    }
+    Value extract_subword(
+        Value word,
+        Value byte_address,
+        std::uint32_t bit_width,
+        bool signed_value)
+    {
+        const Value byte_offset = module_.instruction(
+            SpvOpBitwiseAnd,
+            ValueType::u32,
+            {module_.coerce(byte_address, ValueType::u32).id,
+             module_.constant(ValueType::u32, 3u).id});
+        const Value bit_offset = module_.instruction(
+            SpvOpShiftLeftLogical,
+            ValueType::u32,
+            {byte_offset.id, module_.constant(ValueType::u32, 3u).id});
+        const Value shifted = module_.instruction(
+            SpvOpShiftRightLogical,
+            ValueType::u32,
+            {module_.coerce(word, ValueType::u32).id, bit_offset.id});
+        const Value masked = mask_low_bits(shifted, bit_width);
+        return signed_value ? sign_extend(masked, bit_width) : masked;
+    }
+
+    void define_register(const std::string &name, Value value)
+    {
+        const RegisterVariable destination = variable(name);
+        const Value stored =
+            destination.bit_width == 32u
+                ? value
+                : mask_low_bits(value, destination.bit_width);
+        module_.store_variable(destination.id, stored, destination.type);
+    }
+
     void define(const Json &operand, Value value)
     {
-        const RegisterVariable destination =
-            variable(register_operand_name(operand));
-        module_.store_variable(destination.id, value, destination.type);
+        define_register(register_operand_name(operand), value);
     }
 
     Value scalar_operand(const Json &operand, ValueType desired)
@@ -1638,7 +1943,7 @@ private:
             right.at("value").get<std::int64_t>());
     }
 
-    Value load_parameter(const Json &operand)
+    Value load_parameter(const Json &operand, const Json &instruction)
     {
         if (operand.at("kind").get<std::string>() != "memory" ||
             operand.at("values").size() != 1u) {
@@ -1650,15 +1955,31 @@ private:
         parameter_address(
             operand.at("values").at(0), name, inner_offset);
         for (const Json &parameter : entry_.at("parameters")) {
-            if (parameter.at("name").get<std::string>() == name) {
-                const std::uint32_t byte_offset =
-                    parameter.at("offset").get<std::uint32_t>() + inner_offset;
-                if ((byte_offset & 3u) != 0u) {
-                    throw std::runtime_error(
-                        "unaligned selected-kernel u32 parameter load");
-                }
-                return module_.load_parameter_word(byte_offset / 4u);
+            if (parameter.at("name").get<std::string>() != name) {
+                continue;
             }
+            const std::uint32_t byte_offset =
+                parameter.at("offset").get<std::uint32_t>() + inner_offset;
+            const Value word =
+                module_.load_parameter_word(byte_offset / 4u);
+            if (has_modifier(instruction, "s8") ||
+                has_modifier(instruction, "u8")) {
+                const Value shifted = module_.instruction(
+                    SpvOpShiftRightLogical,
+                    ValueType::u32,
+                    {word.id,
+                     module_.constant(
+                         ValueType::u32, (byte_offset & 3u) * 8u).id});
+                const Value byte = mask_low_bits(shifted, 8u);
+                return has_modifier(instruction, "s8")
+                    ? sign_extend(byte, 8u)
+                    : byte;
+            }
+            if ((byte_offset & 3u) != 0u) {
+                throw std::runtime_error(
+                    "unaligned selected-kernel u32 parameter load");
+            }
+            return word;
         }
         throw std::runtime_error(
             "unknown selected-kernel parameter '" + name + "'");
@@ -1870,33 +2191,86 @@ private:
         }
 
         if (base == "ld" && has_modifier(instruction, "param")) {
-            define(operands.at(0), load_parameter(operands.at(1)));
+            define(
+                operands.at(0),
+                load_parameter(operands.at(1), instruction));
+            return;
+        }
+        if (variant == "ld.global.v4.u16" ||
+            variant == "ld.global.v4.f32") {
+            const Value base_address = address_operand(operands.at(1));
+            const std::vector<std::string> destinations =
+                register_operand_list(operands.at(0));
+            const std::uint32_t stride =
+                variant == "ld.global.v4.u16" ? 2u : 4u;
+            for (std::uint32_t component = 0u;
+                 component < destinations.size();
+                 ++component) {
+                Value address = base_address;
+                if (component != 0u) {
+                    address = module_.instruction(
+                        SpvOpIAdd,
+                        ValueType::u32,
+                        {base_address.id,
+                         module_.constant(
+                             ValueType::u32, component * stride).id});
+                }
+                const Value word = module_.load_buffer(word_index(address));
+                define_register(
+                    destinations[component],
+                    variant == "ld.global.v4.u16"
+                        ? extract_subword(word, address, 16u, false)
+                        : module_.coerce(word, ValueType::f32));
+            }
             return;
         }
         if (base == "ld" && has_modifier(instruction, "global")) {
+            const Value address = address_operand(operands.at(1));
             const Value loaded =
-                module_.load_buffer(word_index(address_operand(operands.at(1))));
-            define(
-                operands.at(0),
-                has_modifier(instruction, "f32")
-                    ? module_.coerce(loaded, ValueType::f32)
-                    : loaded);
+                module_.load_buffer(word_index(address));
+            Value value = loaded;
+            if (has_modifier(instruction, "u8") ||
+                has_modifier(instruction, "s8")) {
+                value = extract_subword(
+                    loaded, address, 8u, has_modifier(instruction, "s8"));
+            } else if (has_modifier(instruction, "u16") ||
+                       has_modifier(instruction, "s16")) {
+                value = extract_subword(
+                    loaded, address, 16u, has_modifier(instruction, "s16"));
+            } else if (has_modifier(instruction, "f32")) {
+                value = module_.coerce(loaded, ValueType::f32);
+            }
+            define(operands.at(0), value);
             return;
         }
         if (base == "ld" && has_modifier(instruction, "shared")) {
+            const Value address = address_operand(operands.at(1));
             const Value loaded =
-                module_.load_shared(word_index(address_operand(operands.at(1))));
-            define(operands.at(0), loaded);
+                module_.load_shared(word_index(address));
+            const Value value =
+                has_modifier(instruction, "u8")
+                    ? extract_subword(loaded, address, 8u, false)
+                    : loaded;
+            define(operands.at(0), value);
             return;
         }
         if (base == "ld" && has_modifier(instruction, "const")) {
+            const Value address = address_operand(operands.at(1));
             const Value loaded =
-                module_.load_constant(word_index(address_operand(operands.at(1))));
-            define(
-                operands.at(0),
-                has_modifier(instruction, "f32")
-                    ? module_.coerce(loaded, ValueType::f32)
-                    : loaded);
+                module_.load_constant(word_index(address));
+            Value value = loaded;
+            if (has_modifier(instruction, "u8") ||
+                has_modifier(instruction, "s8")) {
+                value = extract_subword(
+                    loaded, address, 8u, has_modifier(instruction, "s8"));
+            } else if (has_modifier(instruction, "u16") ||
+                       has_modifier(instruction, "s16")) {
+                value = extract_subword(
+                    loaded, address, 16u, has_modifier(instruction, "s16"));
+            } else if (has_modifier(instruction, "f32")) {
+                value = module_.coerce(loaded, ValueType::f32);
+            }
+            define(operands.at(0), value);
             return;
         }
         if (base == "ld" && has_modifier(instruction, "local")) {
@@ -1932,9 +2306,45 @@ private:
             return;
         }
         if (base == "st" && has_modifier(instruction, "shared")) {
-            module_.store_shared(
-                word_index(address_operand(operands.at(0))),
-                scalar_operand(operands.at(1), ValueType::u32));
+            const Value address = address_operand(operands.at(0));
+            const Value base_index = word_index(address);
+            if (has_modifier(instruction, "u8")) {
+                const Json &memory = operands.at(0);
+                const Json &expression = memory.at("values").at(0);
+                if (expression.at("kind").get<std::string>() != "symbol") {
+                    unsupported(
+                        instruction,
+                        "shared byte store requires an aligned dedicated symbol");
+                }
+                const auto symbol = storage_symbols_.find(
+                    expression.at("name").get<std::string>());
+                if (symbol == storage_symbols_.end() ||
+                    (symbol->second.offset & 3u) != 0u) {
+                    unsupported(
+                        instruction,
+                        "shared byte store requires an aligned dedicated symbol");
+                }
+                module_.atomic_exchange_shared(
+                    base_index,
+                    mask_low_bits(
+                        scalar_operand(operands.at(1), ValueType::u32), 8u));
+                return;
+            }
+            const std::vector<std::string> sources =
+                register_operand_list(operands.at(1));
+            for (std::size_t component = 0u; component < sources.size(); ++component) {
+                Value index = base_index;
+                if (component != 0u) {
+                    index = module_.instruction(
+                        SpvOpIAdd,
+                        ValueType::u32,
+                        {base_index.id,
+                         module_.constant(
+                             ValueType::u32,
+                             static_cast<std::uint32_t>(component)).id});
+                }
+                module_.store_shared(index, read_register(sources[component]));
+            }
             return;
         }
         if (base == "st" && has_modifier(instruction, "local")) {
@@ -1951,8 +2361,35 @@ private:
             const ValueType type =
                 has_modifier(instruction, "f32")
                     ? ValueType::f32
-                    : ValueType::u32;
+                    : has_modifier(instruction, "pred")
+                        ? ValueType::boolean
+                        : ValueType::u32;
             define(operands.at(0), scalar_operand(operands.at(1), type));
+            return;
+        }
+        if (variant == "cvt.s32.s16") {
+            define(
+                operands.at(0),
+                sign_extend(
+                    scalar_operand(operands.at(1), ValueType::u32), 16u));
+            return;
+        }
+        if (variant == "cvt.u16.u32") {
+            define(
+                operands.at(0),
+                mask_low_bits(
+                    scalar_operand(operands.at(1), ValueType::u32), 16u));
+            return;
+        }
+        if (variant == "mul.wide.s16") {
+            const Value a = sign_extend(
+                scalar_operand(operands.at(1), ValueType::u32), 16u);
+            const Value b = sign_extend(
+                scalar_operand(operands.at(2), ValueType::u32), 16u);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpIMul, ValueType::s32, {a.id, b.id}));
             return;
         }
         if ((base == "add" || base == "sub" || base == "mul") &&
@@ -1981,6 +2418,30 @@ private:
             define(operands.at(0), float_output(result, ftz));
             return;
         }
+        if ((base == "abs" || base == "neg") &&
+            has_modifier(instruction, "f32")) {
+            const bool ftz = has_modifier(instruction, "ftz");
+            const Value input = float_input(operands.at(1), ftz);
+            const Value result =
+                base == "abs"
+                    ? module_.ext_instruction(
+                          ValueType::f32, GLSLstd450FAbs, {input.id})
+                    : module_.instruction(
+                          SpvOpFNegate, ValueType::f32, {input.id});
+            define(operands.at(0), float_output(result, ftz));
+            return;
+        }
+        if (base == "mul") {
+            const Value a =
+                scalar_operand(operands.at(1), ValueType::s32);
+            const Value b =
+                scalar_operand(operands.at(2), ValueType::s32);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpIMul, ValueType::s32, {a.id, b.id}));
+            return;
+        }
         if (base == "add" || base == "sub" || base == "mad") {
             const Value a =
                 scalar_operand(operands.at(1), ValueType::s32);
@@ -2005,7 +2466,7 @@ private:
                     SpvOpIAdd, ValueType::s32, {product.id, c.id}));
             return;
         }
-        if (variant == "and.pred") {
+        if (variant == "and.pred" || variant == "or.pred") {
             const Value a =
                 scalar_operand(operands.at(1), ValueType::boolean);
             const Value b =
@@ -2013,7 +2474,9 @@ private:
             define(
                 operands.at(0),
                 module_.instruction(
-                    SpvOpLogicalAnd,
+                    variant == "and.pred"
+                        ? SpvOpLogicalAnd
+                        : SpvOpLogicalOr,
                     ValueType::boolean,
                     {a.id, b.id}));
             return;
@@ -2046,11 +2509,29 @@ private:
             if (variant == "setp.lt.ftz.f32") {
                 operation = SpvOpFOrdLessThan;
             }
+            if (variant == "setp.ge.ftz.f32") {
+                operation = SpvOpFOrdGreaterThanEqual;
+            }
+            if (variant == "setp.le.ftz.f32") {
+                operation = SpvOpFOrdLessThanEqual;
+            }
+            if (variant == "setp.gtu.ftz.f32") {
+                operation = SpvOpFUnordGreaterThan;
+            }
+            if (variant == "setp.ltu.ftz.f32") {
+                operation = SpvOpFUnordLessThan;
+            }
             if (variant == "setp.leu.ftz.f32") {
                 operation = SpvOpFUnordLessThanEqual;
             }
             if (variant == "setp.neu.ftz.f32") {
                 operation = SpvOpFUnordNotEqual;
+            }
+            if (variant == "setp.eq.ftz.f32") {
+                operation = SpvOpFOrdEqual;
+            }
+            if (variant == "setp.geu.ftz.f32") {
+                operation = SpvOpFUnordGreaterThanEqual;
             }
             if (operation == SpvOpNop) {
                 unsupported(instruction, "unsupported float comparison");
@@ -2063,17 +2544,31 @@ private:
         }
         if (base == "setp") {
             const bool unsigned_compare = has_modifier(instruction, "u32");
+            const bool signed_half = has_modifier(instruction, "s16");
             const ValueType type =
                 unsigned_compare ? ValueType::u32 : ValueType::s32;
-            const Value a = scalar_operand(operands.at(1), type);
-            const Value b = scalar_operand(operands.at(2), type);
+            const Value a = signed_half
+                ? sign_extend(
+                      scalar_operand(operands.at(1), ValueType::u32), 16u)
+                : scalar_operand(operands.at(1), type);
+            const Value b = signed_half
+                ? sign_extend(
+                      scalar_operand(operands.at(2), ValueType::u32), 16u)
+                : scalar_operand(operands.at(2), type);
             SpvOp operation = SpvOpNop;
             if (variant == "setp.ge.u32") operation = SpvOpUGreaterThanEqual;
             if (variant == "setp.gt.u32") operation = SpvOpUGreaterThan;
             if (variant == "setp.le.u32") operation = SpvOpULessThanEqual;
-            if (variant == "setp.eq.s32") operation = SpvOpIEqual;
-            if (variant == "setp.ne.s32") operation = SpvOpINotEqual;
+            if (variant == "setp.lt.u32") operation = SpvOpULessThan;
+            if (variant == "setp.eq.s32" || variant == "setp.eq.b32" ||
+                variant == "setp.eq.s16" || variant == "setp.eq.b16") {
+                operation = SpvOpIEqual;
+            }
+            if (variant == "setp.ne.s32" || variant == "setp.ne.s16") {
+                operation = SpvOpINotEqual;
+            }
             if (variant == "setp.gt.s32") operation = SpvOpSGreaterThan;
+            if (variant == "setp.lt.s16") operation = SpvOpSLessThan;
             if (operation == SpvOpNop) {
                 unsupported(instruction, "unsupported comparison");
             }
@@ -2083,29 +2578,31 @@ private:
                     operation, ValueType::boolean, {a.id, b.id}));
             return;
         }
-        if (variant == "selp.f32") {
+        if (variant == "selp.f32" || variant == "selp.b32" ||
+            variant == "selp.u32" || variant == "selp.b16" ||
+            variant == "selp.u16") {
+            const ValueType type =
+                variant == "selp.f32" ? ValueType::f32 : ValueType::u32;
             const Value when_true =
-                scalar_operand(operands.at(1), ValueType::f32);
+                scalar_operand(operands.at(1), type);
             const Value when_false =
-                scalar_operand(operands.at(2), ValueType::f32);
+                scalar_operand(operands.at(2), type);
             const Value condition =
                 scalar_operand(operands.at(3), ValueType::boolean);
             define(
                 operands.at(0),
                 module_.instruction(
                     SpvOpSelect,
-                    ValueType::f32,
+                    type,
                     {condition.id, when_true.id, when_false.id}));
             return;
         }
         if (variant == "bar.sync") {
-            if (!barrier_prelude_) {
-                const Value workgroup = module_.constant(ValueType::u32, 2u);
-                const Value semantics = module_.constant(ValueType::u32, 0x108u);
-                module_.function_instruction(
-                    SpvOpControlBarrier,
-                    {workgroup.id, workgroup.id, semantics.id});
-            }
+            const Value workgroup = module_.constant(ValueType::u32, 2u);
+            const Value semantics = module_.constant(ValueType::u32, 0x108u);
+            module_.function_instruction(
+                SpvOpControlBarrier,
+                {workgroup.id, workgroup.id, semantics.id});
             return;
         }
         if (base == "div") {
@@ -2129,6 +2626,19 @@ private:
             define(operands.at(0), float_output(result, ftz));
             return;
         }
+        if (base == "rsqrt") {
+            const bool ftz = has_modifier(instruction, "ftz");
+            const Value input = float_input(operands.at(1), ftz);
+            define(
+                operands.at(0),
+                float_output(
+                    module_.ext_instruction(
+                        ValueType::f32,
+                        GLSLstd450InverseSqrt,
+                        {input.id}),
+                    ftz));
+            return;
+        }
         if (base == "sqrt") {
             const bool ftz = has_modifier(instruction, "ftz");
             const Value input = float_input(operands.at(1), ftz);
@@ -2140,12 +2650,15 @@ private:
                     ftz));
             return;
         }
-        if (base == "max" && has_modifier(instruction, "f32")) {
+        if ((base == "min" || base == "max") &&
+            has_modifier(instruction, "f32")) {
             const bool ftz = has_modifier(instruction, "ftz");
             const Value left = float_input(operands.at(1), ftz);
             const Value right = float_input(operands.at(2), ftz);
             const Value arithmetic = module_.ext_instruction(
-                ValueType::f32, GLSLstd450FMax, {left.id, right.id});
+                ValueType::f32,
+                base == "min" ? GLSLstd450FMin : GLSLstd450FMax,
+                {left.id, right.id});
             const Value left_nan = module_.instruction(
                 SpvOpIsNan, ValueType::boolean, {left.id});
             const Value right_nan = module_.instruction(
@@ -2201,7 +2714,6 @@ private:
     const Json &entry_;
     std::uint32_t function_;
     std::uint32_t local_size_;
-    bool barrier_prelude_ = false;
     std::map<std::string, RegisterVariable> variables_;
     std::uint32_t dynamic_shared_bytes_;
     std::uint32_t local_ = 0u;

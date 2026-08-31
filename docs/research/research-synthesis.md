@@ -215,10 +215,10 @@ module-constant, and texture field.
 
 The second slice lowers the captured 89-instruction
 `KernelFluidCalcHashPacked` entry from `module_0013_01_05.ptx`. A conservative
-structured state machine stores PTX registers in function storage and dispatches
-14 PTX basic blocks through one SPIR-V loop/switch. Binding 0 is the 32-bit
-CUDA heap and binding 1 is the packed 52-byte launch parameter buffer. The
-3,139-word module is deterministic and passes Vulkan 1.2 validation.
+structured state machine stores live PTX values in reusable function slots and
+dispatches 14 PTX basic blocks through one SPIR-V loop/switch. Binding 0 is the
+32-bit CUDA heap and binding 1 is the packed 52-byte launch parameter buffer.
+The 2,807-word module is deterministic and passes Vulkan 1.2 validation.
 
 The paired third slice lowers the captured 116-instruction
 `KernelReorderPosVelAndFindCellStartPacked` entry. It adds shared `u32`
@@ -226,7 +226,7 @@ storage, predicate conjunction, integer equality/inequality, a 260-byte
 dynamic-shared contract, workgroup barriers, and vector `f32` stores. Its
 pre-barrier diamond is emitted as structured selections that reconverge before
 one dynamically uniform `OpControlBarrier`; the remaining 12 blocks use the
-state machine. The deterministic 3,863-word module passes Vulkan 1.2
+state machine. The deterministic 3,126-word module passes Vulkan 1.2
 validation.
 
 Schema 5 retains every routine `.local`/`.shared` symbol with space, type,
@@ -281,11 +281,21 @@ an unsupported bank only when it has zero definitions and uses; the CFG fixture
 locks that rule, and a referenced unsupported type remains an error. No
 `Int64` capability or 64-bit arithmetic was added for density.
 
+Kernel emission computes standard CFG live-in/live-out sets, builds an
+interference graph, and reuses one SPIR-V function variable only for
+non-interfering PTX registers of the same scalar type and logical bit width.
+This preserves the mutable PTX register namespace across branches and loops
+while avoiding thousands of dead or non-overlapping function variables. The
+collision entry exposed the practical requirement: literal bank-sized
+allocation produced a valid module that the Intel driver could not create a
+pipeline for; liveness allocation passes exact Intel/RTX differentials for all
+seven lowered captured entries.
+
 With the two captured texture variants plus the finite integer/FTZ-float tail,
-all 411 density instructions lower. The deterministic 19,884-word SPIR-V
+all 411 density instructions lower. The deterministic 17,768-word SPIR-V
 module, with bindings 0/1/2/3 and local size 192, passes Vulkan 1.2 validation;
 SHA-256 is
-`f79e55fa85c6edd760a2479692d7f5ab40a6ae726b410e11458062e8c6db083f`.
+`ff43010d9bc54639b4707a1eddffa77332aa63442a2e14cba887008244671abf`.
 
 The next trace-ordered entry, `KernelFluidForce`, contains 499 instructions in
 68 basic blocks with 100 CFG edges. It uses a 100-byte packed parameter block,
@@ -295,9 +305,79 @@ cell starts, and cell ends. The captured launch uses local size 128 and no
 dynamic shared memory. Finite lowering adds ordered `lt`, unordered `le`/`ne`,
 FTZ `max`, approximate reciprocal/square-root, and full float division. The
 committed `force_math_probe.ptx` keeps those selected-entry paths in the
-redistributable CTest suite. The deterministic 30,375-word force module passes
+redistributable CTest suite. The deterministic 27,835-word force module passes
 Vulkan 1.2 validation; SHA-256 is
-`c0b1fba28f3a8cfaf94e600c711b906e212e08162824a29e25dd0b86e52df534`.
+`d9816251075a0b4cbc153bcd87fc6377a8d7ee1c79207fa2deb1fb4fcd07b235`.
+
+The first deformable-family entry, `PxgCudaDeformableUpdate`, contains the
+finite unsigned `setp.lt.u32` comparison and bitwise `selp.b32` select variants.
+Both lower directly to SPIR-V unsigned comparison and `OpSelect`; the committed
+CFG probe retains those paths. The extracted entry emits a deterministic
+9,792-word module at local size 64 with no dynamic shared memory. Vulkan 1.2
+validation passes; SHA-256 is
+`37f7ef69aa672681371b140a18e11c1d1a0e34abcc055342b52c989f2d437c14`.
+
+A one-instance native fixture uses exact synthetic acceleration, time-step,
+position, motion, and state-flag bits plus guards around every live allocation.
+Three RTX captures are byte-identical. The integrated motion is
+`[0x40440000, 0x408c0000, 0x40c80000, 0x40e00000]`, the position is unchanged,
+and state flags become zero. PTX-derived Vulkan produces the same bits with
+intact guards on Intel UHD and RTX 3070. The native report SHA-256 is
+`30dfd7ef0bf3c7f17b1801e13a86a02e4f0a2cde21b36f5dc65e01816664774e`;
+the Vulkan report SHA-256 is
+`3aebb159586704b8767150940e9a55bbfee33540cce6cb358fd178658683274f`.
+
+The solver deformable entry, `KernelDeformableUberSolver<512>`, has 1,191
+instructions and five static `bar.sync` sites. Its finite surface adds
+16-bit register banks and bitwise operations, signed 16-bit comparisons and
+wide multiplication, byte parameter loads, packed `v4.u16` global loads,
+vector shared stores, predicate OR, float absolute/negate, and reciprocal
+square root. Narrow registers remain 32-bit SPIR-V function values with
+explicit low-bit masking and sign extension, avoiding an unnecessary Vulkan
+16-bit-storage requirement.
+
+Barrier instructions terminate frontend CFG blocks. The kernel emitter runs
+each invocation's CFG until its next barrier, reconverges the workgroup at one
+structured `OpControlBarrier`, then resumes from the saved per-invocation
+program counter. This preserves divergent work between barriers without
+dropping the solver's repeated barrier sites. The local-size-64 entry includes
+the captured 7,072-byte dynamic shared allocation and emits 80,354 SPIR-V
+words. Vulkan 1.2 validation passes; SHA-256 is
+`7a0a3341fe5f862f82379e09d4c008a78ffaf9bb9bed9f0a071bdbd6f783684e`.
+
+The focused native fixture runs one synthetic particle with zero constraint
+iterations. It still crosses the solver barriers, converts the initial
+position against a reference position to exact delta bits
+`[0xc1100000, 0xc1100000, 0xc1100000, 0x00000000]`, and writes the exact
+64-byte solver record with all guards intact. PTX-derived Intel UHD and RTX
+3070 Vulkan executions match the native result bit-for-bit. The native report
+SHA-256 is
+`83d4b38dd4112716e63311a06b7d040e9275c44654fd1bae6dbdefb33009c040`;
+the Vulkan report SHA-256 is
+`9b551fbc7296684b48645e8058c3a49d71a87f96733ca0690bed9e5484eb1d3c`.
+
+The collision deformable entry, `KernelDeformableUberCollision`, contains
+3,662 instructions, five `bar.sync` sites, 4,097 bytes of static shared memory,
+and 17 legacy texture references. Its finite surface adds packed and scalar
+`u8`/`u16` global, constant, and shared accesses; `v4.f32` loads; 16-bit
+select/equality forms; ordered and unordered float comparisons; and FTZ float
+minimum. Subword loads explicitly extract addressed bits; stores to the
+observed word-aligned shared byte use workgroup atomic exchange, preserving the
+benign CUDA same-value multi-writer behavior without a Vulkan data race. A
+committed synthetic probe retains these paths.
+
+The local-size-64 collision entry emits 175,407 SPIR-V words and passes Vulkan
+1.2 validation; SHA-256 is
+`bb32ba2c35a1b2d86b58bc921d9936eb1def25bbe0723fa6bdb7733aa249fd57`.
+The focused native fixture runs one particle with no shapes, crosses all
+barriers, copies its position/motion vectors, and clears collision state. The
+exact collision scalar words are
+`[0xbf800000, 0x00000000, 0x0000ffff, 0x00000000]`; all 17 live ranges remain
+guarded. Native RTX and PTX-derived Intel/RTX results match bit-for-bit. Native
+and Vulkan report SHA-256 values are
+`0413b0348b49fe1b69376e6ed049f7011c2781366e3311ade51b5daaa0287369`
+and
+`cc9980da30b4f6f7f4208d42d404f517a4db3beac855ac82ca1ff38aea770ac2`.
 
 `tools/cuda-physx-fixture` now runs a four-kernel one-particle pipeline against
 local proprietary modules 0013, 0010, and 0016. Calc-hash and reorder produce

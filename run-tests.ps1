@@ -199,41 +199,74 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $reorderEntry = "_Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej"
     $densityEntry = "_Z19KernelFluidDensityD17PxgFixedSizeArrayIfES0_15DensityDebugGPUPiS_IK6float4ES_IKjES7_S7_S7_"
     $forceEntry = "_Z17KernelFluidForceD17PxgFixedSizeArrayI12PxcVectorPadE13ForceDebugGPUPiS_IK6float4ES6_S_IKfES_IKjESA_SA_SA_"
+    $deformableUpdateEntry = "_Z24PxgCudaDeformableUpdateDPKhjPi"
+    $deformableSolverEntry = "_Z26KernelDeformableUberSolverILj512EEvjbPhPi"
+    $deformableCollisionEntry = "_Z29KernelDeformableUberCollisionPi"
 
     $calcHashPtx = Resolve-PtxForEntry $CapturedPtxDir $calcHashEntry
     $reorderPtx = Resolve-PtxForEntry $CapturedPtxDir $reorderEntry
     $densityPtx = Resolve-PtxForEntry $CapturedPtxDir $densityEntry
     $forcePtx = Resolve-PtxForEntry $CapturedPtxDir $forceEntry
+    $deformableUpdatePtx = Resolve-PtxForEntry $CapturedPtxDir $deformableUpdateEntry
+    $deformableSolverPtx = Resolve-PtxForEntry $CapturedPtxDir $deformableSolverEntry
+    $deformableCollisionPtx = Resolve-PtxForEntry $CapturedPtxDir $deformableCollisionEntry
 
-    Write-Host "Compiling and running the local captured PhysX fixtures..."
-    $module0013Manifest = Join-Path $resultDir "module-0013-manifest.json"
-    $module0010Manifest = Join-Path $resultDir "module-0010-manifest.json"
-    $module0016Manifest = Join-Path $resultDir "module-0016-manifest.json"
+    Write-Host "Compiling local captured PhysX kernels and running available fixtures..."
+    $fluidHashReorderManifest = Join-Path $resultDir "fluid-hash-reorder-manifest.json"
+    $fluidDensityManifest = Join-Path $resultDir "fluid-density-manifest.json"
+    $fluidForceManifest = Join-Path $resultDir "fluid-force-manifest.json"
+    $deformableUpdateManifest = Join-Path $resultDir "deformable-update-manifest.json"
+    $deformableSolverManifest = Join-Path $resultDir "deformable-solver-manifest.json"
+    $deformableCollisionManifest = Join-Path $resultDir "deformable-collision-manifest.json"
     $calcHashSpirv = Join-Path $resultDir "fluid-calc-hash.spv"
     $reorderSpirv = Join-Path $resultDir "fluid-reorder.spv"
     $densitySpirv = Join-Path $resultDir "fluid-density.spv"
     $forceSpirv = Join-Path $resultDir "fluid-force.spv"
+    $deformableUpdateSpirv = Join-Path $resultDir "deformable-update.spv"
+    $deformableSolverSpirv = Join-Path $resultDir "deformable-solver.spv"
+    $deformableCollisionSpirv = Join-Path $resultDir "deformable-collision.spv"
 
-    Invoke-Checked $frontend @($calcHashPtx, $module0013Manifest)
+    Invoke-Checked $frontend @($calcHashPtx, $fluidHashReorderManifest)
     if ($reorderPtx -ne $calcHashPtx) {
         throw "Calc-hash and reorder entries must reside in one PTX module"
     }
-    Invoke-Checked $frontend @($densityPtx, $module0010Manifest)
-    Invoke-Checked $frontend @($forcePtx, $module0016Manifest)
+    Invoke-Checked $frontend @($densityPtx, $fluidDensityManifest)
+    Invoke-Checked $frontend @($forcePtx, $fluidForceManifest)
+    Invoke-Checked $frontend @($deformableUpdatePtx, $deformableUpdateManifest)
+    Invoke-Checked $frontend @($deformableSolverPtx, $deformableSolverManifest)
+    Invoke-Checked $frontend @($deformableCollisionPtx, $deformableCollisionManifest)
     Invoke-Checked $emitter @(
-        "--entry", $calcHashEntry, "64", "0", $module0013Manifest, $calcHashSpirv
+        "--entry", $calcHashEntry, "64", "0", $fluidHashReorderManifest, $calcHashSpirv
     )
     Invoke-Checked $emitter @(
-        "--entry", $reorderEntry, "64", "260", $module0013Manifest, $reorderSpirv
+        "--entry", $reorderEntry, "64", "260", $fluidHashReorderManifest, $reorderSpirv
     )
     Invoke-Checked $emitter @(
-        "--entry", $densityEntry, "192", "0", $module0010Manifest, $densitySpirv
+        "--entry", $densityEntry, "192", "0", $fluidDensityManifest, $densitySpirv
     )
     Invoke-Checked $emitter @(
-        "--entry", $forceEntry, "128", "0", $module0016Manifest, $forceSpirv
+        "--entry", $forceEntry, "128", "0", $fluidForceManifest, $forceSpirv
+    )
+    Invoke-Checked $emitter @(
+        "--entry", $deformableUpdateEntry, "64", "0",
+        $deformableUpdateManifest, $deformableUpdateSpirv
+    )
+    Invoke-Checked $emitter @(
+        "--entry", $deformableSolverEntry, "64", "7072",
+        $deformableSolverManifest, $deformableSolverSpirv
+    )
+    Invoke-Checked $emitter @(
+        "--entry", $deformableCollisionEntry, "64", "0",
+        $deformableCollisionManifest, $deformableCollisionSpirv
     )
     Validate-SpirvIfAvailable @(
-        $calcHashSpirv, $reorderSpirv, $densitySpirv, $forceSpirv
+        $calcHashSpirv,
+        $reorderSpirv,
+        $densitySpirv,
+        $forceSpirv,
+        $deformableUpdateSpirv,
+        $deformableSolverSpirv,
+        $deformableCollisionSpirv
     )
 
     Invoke-Checked $memorySmoke @(
@@ -255,6 +288,21 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         (Join-Path $resultDir "fluid-force.json"),
         "--force-fixture",
         $forceSpirv
+    )
+    Invoke-Checked $memorySmoke @(
+        (Join-Path $resultDir "deformable-update.json"),
+        "--deformable-fixture",
+        $deformableUpdateSpirv
+    )
+    Invoke-Checked $memorySmoke @(
+        (Join-Path $resultDir "deformable-solver.json"),
+        "--deformable-solver-fixture",
+        $deformableSolverSpirv
+    )
+    Invoke-Checked $memorySmoke @(
+        (Join-Path $resultDir "deformable-collision.json"),
+        "--deformable-collision-fixture",
+        $deformableCollisionSpirv
     )
 }
 
@@ -296,5 +344,5 @@ Write-Host ""
 Write-Host "PASS: pxvk portable suite"
 Write-Host "Results: $resultDir"
 if ([string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
-    Write-Host "Captured PhysX fixtures were not run; pass -CapturedPtxDir with traced or extracted PTX to add them."
+    Write-Host "Captured PhysX kernels were not compiled or run; pass -CapturedPtxDir with traced or extracted PTX to add them."
 }

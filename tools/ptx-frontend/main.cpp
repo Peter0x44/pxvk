@@ -1092,6 +1092,9 @@ bool operand_type_accepts(
     if (instruction.base == "st" && declared_integer && expected_integer) {
         return declared_width >= expected_width;
     }
+    if (instruction.base == "cvt" && declared_integer && expected_integer) {
+        return declared_width >= expected_width;
+    }
     return declared_integer && expected_integer && declared_width == expected_width;
 }
 void validate_routine_dataflow(const Entry &routine)
@@ -1176,7 +1179,8 @@ Json cfg_to_json(const Entry &routine)
     }
     for (std::size_t index = 0; index < routine.instructions.size(); ++index) {
         const Instruction &instruction = routine.instructions[index];
-        if ((instruction.base == "bra" || instruction.base == "ret") &&
+        if ((instruction.base == "bra" || instruction.base == "ret" ||
+             instruction.base == "bar") &&
             index + 1 < routine.instructions.size()) {
             leaders.insert(index + 1);
         }
