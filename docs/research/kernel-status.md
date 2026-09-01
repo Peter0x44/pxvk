@@ -40,12 +40,12 @@ The `Module` column uses the stable semantic numbering from the corpus report.
 | `0012` | `fatbin_0017.ptx` | `KernelDeformableUberSolver<512>` | 16 B | 0 | 7,072 B | Exact fixture | Focused fixture and ordered deformable step |
 | `0013` | `fatbin_0010.ptx` | `KernelFluidCalcHashPacked` | 52 B | 0 | 0 | Exact fixture | Focused fixture and four-kernel fluid fixture |
 | `0013` | `fatbin_0010.ptx` | `KernelReorderPosVelAndFindCellStartPacked` | 76 B | 0 | 260 B | Exact fixture | Focused fixture and four-kernel fluid fixture |
-| `0014` | `fatbin_0011.ptx` | `KernelFluidSimpleParticle` | 44 B | 10,756 B | 0 | Not translated | — |
+| `0014` | `fatbin_0011.ptx` | `KernelFluidSimpleParticle` | 44 B | 10,756 B | 0 | Exact fixture | Focused one-particle velocity-integration fixture |
 | `0015` | `fatbin_0007.ptx` | `PxgCudaFluidCollisionBoxShapesBatch` | 20 B | 6,752 B | 0 | Exact fixture | Captured two-work-unit zero-box fixture |
 | `0016` | `fatbin_0013.ptx` | `KernelFluidForce` | 100 B | 0 | 0 | Exact fixture | Focused fixture and four-kernel fluid fixture |
 
-Fourteen of sixteen launched entries have exact native/Vulkan fixtures. Two
-remain. Module `0006` contains only collision constants. Module `0017` contains
+Fifteen of sixteen launched entries have exact native/Vulkan fixtures. One
+remains. Module `0006` contains only collision constants. Module `0017` contains
 resolved deformable self-collision entries, but none launched in the captured
 routes, so they are outside this ledger and the initial compatibility target.
 

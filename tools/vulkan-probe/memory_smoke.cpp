@@ -248,6 +248,19 @@ constexpr std::array<std::uint32_t, 4> kExpectedStaticResponseOutput = {
 constexpr std::array<std::uint32_t, 2> kExpectedStaticResponsePair = {
     0u, 0x12345678u,
 };
+constexpr std::size_t kSimpleParticleOutputOffset = 84;
+constexpr std::size_t kSimpleParticleInputOffset = 16;
+constexpr std::size_t kSimpleParticleStartIndicesOffset = 24;
+constexpr std::size_t kSimpleParticleFluidSizesOffset = 30;
+constexpr std::size_t kSimpleParticleParametersOffset = 40;
+constexpr VkDeviceSize kSimpleParticlePayloadBytes =
+    96u * sizeof(std::uint32_t);
+constexpr std::array<std::uint32_t, 4> kSimpleParticleInput = {
+    0x3f800000u, 0x40000000u, 0x40400000u, 0x11223344u,
+};
+constexpr std::array<std::uint32_t, 4> kExpectedSimpleParticleOutput = {
+    0x3fe00000u, 0x00000000u, 0x40440000u, 0x00000000u,
+};
 constexpr std::size_t kBoxesWorkUnitOffset = 8;
 constexpr std::size_t kBoxesShapeStartAddrsOffset = 20;
 constexpr std::size_t kBoxesParametersOffset = 64;
@@ -684,6 +697,8 @@ struct DeviceResult {
     std::array<std::uint32_t, 4> static_response_output = {};
     std::array<std::uint32_t, 2> static_response_pair = {};
     bool static_response_guards_intact = false;
+    std::array<std::uint32_t, 4> simple_particle_output = {};
+    bool simple_particle_guards_intact = false;
     std::array<std::uint32_t, 4> boxes_position = {};
     std::array<std::uint32_t, 4> boxes_old_position = {};
     bool boxes_guards_intact = false;
@@ -715,6 +730,7 @@ DeviceResult run_device(
     bool constraints_fixture_mode,
     bool dynamic_response_fixture_mode,
     bool static_response_fixture_mode,
+    bool simple_particle_fixture_mode,
     bool shape_batches_fixture_mode,
     bool convexes_fixture_mode,
     bool triangles_fixture_mode)
@@ -841,6 +857,8 @@ DeviceResult run_device(
                     ? kKernelFixtureCopyBytes
                     : constant_fixture_mode
                         ? kConstantFixtureCopyBytes
+                        : simple_particle_fixture_mode
+                            ? kSimpleParticlePayloadBytes
                         : shape_batches_fixture_mode
                             ? kBoxesPayloadBytes
                         : triangles_fixture_mode
@@ -874,7 +892,47 @@ DeviceResult run_device(
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        if (shape_batches_fixture_mode) {
+        if (simple_particle_fixture_mode) {
+            const auto byte_offset = [](std::size_t offset) {
+                return static_cast<std::uint32_t>(
+                    offset * sizeof(std::uint32_t));
+            };
+            const auto initialize = [&](std::size_t offset,
+                                        std::initializer_list<std::uint32_t> values) {
+                words[offset - 1u] = kGuardBefore;
+                std::copy(values.begin(), values.end(), words + offset);
+                words[offset + values.size()] = kGuardAfter;
+            };
+            words[0] = byte_offset(kSimpleParticleOutputOffset);
+            words[1] = 1u;
+            words[2] = byte_offset(kSimpleParticleInputOffset);
+            words[3] = 1u;
+            words[4] = byte_offset(kSimpleParticleStartIndicesOffset);
+            words[5] = 2u;
+            words[6] = byte_offset(kSimpleParticleFluidSizesOffset);
+            words[7] = 1u;
+            words[8] = byte_offset(kSimpleParticleParametersOffset);
+            words[9] = 1u;
+            words[10] = 1u;
+            initialize(
+                kSimpleParticleOutputOffset,
+                {0xaaaaaaaau, 0xbbbbbbbbu, 0xccccccccu, 0xddddddddu});
+            initialize(
+                kSimpleParticleInputOffset,
+                {kSimpleParticleInput[0], kSimpleParticleInput[1],
+                 kSimpleParticleInput[2], kSimpleParticleInput[3]});
+            initialize(kSimpleParticleStartIndicesOffset, {0u, 1u});
+            initialize(kSimpleParticleFluidSizesOffset, {1u});
+            words[kSimpleParticleParametersOffset - 1u] = kGuardBefore;
+            std::fill_n(words + kSimpleParticleParametersOffset, 40u, 0u);
+            words[kSimpleParticleParametersOffset] = 0x3f000000u;
+            words[kSimpleParticleParametersOffset + 4u] = 0x40000000u;
+            words[kSimpleParticleParametersOffset + 5u] = 0xc0800000u;
+            words[kSimpleParticleParametersOffset + 6u] = 0x3f800000u;
+            words[kSimpleParticleParametersOffset + 9u] = 0x3e800000u;
+            words[kSimpleParticleParametersOffset + 16u] = 0x41200000u;
+            words[kSimpleParticleParametersOffset + 40u] = kGuardAfter;
+        } else if (shape_batches_fixture_mode) {
             const auto byte_offset = [](std::size_t offset) {
                 return static_cast<std::uint32_t>(
                     offset * sizeof(std::uint32_t));
@@ -1622,6 +1680,7 @@ DeviceResult run_device(
                               constraints_fixture_mode ||
                               dynamic_response_fixture_mode ||
                               static_response_fixture_mode ||
+                              simple_particle_fixture_mode ||
                               shape_batches_fixture_mode || triangles_fixture_mode
                         ? 2u
                         : 1u;
@@ -1904,7 +1963,45 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        if (shape_batches_fixture_mode) {
+        if (simple_particle_fixture_mode) {
+            std::copy_n(
+                words + kSimpleParticleOutputOffset,
+                result.simple_particle_output.size(),
+                result.simple_particle_output.begin());
+            const auto guards_match =
+                [&](std::size_t offset, std::size_t count) {
+                    return words[offset - 1u] == kGuardBefore &&
+                        words[offset + count] == kGuardAfter;
+                };
+            result.simple_particle_guards_intact =
+                guards_match(kSimpleParticleOutputOffset, 4u) &&
+                guards_match(kSimpleParticleInputOffset, 4u) &&
+                guards_match(kSimpleParticleStartIndicesOffset, 2u) &&
+                guards_match(kSimpleParticleFluidSizesOffset, 1u) &&
+                guards_match(kSimpleParticleParametersOffset, 40u);
+            std::array<std::uint32_t, 40> expected_parameters = {};
+            expected_parameters[0] = 0x3f000000u;
+            expected_parameters[4] = 0x40000000u;
+            expected_parameters[5] = 0xc0800000u;
+            expected_parameters[6] = 0x3f800000u;
+            expected_parameters[9] = 0x3e800000u;
+            expected_parameters[16] = 0x41200000u;
+            result.pass =
+                result.simple_particle_output ==
+                    kExpectedSimpleParticleOutput &&
+                std::equal(
+                    words + kSimpleParticleInputOffset,
+                    words + kSimpleParticleInputOffset + 4u,
+                    kSimpleParticleInput.begin()) &&
+                words[kSimpleParticleStartIndicesOffset] == 0u &&
+                words[kSimpleParticleStartIndicesOffset + 1u] == 1u &&
+                words[kSimpleParticleFluidSizesOffset] == 1u &&
+                std::equal(
+                    words + kSimpleParticleParametersOffset,
+                    words + kSimpleParticleParametersOffset + 40u,
+                    expected_parameters.begin()) &&
+                result.simple_particle_guards_intact;
+        } else if (shape_batches_fixture_mode) {
             std::copy_n(
                 words + kBoxesPositionOffset,
                 result.boxes_position.size(),
@@ -2564,10 +2661,12 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = shape_batches_fixture_mode
-                ? "fluid shape-batch fixture result mismatch"
-                : triangles_fixture_mode
-                    ? "fluid triangle fixture result mismatch"
+            result.error = simple_particle_fixture_mode
+                ? "fluid simple-particle fixture result mismatch"
+                : shape_batches_fixture_mode
+                    ? "fluid shape-batch fixture result mismatch"
+                    : triangles_fixture_mode
+                        ? "fluid triangle fixture result mismatch"
                 : static_response_fixture_mode
                     ? "fluid static response fixture result mismatch"
                 : dynamic_response_fixture_mode
@@ -3458,6 +3557,9 @@ int main(int argc, char **argv)
     const bool static_response_fixture_mode =
         argc == 4 &&
         std::string(argv[2]) == "--fluid-static-response-fixture";
+    const bool simple_particle_fixture_mode =
+        argc == 4 &&
+        std::string(argv[2]) == "--fluid-simple-particle-fixture";
     const bool boxes_fixture_mode =
         argc == 4 &&
         std::string(argv[2]) == "--fluid-boxes-fixture";
@@ -3490,6 +3592,7 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--fluid-constraints-fixture" ||
          std::string(argv[2]) == "--fluid-dynamic-response-fixture" ||
          std::string(argv[2]) == "--fluid-static-response-fixture" ||
+         std::string(argv[2]) == "--fluid-simple-particle-fixture" ||
          std::string(argv[2]) == "--fluid-boxes-fixture" ||
          std::string(argv[2]) == "--fluid-capsules-fixture" ||
          std::string(argv[2]) == "--fluid-convexes-fixture" ||
@@ -3502,8 +3605,8 @@ int main(int argc, char **argv)
          !force_fixture_mode && !deformable_fixture_mode &&
          !solver_fixture_mode && !collision_fixture_mode &&
          !constraints_fixture_mode && !dynamic_response_fixture_mode &&
-         !static_response_fixture_mode && !shape_batches_fixture_mode &&
-         !triangles_fixture_mode &&
+         !static_response_fixture_mode && !simple_particle_fixture_mode &&
+         !shape_batches_fixture_mode && !triangles_fixture_mode &&
          !sequence_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
@@ -3521,6 +3624,7 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --fluid-constraints-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-dynamic-response-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-static-response-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --fluid-simple-particle-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-boxes-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-capsules-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-convexes-fixture <generated.spv>\n"
@@ -3575,7 +3679,8 @@ int main(int argc, char **argv)
         force_fixture_mode || deformable_fixture_mode || solver_fixture_mode ||
         collision_fixture_mode || constraints_fixture_mode ||
         dynamic_response_fixture_mode || static_response_fixture_mode ||
-        shape_batches_fixture_mode || triangles_fixture_mode;
+        simple_particle_fixture_mode || shape_batches_fixture_mode ||
+        triangles_fixture_mode;
     const bool require_memory_result =
         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
         !constant_fixture_mode && !texture_fixture_mode &&
@@ -3583,8 +3688,8 @@ int main(int argc, char **argv)
         !force_fixture_mode && !deformable_fixture_mode &&
         !solver_fixture_mode && !collision_fixture_mode &&
         !constraints_fixture_mode && !dynamic_response_fixture_mode &&
-        !static_response_fixture_mode && !shape_batches_fixture_mode &&
-        !triangles_fixture_mode;
+        !static_response_fixture_mode && !simple_particle_fixture_mode &&
+        !shape_batches_fixture_mode && !triangles_fixture_mode;
     std::vector<std::uint32_t> shader;
     std::array<std::vector<std::uint32_t>, 3> sequence_shaders;
     const auto load_shader = [](const char *path,
@@ -3628,6 +3733,7 @@ int main(int argc, char **argv)
                     solver_fixture_mode || collision_fixture_mode ||
                     constraints_fixture_mode || dynamic_response_fixture_mode ||
                     static_response_fixture_mode ||
+                    simple_particle_fixture_mode ||
                     shape_batches_fixture_mode || triangles_fixture_mode
                 ? argv[3]
                 : argv[2];
@@ -3666,6 +3772,7 @@ int main(int argc, char **argv)
                   constraints_fixture_mode,
                   dynamic_response_fixture_mode,
                   static_response_fixture_mode,
+                  simple_particle_fixture_mode,
                   shape_batches_fixture_mode,
                   convexes_fixture_mode,
                   triangles_fixture_mode);
@@ -3687,6 +3794,7 @@ int main(int argc, char **argv)
                capsules_fixture_mode ? "fluid_capsules_fixture" :
                convexes_fixture_mode ? "fluid_convexes_fixture" :
                boxes_fixture_mode ? "fluid_boxes_fixture" :
+               simple_particle_fixture_mode ? "fluid_simple_particle_fixture" :
                triangles_fixture_mode ? "fluid_triangles_fixture" :
                static_response_fixture_mode
                    ? "fluid_static_response_fixture" :
@@ -3716,6 +3824,17 @@ int main(int argc, char **argv)
                << "  \"iteration_count\": 0,\n"
                << "  \"collision_static_shared_bytes\": 4097,\n"
                << "  \"solver_dynamic_shared_bytes\": 7072,\n";
+    } else if (simple_particle_fixture_mode) {
+        output << "  \"kernel\": \"KernelFluidSimpleParticle\",\n"
+               << "  \"particle_count\": 1,\n"
+               << "  \"fluid_count\": 1,\n"
+               << "  \"static_shared_bytes\": 10756,\n"
+               << "  \"time_step_bits\": \"0x3f000000\",\n"
+               << "  \"damping_bits\": \"0x3e800000\",\n"
+               << "  \"input_bits\": [\"0x3f800000\", \"0x40000000\", "
+                  "\"0x40400000\", \"0x11223344\"],\n"
+               << "  \"expected_output_bits\": [\"0x3fe00000\", "
+                  "\"0x00000000\", \"0x40440000\", \"0x00000000\"],\n";
     } else if (shape_batches_fixture_mode) {
         output << "  \"kernel\": \""
                << (convexes_fixture_mode
@@ -3920,6 +4039,13 @@ int main(int argc, char **argv)
             output << ",\n"
                    << "      \"guards_intact\": "
                    << (result.sequence_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (simple_particle_fixture_mode) {
+            output << "      \"output_bits\": ";
+            write_bits(result.simple_particle_output);
+            output << ",\n"
+                   << "      \"guards_intact\": "
+                   << (result.simple_particle_guards_intact ? "true" : "false")
                    << ",\n";
         } else if (shape_batches_fixture_mode) {
             output << "      \"output_position_bits\": ";

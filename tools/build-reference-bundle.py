@@ -22,6 +22,7 @@ VULKAN_REPORTS = {
     "fluid_constraints": "fluid-constraints.json",
     "fluid_dynamic_response": "fluid-dynamic-response.json",
     "fluid_static_response": "fluid-static-response.json",
+    "fluid_simple_particle": "fluid-simple-particle.json",
     "fluid_boxes": "fluid-boxes.json",
     "fluid_capsules": "fluid-capsules.json",
     "fluid_convexes": "fluid-convexes.json",
@@ -85,6 +86,11 @@ def parse_args() -> argparse.Namespace:
         "--cuda-fluid-static-response",
         type=Path,
         help="generated cuda-fluid-static-response-fixture result",
+    )
+    parser.add_argument(
+        "--cuda-fluid-simple-particle",
+        type=Path,
+        help="generated cuda-fluid-simple-particle-fixture result",
     )
     parser.add_argument(
         "--cuda-fluid-boxes",
@@ -171,6 +177,11 @@ def main() -> int:
         if args.cuda_fluid_static_response
         else base.get("cuda", {}).get("fluid_static_response") if base else None
     )
+    cuda_fluid_simple_particle = (
+        load_json(args.cuda_fluid_simple_particle.resolve())
+        if args.cuda_fluid_simple_particle
+        else base.get("cuda", {}).get("fluid_simple_particle") if base else None
+    )
     cuda_fluid_boxes = (
         load_json(args.cuda_fluid_boxes.resolve())
         if args.cuda_fluid_boxes
@@ -217,6 +228,7 @@ def main() -> int:
         or cuda_fluid_constraints is None
         or cuda_fluid_dynamic_response is None
         or cuda_fluid_static_response is None
+        or cuda_fluid_simple_particle is None
         or cuda_fluid_boxes is None
         or cuda_fluid_capsules is None
         or cuda_fluid_convexes is None
@@ -229,12 +241,12 @@ def main() -> int:
         raise SystemExit(
             "a new bundle requires --cuda-oracle, --cuda-physx, "
             "--cuda-fluid-constraints, --cuda-fluid-dynamic-response, "
-            "--cuda-fluid-static-response, --cuda-fluid-boxes, "
-            "--cuda-fluid-capsules, --cuda-fluid-convexes, "
+            "--cuda-fluid-static-response, --cuda-fluid-simple-particle, "
+            "--cuda-fluid-boxes, --cuda-fluid-capsules, --cuda-fluid-convexes, "
             "--cuda-fluid-triangles, --cuda-deformable, "
             "--cuda-deformable-solver, --cuda-deformable-collision, and "
             "--cuda-deformable-sequence; otherwise supply --base containing "
-            "all thirteen"
+            "all fourteen"
         )
 
     profile = base.get("profile", args.profile) if base else args.profile
@@ -247,6 +259,7 @@ def main() -> int:
             "fluid_constraints": cuda_fluid_constraints,
             "fluid_dynamic_response": cuda_fluid_dynamic_response,
             "fluid_static_response": cuda_fluid_static_response,
+            "fluid_simple_particle": cuda_fluid_simple_particle,
             "fluid_boxes": cuda_fluid_boxes,
             "fluid_capsules": cuda_fluid_capsules,
             "fluid_convexes": cuda_fluid_convexes,

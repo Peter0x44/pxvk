@@ -205,6 +205,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $constraintsEntry = "_Z38PxgCudaFluidCollisionConstraintsBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi"
     $dynamicResponseEntry = "_Z42PxgCudaFluidCollisionDynamicResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi"
     $staticResponseEntry = "_Z41PxgCudaFluidCollisionStaticResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi"
+    $simpleParticleEntry = "_Z26KernelFluidSimpleParticleD17PxgFixedSizeArrayI12PxcVectorPadES_IKS0_E11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj"
     $boxesEntry = "_Z36PxgCudaFluidCollisionBoxShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
     $capsulesEntry = "_Z40PxgCudaFluidCollisionCapsuleShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
     $convexesEntry = "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
@@ -220,6 +221,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $constraintsPtx = Resolve-PtxForEntry $CapturedPtxDir $constraintsEntry
     $dynamicResponsePtx = Resolve-PtxForEntry $CapturedPtxDir $dynamicResponseEntry
     $staticResponsePtx = Resolve-PtxForEntry $CapturedPtxDir $staticResponseEntry
+    $simpleParticlePtx = Resolve-PtxForEntry $CapturedPtxDir $simpleParticleEntry
     $boxesPtx = Resolve-PtxForEntry $CapturedPtxDir $boxesEntry
     $capsulesPtx = Resolve-PtxForEntry $CapturedPtxDir $capsulesEntry
     $convexesPtx = Resolve-PtxForEntry $CapturedPtxDir $convexesEntry
@@ -232,6 +234,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $fluidConstraintsManifest = Join-Path $resultDir "fluid-constraints-manifest.json"
     $fluidDynamicResponseManifest = Join-Path $resultDir "fluid-dynamic-response-manifest.json"
     $fluidStaticResponseManifest = Join-Path $resultDir "fluid-static-response-manifest.json"
+    $fluidSimpleParticleManifest = Join-Path $resultDir "fluid-simple-particle-manifest.json"
     $fluidBoxesManifest = Join-Path $resultDir "fluid-boxes-manifest.json"
     $fluidCapsulesManifest = Join-Path $resultDir "fluid-capsules-manifest.json"
     $fluidConvexesManifest = Join-Path $resultDir "fluid-convexes-manifest.json"
@@ -246,6 +249,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $constraintsSpirv = Join-Path $resultDir "fluid-constraints.spv"
     $dynamicResponseSpirv = Join-Path $resultDir "fluid-dynamic-response.spv"
     $staticResponseSpirv = Join-Path $resultDir "fluid-static-response.spv"
+    $simpleParticleSpirv = Join-Path $resultDir "fluid-simple-particle.spv"
     $boxesSpirv = Join-Path $resultDir "fluid-boxes.spv"
     $capsulesSpirv = Join-Path $resultDir "fluid-capsules.spv"
     $convexesSpirv = Join-Path $resultDir "fluid-convexes.spv"
@@ -263,6 +267,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     Invoke-Checked $frontend @($constraintsPtx, $fluidConstraintsManifest)
     Invoke-Checked $frontend @($dynamicResponsePtx, $fluidDynamicResponseManifest)
     Invoke-Checked $frontend @($staticResponsePtx, $fluidStaticResponseManifest)
+    Invoke-Checked $frontend @($simpleParticlePtx, $fluidSimpleParticleManifest)
     Invoke-Checked $frontend @($boxesPtx, $fluidBoxesManifest)
     Invoke-Checked $frontend @($capsulesPtx, $fluidCapsulesManifest)
     Invoke-Checked $frontend @($convexesPtx, $fluidConvexesManifest)
@@ -293,6 +298,10 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     Invoke-Checked $emitter @(
         "--entry", $staticResponseEntry, "128", "0",
         $fluidStaticResponseManifest, $staticResponseSpirv
+    )
+    Invoke-Checked $emitter @(
+        "--entry", $simpleParticleEntry, "256", "0",
+        $fluidSimpleParticleManifest, $simpleParticleSpirv
     )
     Invoke-Checked $emitter @(
         "--entry", $boxesEntry, "64", "0",
@@ -330,6 +339,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         $constraintsSpirv,
         $dynamicResponseSpirv,
         $staticResponseSpirv,
+        $simpleParticleSpirv,
         $boxesSpirv,
         $capsulesSpirv,
         $convexesSpirv,
@@ -373,6 +383,11 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         (Join-Path $resultDir "fluid-static-response.json"),
         "--fluid-static-response-fixture",
         $staticResponseSpirv
+    )
+    Invoke-Checked $memorySmoke @(
+        (Join-Path $resultDir "fluid-simple-particle.json"),
+        "--fluid-simple-particle-fixture",
+        $simpleParticleSpirv
     )
     Invoke-Checked $memorySmoke @(
         (Join-Path $resultDir "fluid-boxes.json"),

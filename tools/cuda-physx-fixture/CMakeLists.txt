@@ -62,6 +62,13 @@ target_compile_features(cuda-fluid-static-response-fixture PRIVATE c_std_11)
 target_compile_definitions(
     cuda-fluid-static-response-fixture PRIVATE _WIN32_WINNT=0x0601)
 
+add_executable(cuda-fluid-simple-particle-fixture simple_particle.c)
+target_include_directories(
+    cuda-fluid-simple-particle-fixture PRIVATE "${CUDA_DRIVER_INCLUDE_DIR}")
+target_compile_features(cuda-fluid-simple-particle-fixture PRIVATE c_std_11)
+target_compile_definitions(
+    cuda-fluid-simple-particle-fixture PRIVATE _WIN32_WINNT=0x0601)
+
 add_executable(cuda-fluid-boxes-fixture shape_batches.c)
 target_include_directories(
     cuda-fluid-boxes-fixture PRIVATE "${CUDA_DRIVER_INCLUDE_DIR}")
@@ -108,6 +115,7 @@ if(MSVC)
             cuda-fluid-constraints-fixture
             cuda-fluid-dynamic-response-fixture
             cuda-fluid-static-response-fixture
+            cuda-fluid-simple-particle-fixture
             cuda-fluid-boxes-fixture
             cuda-fluid-capsules-fixture
             cuda-fluid-convexes-fixture
@@ -124,6 +132,7 @@ else()
             cuda-deformable-collision-fixture
             cuda-fluid-constraints-fixture
             cuda-fluid-dynamic-response-fixture
+            cuda-fluid-simple-particle-fixture
             cuda-fluid-static-response-fixture
             cuda-fluid-boxes-fixture
             cuda-fluid-capsules-fixture

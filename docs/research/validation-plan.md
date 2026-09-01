@@ -262,6 +262,15 @@ parameter, and particle loads plus both out-of-range and empty-shape exits on
 native RTX and translated Intel/RTX. No convex-contact
 geometry is covered.
 
+`KernelFluidSimpleParticle` is the fifteenth captured entry to compile and
+execute. Its 171 instructions emit a deterministic 6,817-word module at local
+size 256 with 10,756 bytes of static shared memory. A focused one-particle
+fixture stages one 160-byte fluid-parameter record, two start indices, and one
+fluid size through shared memory across one barrier, runs the start-index
+binary search, and integrates velocity with damping and a skipped clamp.
+Native RTX and translated Intel/RTX match the integrated velocity vector and
+all guards exactly.
+
 `PxgCudaDeformableUpdate`, `KernelDeformableUberCollision`, and
 `KernelDeformableUberSolver<512>` are the fifth through seventh captured entries
 to compile and execute. Liveness-based reuse of non-interfering PTX register
@@ -270,8 +279,8 @@ all pass Vulkan 1.2 validation. Native RTX and translated Intel/RTX match exact
 output bits and guard ranges for all three focused fixtures. Collision uses the
 captured local size 64 and 4,097-byte static shared layout; the solver uses
 local size 64 and the captured 7,072-byte dynamic shared allocation.
-The other two launched entries remain parse/type/CFG validated rather than
-lowered.
+The last untranslated launched entry, `radixSortBlocks<32,0,false>`, remains
+parse/type/CFG validated rather than lowered.
 
 The same three modules also execute as one ordered step. Native CUDA queues
 update, collision, and solver on the default stream without intermediate host

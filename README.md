@@ -14,9 +14,10 @@ modules. Direct SPIR-V lowering covers the project oracle,
 `PxgCudaFluidCollisionBoxShapesBatch`,
 `PxgCudaFluidCollisionCapsuleShapesBatch`,
 `PxgCudaFluidCollisionConvexShapesBatch`,
-`PxgCudaFluidCollisionTrianglesBatch`, `PxgCudaDeformableUpdate`,
+`PxgCudaFluidCollisionTrianglesBatch`, `KernelFluidSimpleParticle`,
+`PxgCudaDeformableUpdate`,
 `KernelDeformableUberCollision`, and `KernelDeformableUberSolver<512>`. Exact
-native/Vulkan differential fixtures cover the oracle, all eleven translated
+native/Vulkan differential fixtures cover the oracle, all twelve translated
 fluid kernels, all three translated deformable kernels, and the ordered
 deformable update/collision/solver step.
 
@@ -63,7 +64,7 @@ python .\extract-physx-ptx.py `
 ```
 
 The extractor needs no CUDA toolkit. It emits stable `fatbin_####.ptx` files
-plus a source/module hash manifest. Keep that output local. Add the eleven
+plus a source/module hash manifest. Keep that output local. Add the twelve
 trace-shaped fluid fixtures, the focused deformable fixtures, and the ordered
 three-kernel deformable step by passing either this directory or a ZLUDA trace
 module directory:
@@ -75,8 +76,8 @@ module directory:
 The suite resolves modules by their PTX entry names rather than trace-specific
 module numbers. It compiles, validates, and executes calc-hash, reorder,
 density, force, fluid collision constraints, dynamic response, static response,
-boxes, capsules, convexes, triangles, the three focused deformable kernels, and
-the ordered deformable step.
+boxes, capsules, convexes, triangles, simple particle, the three focused
+deformable kernels, and the ordered deformable step.
 Any failed device, shader validation, guard range, or exact result returns a
 nonzero process exit code.
 
