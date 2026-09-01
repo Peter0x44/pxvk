@@ -40,6 +40,7 @@
     or.pred %p6, %p1, %p2;
     or.pred %p7, %p3, %p4;
     or.pred %p8, %p5, %p6;
+    not.pred %p9, %p8;
     min.ftz.f32 %f5, %f1, %f2;
     selp.u16 %rs5, %rs3, %rs4, %p7;
     selp.b16 %rs6, %rs1, %rs2, %p8;

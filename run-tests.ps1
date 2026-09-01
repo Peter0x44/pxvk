@@ -203,6 +203,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $deformableSolverEntry = "_Z26KernelDeformableUberSolverILj512EEvjbPhPi"
     $deformableCollisionEntry = "_Z29KernelDeformableUberCollisionPi"
     $constraintsEntry = "_Z38PxgCudaFluidCollisionConstraintsBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi"
+    $dynamicResponseEntry = "_Z42PxgCudaFluidCollisionDynamicResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi"
 
     $calcHashPtx = Resolve-PtxForEntry $CapturedPtxDir $calcHashEntry
     $reorderPtx = Resolve-PtxForEntry $CapturedPtxDir $reorderEntry
@@ -212,12 +213,14 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $deformableSolverPtx = Resolve-PtxForEntry $CapturedPtxDir $deformableSolverEntry
     $deformableCollisionPtx = Resolve-PtxForEntry $CapturedPtxDir $deformableCollisionEntry
     $constraintsPtx = Resolve-PtxForEntry $CapturedPtxDir $constraintsEntry
+    $dynamicResponsePtx = Resolve-PtxForEntry $CapturedPtxDir $dynamicResponseEntry
 
     Write-Host "Compiling local captured PhysX kernels and running available fixtures..."
     $fluidHashReorderManifest = Join-Path $resultDir "fluid-hash-reorder-manifest.json"
     $fluidDensityManifest = Join-Path $resultDir "fluid-density-manifest.json"
     $fluidForceManifest = Join-Path $resultDir "fluid-force-manifest.json"
     $fluidConstraintsManifest = Join-Path $resultDir "fluid-constraints-manifest.json"
+    $fluidDynamicResponseManifest = Join-Path $resultDir "fluid-dynamic-response-manifest.json"
     $deformableUpdateManifest = Join-Path $resultDir "deformable-update-manifest.json"
     $deformableSolverManifest = Join-Path $resultDir "deformable-solver-manifest.json"
     $deformableCollisionManifest = Join-Path $resultDir "deformable-collision-manifest.json"
@@ -226,6 +229,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $densitySpirv = Join-Path $resultDir "fluid-density.spv"
     $forceSpirv = Join-Path $resultDir "fluid-force.spv"
     $constraintsSpirv = Join-Path $resultDir "fluid-constraints.spv"
+    $dynamicResponseSpirv = Join-Path $resultDir "fluid-dynamic-response.spv"
     $deformableUpdateSpirv = Join-Path $resultDir "deformable-update.spv"
     $deformableSolverSpirv = Join-Path $resultDir "deformable-solver.spv"
     $deformableCollisionSpirv = Join-Path $resultDir "deformable-collision.spv"
@@ -237,6 +241,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     Invoke-Checked $frontend @($densityPtx, $fluidDensityManifest)
     Invoke-Checked $frontend @($forcePtx, $fluidForceManifest)
     Invoke-Checked $frontend @($constraintsPtx, $fluidConstraintsManifest)
+    Invoke-Checked $frontend @($dynamicResponsePtx, $fluidDynamicResponseManifest)
     Invoke-Checked $frontend @($deformableUpdatePtx, $deformableUpdateManifest)
     Invoke-Checked $frontend @($deformableSolverPtx, $deformableSolverManifest)
     Invoke-Checked $frontend @($deformableCollisionPtx, $deformableCollisionManifest)
@@ -257,6 +262,10 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         $fluidConstraintsManifest, $constraintsSpirv
     )
     Invoke-Checked $emitter @(
+        "--entry", $dynamicResponseEntry, "128", "0",
+        $fluidDynamicResponseManifest, $dynamicResponseSpirv
+    )
+    Invoke-Checked $emitter @(
         "--entry", $deformableUpdateEntry, "64", "0",
         $deformableUpdateManifest, $deformableUpdateSpirv
     )
@@ -274,6 +283,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         $densitySpirv,
         $forceSpirv,
         $constraintsSpirv,
+        $dynamicResponseSpirv,
         $deformableUpdateSpirv,
         $deformableSolverSpirv,
         $deformableCollisionSpirv
@@ -303,6 +313,11 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         (Join-Path $resultDir "fluid-constraints.json"),
         "--fluid-constraints-fixture",
         $constraintsSpirv
+    )
+    Invoke-Checked $memorySmoke @(
+        (Join-Path $resultDir "fluid-dynamic-response.json"),
+        "--fluid-dynamic-response-fixture",
+        $dynamicResponseSpirv
     )
     Invoke-Checked $memorySmoke @(
         (Join-Path $resultDir "deformable-update.json"),

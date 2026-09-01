@@ -152,6 +152,14 @@ one-particle no-contact fixture exercises vector shared loads and produces exact
 position, velocity, unit-weight, and cleared-output results. Native RTX and
 translated Intel/RTX match bit-for-bit with every guard intact.
 
+The captured 14,671-word `PxgCudaFluidCollisionDynamicResponseBatch` module
+uses the same bindings 0/1 and local size 128 with 304 bytes of static shared
+memory. Its active-constraint fixture exercises unsigned-integer-to-float
+conversion, predicate negation, reciprocal, inverse square root, and the
+response branch. Native RTX and translated Intel/RTX match the cleared
+accumulators, averaged position, resolved velocity, response vector, unit
+weight, copied ID, cleared flags, and guards bit-for-bit.
+
 All three captured deformable entries now use the same heap/parameter/constant
 model. The 175,407-word collision shader additionally declares binding 3 for 17
 texture metadata records and uses 4,097 bytes of static shared memory. Its
@@ -455,7 +463,8 @@ Translated real-kernel acceptance now has:
 
 - a standalone Vulkan differential with every oracle mismatch classified;
 - native integer and float texture probes fixing both linear-fetch contracts;
-- deterministic fluid calc-hash/reorder/density/force fixtures;
+- deterministic fluid calc-hash/reorder/density/force/constraints/dynamic-
+  response fixtures;
 - exact native/Vulkan deformable-update, collision, and solver fixtures,
   including static/dynamic shared memory and repeated barriers;
 - an ordered three-kernel deformable step over one shared heap.

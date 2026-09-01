@@ -48,6 +48,13 @@ target_compile_features(cuda-fluid-constraints-fixture PRIVATE c_std_11)
 target_compile_definitions(
     cuda-fluid-constraints-fixture PRIVATE _WIN32_WINNT=0x0601)
 
+add_executable(cuda-fluid-dynamic-response-fixture dynamic_response.c)
+target_include_directories(
+    cuda-fluid-dynamic-response-fixture PRIVATE "${CUDA_DRIVER_INCLUDE_DIR}")
+target_compile_features(cuda-fluid-dynamic-response-fixture PRIVATE c_std_11)
+target_compile_definitions(
+    cuda-fluid-dynamic-response-fixture PRIVATE _WIN32_WINNT=0x0601)
+
 add_executable(cuda-deformable-sequence-fixture sequence.c)
 target_include_directories(
     cuda-deformable-sequence-fixture PRIVATE "${CUDA_DRIVER_INCLUDE_DIR}")
@@ -62,6 +69,7 @@ if(MSVC)
             cuda-deformable-solver-fixture
             cuda-deformable-collision-fixture
             cuda-fluid-constraints-fixture
+            cuda-fluid-dynamic-response-fixture
             cuda-deformable-sequence-fixture)
         target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
         target_compile_options(${target} PRIVATE /W4)
@@ -73,6 +81,7 @@ else()
             cuda-deformable-solver-fixture
             cuda-deformable-collision-fixture
             cuda-fluid-constraints-fixture
+            cuda-fluid-dynamic-response-fixture
             cuda-deformable-sequence-fixture)
         target_compile_options(${target} PRIVATE -Wall -Wextra)
         if(MINGW)

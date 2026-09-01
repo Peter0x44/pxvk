@@ -14,11 +14,11 @@ standalone JSON report; `tools/build-reference-bundle.py` stores it at
 
 The original native report had SHA-256
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Seven native runner reports are stored in the deterministic reference bundle:
-the semantic oracle, four-kernel fluid pipeline, focused fluid constraints,
-all three focused deformable workloads, and the ordered deformable step.
-The bundle has SHA-256
-`a998b331488d7f0f3a6f0ff6ae98d3d2b36fbff90dedd7dfeeccffe033f391eb`.
+Eight native runner reports are stored in the deterministic reference bundle:
+the semantic oracle, four-kernel fluid pipeline, focused fluid constraints and
+dynamic response, all three focused deformable workloads, and the ordered
+deformable step. The bundle has SHA-256
+`5c6507bad391062ba2ddf5427310322269f045924417fae1d06a3e1aa48de218`.
 
 ## Environment
 
@@ -66,6 +66,24 @@ ranges remain intact; three reports are byte-identical. The native report
 SHA-256 is
 `28c23397e099c4dc2db893253fbc292c733e0f414928d9812c5b29fc94d6e7eb`;
 the report is supplied as `--cuda-fluid-constraints`.
+
+The focused dynamic-response report uses the next trace-ordered module:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-fluid-dynamic-response-fixture.exe `
+  .\local-ptx\fatbin_0003.ptx `
+  .\native-fluid-dynamic-response.json
+```
+
+It launches `PxgCudaFluidCollisionDynamicResponseBatch` for one active
+constraint with unit X normal, accumulated position `[7,8,9]`, count one,
+zero body velocity, particle velocity `[-2,3,0]`, and impulse scale `0.5f`.
+The kernel clears the consumed normal and accumulators, writes averaged
+position `[7,8,9]`, velocity `[1,3,0]`, response `[-3,0,0]`, unit weight,
+the copied destination ID, and cleared constraint flags. All guards remain
+intact; three native reports are byte-identical. The native report SHA-256 is
+`aadb855952a6fc76c9ac148841aa50e3366511eb9d08f8b7ac15269ed6e113f0`;
+the report is supplied as `--cuda-fluid-dynamic-response`.
 
 The focused deformable report uses the extracted PhysX module on the native
 NVIDIA reference system:

@@ -152,6 +152,14 @@ static shared memory. `collision_types_probe.ptx` retains each shared-vector
 form. The focused one-particle fixture exercises the trace-ordered no-contact
 path and matches native CUDA exactly on Intel and NVIDIA Vulkan adapters.
 
+`PxgCudaFluidCollisionDynamicResponseBatch` adds finite
+`cvt.rn.f32.u32` conversion and `not.pred` lowering. Its 263 instructions lower
+to a deterministic 14,671-word module with local size 128 and 304 bytes of
+static shared memory. `force_math_probe.ptx` and `collision_types_probe.ptx`
+retain the added forms. The focused active-constraint fixture consumes the
+constraints output layout and matches native CUDA exactly on Intel and NVIDIA
+Vulkan adapters.
+
 Validate and execute the module:
 
 ```powershell
@@ -265,7 +273,7 @@ The frontend does not yet provide:
 - general type inference beyond declared register banks and the 147 finite
   opcode contracts;
 - reachability or dead-code elimination;
-- SPIR-V emission beyond the project oracle and the eight launched entries
+- SPIR-V emission beyond the project oracle and the nine launched entries
   marked **Exact fixture** in
   [`../../docs/research/kernel-status.md`](../../docs/research/kernel-status.md);
 - shader caching;

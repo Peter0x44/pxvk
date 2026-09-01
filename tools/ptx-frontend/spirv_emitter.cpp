@@ -2509,6 +2509,17 @@ private:
                     {a.id, b.id}));
             return;
         }
+        if (variant == "not.pred") {
+            const Value input =
+                scalar_operand(operands.at(1), ValueType::boolean);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpLogicalNot,
+                    ValueType::boolean,
+                    {input.id}));
+            return;
+        }
         if (base == "and" || base == "or" ||
             base == "shl" || base == "shr") {
             const Value a =
@@ -2719,6 +2730,17 @@ private:
                 module_.instruction(
                     SpvOpConvertFToS,
                     ValueType::s32,
+                    {input.id}));
+            return;
+        }
+        if (variant == "cvt.rn.f32.u32") {
+            const Value input =
+                scalar_operand(operands.at(1), ValueType::u32);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpConvertUToF,
+                    ValueType::f32,
                     {input.id}));
             return;
         }

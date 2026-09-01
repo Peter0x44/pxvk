@@ -289,7 +289,7 @@ while avoiding thousands of dead or non-overlapping function variables. The
 collision entry exposed the practical requirement: literal bank-sized
 allocation produced a valid module that the Intel driver could not create a
 pipeline for; liveness allocation passes exact Intel/RTX differentials for all
-eight lowered captured entries.
+nine lowered captured entries.
 
 With the two captured texture variants plus the finite integer/FTZ-float tail,
 all 411 density instructions lower. The deterministic 17,768-word SPIR-V
@@ -325,6 +325,27 @@ native reports are byte-identical. Native and Vulkan report SHA-256 values are
 `28c23397e099c4dc2db893253fbc292c733e0f414928d9812c5b29fc94d6e7eb`
 and
 `7de7425bff92b4cfb49266564ffac9ef611170a2bf608e2d815276ac17903cbb`.
+
+The next trace-ordered entry,
+`PxgCudaFluidCollisionDynamicResponseBatch`, contains 263 instructions in 36
+basic blocks with 51 CFG edges. It uses a 20-byte packed parameter block, 304
+bytes of static shared memory, local size 128, and no module constants or
+textures. Finite lowering adds `cvt.rn.f32.u32` and `not.pred`; the
+redistributable float-math and collision-type probes retain both selected-entry
+paths. The deterministic 14,671-word module passes Vulkan 1.2 validation;
+SHA-256 is
+`1367057fa1d0379b45e1b7ed743440bafc8cbd45b065a3de0849946c0fc8eff9`.
+
+The focused active-constraint fixture consumes the constraints output layout:
+unit X normal, accumulated position `[7,8,9]`, count one, zero body velocity,
+particle velocity `[-2,3,0]`, and impulse scale `0.5f`. Native CUDA and
+PTX-derived Intel/RTX Vulkan clear the consumed normal and accumulators and
+produce averaged position `[7,8,9]`, velocity `[1,3,0]`, response `[-3,0,0]`,
+unit weight, copied destination ID, cleared flags, and intact guards. Three
+native reports are byte-identical. Native and Vulkan report SHA-256 values are
+`aadb855952a6fc76c9ac148841aa50e3366511eb9d08f8b7ac15269ed6e113f0`
+and
+`86fc752ef108674ae7adb086dfb570e4e7defd7098ff214626d79090231b6a87`.
 
 The first deformable-family entry, `PxgCudaDeformableUpdate`, contains the
 finite unsigned `setp.lt.u32` comparison and bitwise `selp.b32` select variants.
@@ -459,10 +480,10 @@ Reproduce the complete portable path from the repository root:
 .\run-tests.ps1 -CapturedPtxDir path\to\extracted\ptx
 ```
 
-The directory must contain modules 0013, 0010, and 0016. The script parses,
-emits, validates when `spirv-val.exe` is available, and executes calc-hash,
-reorder, density, and force. Proprietary PTX and generated derivatives remain
-local.
+The directory must contain the extracted modules named in
+`kernel-status.md`. The script parses, emits, validates when `spirv-val.exe` is
+available, and executes all nine translated entries plus the ordered deformable
+step. Proprietary PTX and generated derivatives remain local.
 
 The emitted modules declare float32 `RoundingModeRTE` and
 `SignedZeroInfNanPreserve`. All three probed target GPUs advertise those

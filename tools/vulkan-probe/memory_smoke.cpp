@@ -185,6 +185,32 @@ constexpr std::array<std::uint32_t, 4> kExpectedConstraintsPosition = {
 constexpr std::array<std::uint32_t, 4> kExpectedConstraintsVelocity = {
     0x40800000u, 0x40a00000u, 0x40c00000u, 0u,
 };
+constexpr std::size_t kDynamicResponseWorkUnitOffset = 8;
+constexpr std::size_t kDynamicResponseStartAddrsOffset = 16;
+constexpr std::size_t kDynamicResponseParametersOffset = 52;
+constexpr std::size_t kDynamicResponseNormalOffset = 96;
+constexpr std::size_t kDynamicResponseAccumulatedPositionOffset = 104;
+constexpr std::size_t kDynamicResponseBodyVelocityOffset = 112;
+constexpr std::size_t kDynamicResponseCountOffset = 120;
+constexpr std::size_t kDynamicResponseWeightOffset = 124;
+constexpr std::size_t kDynamicResponseAveragedPositionOffset = 128;
+constexpr std::size_t kDynamicResponseParticleVelocityOffset = 136;
+constexpr std::size_t kDynamicResponseOutputOffset = 144;
+constexpr std::size_t kDynamicResponseDestIdOffset = 152;
+constexpr std::size_t kDynamicResponseSourceIdOffset = 156;
+constexpr std::size_t kDynamicResponseFlagsOffset = 160;
+constexpr std::size_t kDynamicResponseErrorOffset = 164;
+constexpr VkDeviceSize kDynamicResponsePayloadBytes =
+    192u * sizeof(std::uint32_t);
+constexpr std::array<std::uint32_t, 4> kExpectedDynamicResponsePosition = {
+    0x40e00000u, 0x41000000u, 0x41100000u, 0u,
+};
+constexpr std::array<std::uint32_t, 4> kExpectedDynamicResponseVelocity = {
+    0x3f800000u, 0x40400000u, 0u, 0u,
+};
+constexpr std::array<std::uint32_t, 4> kExpectedDynamicResponseOutput = {
+    0xc0400000u, 0u, 0u, 0u,
+};
 constexpr std::array<std::uint32_t, 4> kExpectedReorderedPosition = {
     0x3f800000u, 0x40000000u, 0x40400000u, 0u,
 };
@@ -574,6 +600,14 @@ struct DeviceResult {
     std::array<std::uint32_t, 4> constraints_velocity = {};
     std::uint32_t constraints_weight = 0;
     bool constraints_guards_intact = false;
+    std::array<std::uint32_t, 4> dynamic_response_normal = {};
+    std::array<std::uint32_t, 4> dynamic_response_position = {};
+    std::array<std::uint32_t, 4> dynamic_response_velocity = {};
+    std::array<std::uint32_t, 4> dynamic_response_output = {};
+    std::uint32_t dynamic_response_weight = 0;
+    std::uint32_t dynamic_response_dest_id = 0;
+    std::uint32_t dynamic_response_flags = 0;
+    bool dynamic_response_guards_intact = false;
     std::string error;
 };
 
@@ -594,7 +628,8 @@ DeviceResult run_device(
     bool deformable_fixture_mode,
     bool solver_fixture_mode,
     bool collision_fixture_mode,
-    bool constraints_fixture_mode)
+    bool constraints_fixture_mode,
+    bool dynamic_response_fixture_mode)
 {
     DeviceResult result;
     result.index = device_index;
@@ -707,9 +742,11 @@ DeviceResult run_device(
                     ? kKernelFixtureCopyBytes
                     : constant_fixture_mode
                         ? kConstantFixtureCopyBytes
-                        : constraints_fixture_mode
-                            ? kConstraintsPayloadBytes
-                            : collision_fixture_mode
+                        : dynamic_response_fixture_mode
+                            ? kDynamicResponsePayloadBytes
+                            : constraints_fixture_mode
+                                ? kConstraintsPayloadBytes
+                                : collision_fixture_mode
                                 ? collision_texture_metadata_offset +
                                       kCollisionTextureMetadataBytes
                                 : solver_fixture_mode
@@ -732,7 +769,72 @@ DeviceResult run_device(
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        if (constraints_fixture_mode) {
+        if (dynamic_response_fixture_mode) {
+            const auto byte_offset = [](std::size_t offset) {
+                return static_cast<std::uint32_t>(
+                    offset * sizeof(std::uint32_t));
+            };
+            const auto initialize = [&](std::size_t offset,
+                                        std::initializer_list<std::uint32_t> values) {
+                words[offset - 1u] = kGuardBefore;
+                std::copy(values.begin(), values.end(), words + offset);
+                words[offset + values.size()] = kGuardAfter;
+            };
+            words[0] = byte_offset(kDynamicResponseStartAddrsOffset);
+            words[1] = 1u;
+            words[2] = byte_offset(kDynamicResponseWorkUnitOffset);
+            words[3] = 1u;
+            words[4] = byte_offset(kDynamicResponseErrorOffset);
+            initialize(kDynamicResponseWorkUnitOffset, {0u, 1u, 0u, 0u});
+            words[kDynamicResponseStartAddrsOffset - 1u] = kGuardBefore;
+            std::fill_n(words + kDynamicResponseStartAddrsOffset, 32u, 0u);
+            words[kDynamicResponseStartAddrsOffset + 32u] = kGuardAfter;
+            auto *start_addrs = words + kDynamicResponseStartAddrsOffset;
+            start_addrs[8] = byte_offset(kDynamicResponseNormalOffset);
+            start_addrs[9] =
+                byte_offset(kDynamicResponseAccumulatedPositionOffset);
+            start_addrs[10] = byte_offset(kDynamicResponseBodyVelocityOffset);
+            start_addrs[11] = byte_offset(kDynamicResponseCountOffset);
+            start_addrs[12] = byte_offset(kDynamicResponseWeightOffset);
+            start_addrs[13] =
+                byte_offset(kDynamicResponseAveragedPositionOffset);
+            start_addrs[14] =
+                byte_offset(kDynamicResponseParticleVelocityOffset);
+            start_addrs[15] = byte_offset(kDynamicResponseOutputOffset);
+            start_addrs[16] = byte_offset(kDynamicResponseDestIdOffset);
+            start_addrs[17] = byte_offset(kDynamicResponseSourceIdOffset);
+            start_addrs[18] = byte_offset(kDynamicResponseFlagsOffset);
+            start_addrs[27] = byte_offset(kDynamicResponseParametersOffset);
+            words[kDynamicResponseParametersOffset - 1u] = kGuardBefore;
+            std::fill_n(words + kDynamicResponseParametersOffset, 40u, 0u);
+            words[kDynamicResponseParametersOffset + 29u] = 0x3f000000u;
+            words[kDynamicResponseParametersOffset + 34u] = 1u;
+            words[kDynamicResponseParametersOffset + 40u] = kGuardAfter;
+            initialize(
+                kDynamicResponseNormalOffset,
+                {0x3f800000u, 0u, 0u, 0xdeadbeefu});
+            initialize(
+                kDynamicResponseAccumulatedPositionOffset,
+                {0x40e00000u, 0x41000000u, 0x41100000u, 0xcafebabeu});
+            initialize(
+                kDynamicResponseBodyVelocityOffset,
+                {0u, 0u, 0u, 0xabcdef01u});
+            initialize(kDynamicResponseCountOffset, {1u});
+            initialize(kDynamicResponseWeightOffset, {0xfeedfaceu});
+            initialize(
+                kDynamicResponseAveragedPositionOffset,
+                {0xaaaaaaaau, 0xbbbbbbbbu, 0xccccccccu, 0xddddddddu});
+            initialize(
+                kDynamicResponseParticleVelocityOffset,
+                {0xc0000000u, 0x40400000u, 0u, 0xbaadf00du});
+            initialize(
+                kDynamicResponseOutputOffset,
+                {0xaaaaaaaau, 0xbbbbbbbbu, 0xccccccccu, 0xddddddddu});
+            initialize(kDynamicResponseDestIdOffset, {0xfeedfaceu});
+            initialize(kDynamicResponseSourceIdOffset, {0x12345678u});
+            initialize(kDynamicResponseFlagsOffset, {1u});
+            initialize(kDynamicResponseErrorOffset, {0xfeedfaceu});
+        } else if (constraints_fixture_mode) {
             const auto byte_offset = [](std::size_t offset) {
                 return static_cast<std::uint32_t>(
                     offset * sizeof(std::uint32_t));
@@ -1226,7 +1328,8 @@ DeviceResult run_device(
                           deformable_fixture_mode || solver_fixture_mode
                     ? 3u
                     : kernel_fixture_mode || reorder_fixture_mode ||
-                              constraints_fixture_mode
+                              constraints_fixture_mode ||
+                              dynamic_response_fixture_mode
                         ? 2u
                         : 1u;
         std::array<VkDescriptorSetLayoutBinding, 4> bindings = {};
@@ -1504,7 +1607,90 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        if (constraints_fixture_mode) {
+        if (dynamic_response_fixture_mode) {
+            std::copy_n(
+                words + kDynamicResponseNormalOffset,
+                result.dynamic_response_normal.size(),
+                result.dynamic_response_normal.begin());
+            std::copy_n(
+                words + kDynamicResponseAveragedPositionOffset,
+                result.dynamic_response_position.size(),
+                result.dynamic_response_position.begin());
+            std::copy_n(
+                words + kDynamicResponseParticleVelocityOffset,
+                result.dynamic_response_velocity.size(),
+                result.dynamic_response_velocity.begin());
+            std::copy_n(
+                words + kDynamicResponseOutputOffset,
+                result.dynamic_response_output.size(),
+                result.dynamic_response_output.begin());
+            result.dynamic_response_weight =
+                words[kDynamicResponseWeightOffset];
+            result.dynamic_response_dest_id =
+                words[kDynamicResponseDestIdOffset];
+            result.dynamic_response_flags =
+                words[kDynamicResponseFlagsOffset];
+            const auto guards_match =
+                [&](std::size_t offset, std::size_t count) {
+                    return words[offset - 1u] == kGuardBefore &&
+                        words[offset + count] == kGuardAfter;
+                };
+            result.dynamic_response_guards_intact =
+                guards_match(kDynamicResponseWorkUnitOffset, 4u) &&
+                guards_match(kDynamicResponseStartAddrsOffset, 32u) &&
+                guards_match(kDynamicResponseParametersOffset, 40u);
+            for (const std::size_t offset : {
+                     kDynamicResponseNormalOffset,
+                     kDynamicResponseAccumulatedPositionOffset,
+                     kDynamicResponseBodyVelocityOffset,
+                     kDynamicResponseAveragedPositionOffset,
+                     kDynamicResponseParticleVelocityOffset,
+                     kDynamicResponseOutputOffset,
+                 }) {
+                result.dynamic_response_guards_intact =
+                    result.dynamic_response_guards_intact &&
+                    guards_match(offset, 4u);
+            }
+            for (const std::size_t offset : {
+                     kDynamicResponseCountOffset,
+                     kDynamicResponseWeightOffset,
+                     kDynamicResponseDestIdOffset,
+                     kDynamicResponseSourceIdOffset,
+                     kDynamicResponseFlagsOffset,
+                     kDynamicResponseErrorOffset,
+                 }) {
+                result.dynamic_response_guards_intact =
+                    result.dynamic_response_guards_intact &&
+                    guards_match(offset, 1u);
+            }
+            const std::array<std::uint32_t, 4> zero_vector = {};
+            result.pass =
+                result.dynamic_response_normal == zero_vector &&
+                result.dynamic_response_position ==
+                    kExpectedDynamicResponsePosition &&
+                result.dynamic_response_velocity ==
+                    kExpectedDynamicResponseVelocity &&
+                result.dynamic_response_output ==
+                    kExpectedDynamicResponseOutput &&
+                result.dynamic_response_weight == 0x3f800000u &&
+                result.dynamic_response_dest_id == 0x12345678u &&
+                result.dynamic_response_flags == 0u &&
+                std::equal(
+                    words + kDynamicResponseAccumulatedPositionOffset,
+                    words + kDynamicResponseAccumulatedPositionOffset + 4u,
+                    zero_vector.begin()) &&
+                std::equal(
+                    words + kDynamicResponseBodyVelocityOffset,
+                    words + kDynamicResponseBodyVelocityOffset + 4u,
+                    zero_vector.begin()) &&
+                words[kDynamicResponseCountOffset] == 0u &&
+                words[kDynamicResponseSourceIdOffset] == 0x12345678u &&
+                words[kDynamicResponseParametersOffset + 29u] ==
+                    0x3f000000u &&
+                words[kDynamicResponseParametersOffset + 34u] == 1u &&
+                words[kDynamicResponseErrorOffset] == 0xfeedfaceu &&
+                result.dynamic_response_guards_intact;
+        } else if (constraints_fixture_mode) {
             std::copy_n(
                 words + kConstraintsOutputPositionOffset,
                 result.constraints_position.size(),
@@ -1834,9 +2020,11 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = constraints_fixture_mode
-                ? "fluid collision constraints fixture result mismatch"
-                : collision_fixture_mode
+            result.error = dynamic_response_fixture_mode
+                ? "fluid dynamic response fixture result mismatch"
+                : constraints_fixture_mode
+                    ? "fluid collision constraints fixture result mismatch"
+                    : collision_fixture_mode
                     ? "deformable collision fixture result mismatch"
                     : solver_fixture_mode
                         ? "deformable solver fixture result mismatch"
@@ -2714,6 +2902,9 @@ int main(int argc, char **argv)
         argc == 4 && std::string(argv[2]) == "--deformable-collision-fixture";
     const bool constraints_fixture_mode =
         argc == 4 && std::string(argv[2]) == "--fluid-constraints-fixture";
+    const bool dynamic_response_fixture_mode =
+        argc == 4 &&
+        std::string(argv[2]) == "--fluid-dynamic-response-fixture";
     const bool sequence_fixture_mode =
         argc == 6 && std::string(argv[2]) == "--deformable-sequence-fixture";
     const bool incomplete_named_mode =
@@ -2730,6 +2921,7 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--deformable-solver-fixture" ||
          std::string(argv[2]) == "--deformable-sequence-fixture" ||
          std::string(argv[2]) == "--fluid-constraints-fixture" ||
+         std::string(argv[2]) == "--fluid-dynamic-response-fixture" ||
          std::string(argv[2]) == "--deformable-collision-fixture");
     if ((argc != 2 && argc != 3 &&
          !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
@@ -2737,7 +2929,8 @@ int main(int argc, char **argv)
          !texture_float_fixture_mode && !density_fixture_mode &&
          !force_fixture_mode && !deformable_fixture_mode &&
          !solver_fixture_mode && !collision_fixture_mode &&
-         !constraints_fixture_mode && !sequence_fixture_mode) ||
+         !constraints_fixture_mode && !dynamic_response_fixture_mode &&
+         !sequence_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
                   << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n"
@@ -2752,6 +2945,7 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --deformable-solver-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-collision-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-constraints-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --fluid-dynamic-response-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-sequence-fixture <update.spv> <collision.spv> <solver.spv>\n";
         return 2;
     }
@@ -2800,14 +2994,15 @@ int main(int argc, char **argv)
         constant_fixture_mode || texture_fixture_mode ||
         texture_float_fixture_mode || density_fixture_mode ||
         force_fixture_mode || deformable_fixture_mode || solver_fixture_mode ||
-        collision_fixture_mode || constraints_fixture_mode;
+        collision_fixture_mode || constraints_fixture_mode ||
+        dynamic_response_fixture_mode;
     const bool require_memory_result =
         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
         !constant_fixture_mode && !texture_fixture_mode &&
         !texture_float_fixture_mode && !density_fixture_mode &&
         !force_fixture_mode && !deformable_fixture_mode &&
         !solver_fixture_mode && !collision_fixture_mode &&
-        !constraints_fixture_mode;
+        !constraints_fixture_mode && !dynamic_response_fixture_mode;
     std::vector<std::uint32_t> shader;
     std::array<std::vector<std::uint32_t>, 3> sequence_shaders;
     const auto load_shader = [](const char *path,
@@ -2849,7 +3044,7 @@ int main(int argc, char **argv)
                     texture_float_fixture_mode || density_fixture_mode ||
                     force_fixture_mode || deformable_fixture_mode ||
                     solver_fixture_mode || collision_fixture_mode ||
-                    constraints_fixture_mode
+                    constraints_fixture_mode || dynamic_response_fixture_mode
                 ? argv[3]
                 : argv[2];
         shaders_loaded = load_shader(shader_path, shader);
@@ -2884,7 +3079,8 @@ int main(int argc, char **argv)
                   deformable_fixture_mode,
                   solver_fixture_mode,
                   collision_fixture_mode,
-                  constraints_fixture_mode);
+                  constraints_fixture_mode,
+                  dynamic_response_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -2900,6 +3096,8 @@ int main(int argc, char **argv)
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
            << "  \"test\": \""
            << (sequence_fixture_mode ? "deformable_sequence_fixture" :
+               dynamic_response_fixture_mode
+                   ? "fluid_dynamic_response_fixture" :
                constraints_fixture_mode ? "fluid_constraints_fixture" :
                collision_fixture_mode ? "deformable_collision_fixture" :
                solver_fixture_mode ? "deformable_solver_fixture" :
@@ -2924,6 +3122,19 @@ int main(int argc, char **argv)
                << "  \"iteration_count\": 0,\n"
                << "  \"collision_static_shared_bytes\": 4097,\n"
                << "  \"solver_dynamic_shared_bytes\": 7072,\n";
+    } else if (dynamic_response_fixture_mode) {
+        output << "  \"kernel\": "
+                  "\"PxgCudaFluidCollisionDynamicResponseBatch\",\n"
+               << "  \"particle_count\": 1,\n"
+               << "  \"input_constraint_flags\": \"0x00000001\",\n"
+               << "  \"impulse_scale_bits\": \"0x3f000000\",\n"
+               << "  \"static_shared_bytes\": 304,\n"
+               << "  \"expected_position_bits\": [\"0x40e00000\", "
+                  "\"0x41000000\", \"0x41100000\", \"0x00000000\"],\n"
+               << "  \"expected_velocity_bits\": [\"0x3f800000\", "
+                  "\"0x40400000\", \"0x00000000\", \"0x00000000\"],\n"
+               << "  \"expected_response_bits\": [\"0xc0400000\", "
+                  "\"0x00000000\", \"0x00000000\", \"0x00000000\"],\n";
     } else if (constraints_fixture_mode) {
         output << "  \"kernel\": \"PxgCudaFluidCollisionConstraintsBatch\",\n"
                << "  \"particle_count\": 1,\n"
@@ -3063,6 +3274,25 @@ int main(int argc, char **argv)
             output << ",\n"
                    << "      \"guards_intact\": "
                    << (result.sequence_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (dynamic_response_fixture_mode) {
+            output << "      \"output_normal_bits\": ";
+            write_bits(result.dynamic_response_normal);
+            output << ",\n      \"output_position_bits\": ";
+            write_bits(result.dynamic_response_position);
+            output << ",\n      \"output_velocity_bits\": ";
+            write_bits(result.dynamic_response_velocity);
+            output << ",\n      \"output_response_bits\": ";
+            write_bits(result.dynamic_response_output);
+            output << ",\n"
+                   << "      \"output_weight_bits\": \""
+                   << hex32(result.dynamic_response_weight) << "\",\n"
+                   << "      \"output_destination_id\": \""
+                   << hex32(result.dynamic_response_dest_id) << "\",\n"
+                   << "      \"output_constraint_flags\": \""
+                   << hex32(result.dynamic_response_flags) << "\",\n"
+                   << "      \"guards_intact\": "
+                   << (result.dynamic_response_guards_intact ? "true" : "false")
                    << ",\n";
         } else if (constraints_fixture_mode) {
             output << "      \"output_position_bits\": ";
