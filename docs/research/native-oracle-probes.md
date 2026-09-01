@@ -14,11 +14,11 @@ standalone JSON report; `tools/build-reference-bundle.py` stores it at
 
 The original native report had SHA-256
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Eight native runner reports are stored in the deterministic reference bundle:
-the semantic oracle, four-kernel fluid pipeline, focused fluid constraints and
-dynamic response, all three focused deformable workloads, and the ordered
-deformable step. The bundle has SHA-256
-`5c6507bad391062ba2ddf5427310322269f045924417fae1d06a3e1aa48de218`.
+Nine native runner reports are stored in the deterministic reference bundle:
+the semantic oracle, four-kernel fluid pipeline, focused fluid constraints,
+dynamic response, and triangles, all three focused deformable workloads, and
+the ordered deformable step. The bundle has SHA-256
+`bb98605c68bd748d9179117d3cfedc6472eaf34956b9f78aee5c4af55ed990ac`.
 
 ## Environment
 
@@ -84,6 +84,23 @@ the copied destination ID, and cleared constraint flags. All guards remain
 intact; three native reports are byte-identical. The native report SHA-256 is
 `aadb855952a6fc76c9ac148841aa50e3366511eb9d08f8b7ac15269ed6e113f0`;
 the report is supplied as `--cuda-fluid-dynamic-response`.
+
+The focused triangle-collision report uses the extracted triangle module:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-fluid-triangles-fixture.exe `
+  .\local-ptx\fatbin_0005.ptx `
+  .\native-fluid-triangles.json
+```
+
+It launches `PxgCudaFluidCollisionTrianglesBatch` with one particle and a mesh
+work unit containing zero triangles. The captured 64-thread launch crosses the
+three shared-memory setup barriers and takes the empty-mesh branch. Position,
+old position, and the two particle state words are preserved exactly, and all
+guards remain intact. The native report SHA-256 is
+`a9c53cf29be39d08e4eecb6096280be43672cfbc5a218ca906b1e9ac56ad82e9`;
+the report is supplied as `--cuda-fluid-triangles`. This focused fixture does
+not cover a non-empty triangle-contact record.
 
 The focused deformable report uses the extracted PhysX module on the native
 NVIDIA reference system:

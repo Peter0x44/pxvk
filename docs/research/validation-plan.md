@@ -8,7 +8,7 @@ numerical correctness.
 
 The project has a committed native NVIDIA semantic oracle for f32,
 `bar.sync 0`, invocation-private local memory, and signed-coordinate `u32`/`f32`
-linear textures. Repeatable native RTX fixtures for all six translated fluid
+linear textures. Repeatable native RTX fixtures for all seven translated fluid
 kernels and all three captured deformable kernels pass bit-for-bit through
 Vulkan on Intel and RTX, including guard ranges. An ordered three-kernel
 deformable step also passes with one shared heap and explicit compute barriers.
@@ -219,6 +219,15 @@ translated Intel/RTX match the cleared accumulators, averaged position,
 resolved velocity, response vector, unit weight, copied ID, cleared flags, and
 all guards exactly.
 
+`PxgCudaFluidCollisionTrianglesBatch` is the tenth captured entry to compile and
+execute. Its 1,022 instructions emit a deterministic 68,441-word module at
+local size 64 with 4,912 bytes of static shared memory. The selected module
+requires core `shaderInt64`; 64-bit mask arithmetic lowers natively while
+`clz.b64` uses validated 32-bit high/low halves. A focused one-particle
+zero-triangle work unit preserves position, old position, and state words with
+intact guards on native RTX and translated Intel/RTX. It covers the empty-mesh
+branch, not a non-empty triangle contact.
+
 `PxgCudaDeformableUpdate`, `KernelDeformableUberCollision`, and
 `KernelDeformableUberSolver<512>` are the fifth through seventh captured entries
 to compile and execute. Liveness-based reuse of non-interfering PTX register
@@ -226,7 +235,7 @@ slots produces deterministic 9,792-, 175,407-, and 80,354-word SPIR-V modules;
 all pass Vulkan 1.2 validation. Native RTX and translated Intel/RTX match exact
 output bits and guard ranges for all three focused fixtures. Collision uses the
 captured local size 64 and 4,097-byte static shared layout; solver uses local
-size 64 and the captured 7,072-byte dynamic shared allocation. The other seven
+size 64 and the captured 7,072-byte dynamic shared allocation. The other six
 launched entries remain parse/type/CFG validated rather than lowered.
 
 The same three modules also execute as one ordered step. Native CUDA queues

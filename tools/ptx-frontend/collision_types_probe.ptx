@@ -12,6 +12,7 @@
     .reg .pred %p<12>;
     .reg .s16 %rs<8>;
     .reg .s32 %r<10>;
+    .reg .s64 %rd<10>;
     .reg .f32 %f<12>;
 
     ld.param.u32 %r1, [collision_types_probe_param_0];
@@ -32,6 +33,21 @@
     st.shared.v4.u32 [collision_probe_shared], {%r1, %r2, %r2, %r1};
     bar.sync 0;
     ld.shared.v4.u32 {%r4, %r5, %r6, %r7}, [collision_probe_shared];
+    mov.u64 %rd1, 1;
+    shl.b64 %rd2, %rd1, %r2;
+    or.b64 %rd3, %rd1, %rd2;
+    st.shared.u64 [collision_probe_shared+24], %rd3;
+    bar.sync 0;
+    ld.shared.u64 %rd4, [collision_probe_shared+24];
+    and.b64 %rd5, %rd4, %rd3;
+    setp.eq.s64 %p10, %rd5, 0;
+    setp.ne.s64 %p11, %rd5, 0;
+    selp.b64 %rd6, 0, %rd5, %p10;
+    add.s64 %rd7, %rd6, 1;
+    xor.b64 %rd8, %rd7, %rd1;
+    clz.b64 %r8, %rd8;
+    cvt.u32.u64 %r9, %rd8;
+    min.u32 %r9, %r8, %r9;
     setp.eq.b16 %p1, %rs1, %rs2;
     setp.ge.ftz.f32 %p2, %f1, %f2;
     setp.le.ftz.f32 %p3, %f1, %f2;

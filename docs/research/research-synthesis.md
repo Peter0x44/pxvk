@@ -347,6 +347,28 @@ native reports are byte-identical. Native and Vulkan report SHA-256 values are
 and
 `86fc752ef108674ae7adb086dfb570e4e7defd7098ff214626d79090231b6a87`.
 
+`PxgCudaFluidCollisionTrianglesBatch` is the next trace-ordered fluid collision
+entry. It contains 1,022 instructions in 148 basic blocks with 225 CFG edges, a
+20-byte packed parameter block, 4,912 bytes of static shared memory, and local
+size 64. Its triangle candidate mask requires native SPIR-V `Int64` add, shift,
+bitwise, comparison, and select operations. `clz.b64` splits the value into
+32-bit halves because Vulkan validation limits `GLSL.std.450 FindUMsb` to
+32-bit components. The `Int64` capability is emitted only for a selected entry
+that actually contains a 64-bit instruction. The deterministic 68,441-word
+module passes Vulkan 1.2 validation; SHA-256 is
+`e4e4cc84ee9f0a50a56b65610f4965e235e6d27aac504948dbfdec6e0a60e291`.
+
+The focused one-particle fixture selects a mesh work unit with zero triangles.
+It covers the captured 64-thread launch, three shared-memory setup barriers,
+parameter and particle loads, empty-mesh branch, and state writeback. Native
+CUDA and PTX-derived Intel/RTX Vulkan preserve the position, old position, and
+two state words bit-for-bit with every guarded range intact. The native and
+Vulkan report SHA-256 values are
+`a9c53cf29be39d08e4eecb6096280be43672cfbc5a218ca906b1e9ac56ad82e9`
+and
+`fe47f95a513774bc49f316283b15b6f1e6077cd7e4a19944c2bd66ff15f5f36d`.
+This fixture does not yet cover the non-empty triangle-contact path.
+
 The first deformable-family entry, `PxgCudaDeformableUpdate`, contains the
 finite unsigned `setp.lt.u32` comparison and bitwise `selp.b32` select variants.
 Both lower directly to SPIR-V unsigned comparison and `OpSelect`; the committed

@@ -21,6 +21,7 @@ VULKAN_REPORTS = {
     "fluid_force": "fluid-force.json",
     "fluid_constraints": "fluid-constraints.json",
     "fluid_dynamic_response": "fluid-dynamic-response.json",
+    "fluid_triangles": "fluid-triangles.json",
     "deformable_update": "deformable-update.json",
     "deformable_solver": "deformable-solver.json",
     "deformable_collision": "deformable-collision.json",
@@ -75,6 +76,11 @@ def parse_args() -> argparse.Namespace:
         "--cuda-fluid-dynamic-response",
         type=Path,
         help="generated cuda-fluid-dynamic-response-fixture result",
+    )
+    parser.add_argument(
+        "--cuda-fluid-triangles",
+        type=Path,
+        help="generated cuda-fluid-triangles-fixture result",
     )
     parser.add_argument(
         "--cuda-deformable",
@@ -136,6 +142,11 @@ def main() -> int:
         if args.cuda_fluid_dynamic_response
         else base.get("cuda", {}).get("fluid_dynamic_response") if base else None
     )
+    cuda_fluid_triangles = (
+        load_json(args.cuda_fluid_triangles.resolve())
+        if args.cuda_fluid_triangles
+        else base.get("cuda", {}).get("fluid_triangles") if base else None
+    )
     cuda_deformable = (
         load_json(args.cuda_deformable.resolve())
         if args.cuda_deformable
@@ -161,6 +172,7 @@ def main() -> int:
         or cuda_physx is None
         or cuda_fluid_constraints is None
         or cuda_fluid_dynamic_response is None
+        or cuda_fluid_triangles is None
         or cuda_deformable is None
         or cuda_deformable_solver is None
         or cuda_deformable_collision is None
@@ -169,9 +181,9 @@ def main() -> int:
         raise SystemExit(
             "a new bundle requires --cuda-oracle, --cuda-physx, "
             "--cuda-fluid-constraints, --cuda-fluid-dynamic-response, "
-            "--cuda-deformable, --cuda-deformable-solver, "
-            "--cuda-deformable-collision, and --cuda-deformable-sequence; "
-            "otherwise supply --base containing all eight"
+            "--cuda-fluid-triangles, --cuda-deformable, "
+            "--cuda-deformable-solver, --cuda-deformable-collision, and "
+            "--cuda-deformable-sequence; otherwise supply --base containing all nine"
         )
 
     profile = base.get("profile", args.profile) if base else args.profile
@@ -183,6 +195,7 @@ def main() -> int:
             "physx_fluid_pipeline": cuda_physx,
             "fluid_constraints": cuda_fluid_constraints,
             "fluid_dynamic_response": cuda_fluid_dynamic_response,
+            "fluid_triangles": cuda_fluid_triangles,
             "deformable_update": cuda_deformable,
             "deformable_solver": cuda_deformable_solver,
             "deformable_collision": cuda_deformable_collision,

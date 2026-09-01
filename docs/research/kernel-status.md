@@ -28,7 +28,7 @@ The `Module` column uses the stable semantic numbering from the corpus report.
 | Module | Extracted PTX | Entry stem | Parameters | Static shared | Dynamic shared | Status | Validation |
 |---|---|---|---:|---:|---:|---|---|
 | `0001` | `fatbin_0008.ptx` | `PxgCudaFluidCollisionConvexShapesBatch` | 20 B | 4,225 B | 0 | Not translated | — |
-| `0002` | `fatbin_0005.ptx` | `PxgCudaFluidCollisionTrianglesBatch` | 20 B | 4,912 B | 0 | Not translated | — |
+| `0002` | `fatbin_0005.ptx` | `PxgCudaFluidCollisionTrianglesBatch` | 20 B | 4,912 B | 0 | Exact fixture | Focused one-particle zero-triangle fixture |
 | `0003` | `fatbin_0006.ptx` | `PxgCudaFluidCollisionCapsuleShapesBatch` | 20 B | 2,816 B | 0 | Not translated | — |
 | `0004` | `fatbin_0009.ptx` | `radixSortBlocks<32,0,false>` | 20 B | 4 B | 4,096 B | Not translated | — |
 | `0005` | `fatbin_0002.ptx` | `PxgCudaFluidCollisionConstraintsBatch` | 20 B | 1,840 B | 0 | Exact fixture | Focused one-particle no-contact fixture |
@@ -44,7 +44,7 @@ The `Module` column uses the stable semantic numbering from the corpus report.
 | `0015` | `fatbin_0007.ptx` | `PxgCudaFluidCollisionBoxShapesBatch` | 20 B | 6,752 B | 0 | Not translated | — |
 | `0016` | `fatbin_0013.ptx` | `KernelFluidForce` | 100 B | 0 | 0 | Exact fixture | Focused fixture and four-kernel fluid fixture |
 
-Nine of sixteen launched entries have exact native/Vulkan fixtures. Seven remain.
+Ten of sixteen launched entries have exact native/Vulkan fixtures. Six remain.
 Module `0006` contains only collision constants. Module `0017` contains five
 resolved deformable self-collision entries, but none launched in the captured
 routes, so they are outside this ledger and the initial compatibility target.

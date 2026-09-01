@@ -211,6 +211,25 @@ constexpr std::array<std::uint32_t, 4> kExpectedDynamicResponseVelocity = {
 constexpr std::array<std::uint32_t, 4> kExpectedDynamicResponseOutput = {
     0xc0400000u, 0u, 0u, 0u,
 };
+constexpr std::size_t kTrianglesWorkUnitOffset = 8;
+constexpr std::size_t kTrianglesStartAddrsOffset = 16;
+constexpr std::size_t kTrianglesParametersOffset = 52;
+constexpr std::size_t kTrianglesMeshWorkUnitOffset = 96;
+constexpr std::size_t kTrianglesPositionOffset = 144;
+constexpr std::size_t kTrianglesOldPositionOffset = 152;
+constexpr std::size_t kTrianglesState16Offset = 160;
+constexpr std::size_t kTrianglesState17Offset = 164;
+constexpr std::size_t kTrianglesState18Offset = 168;
+constexpr std::size_t kTrianglesState19Offset = 172;
+constexpr std::size_t kTrianglesErrorOffset = 176;
+constexpr VkDeviceSize kTrianglesPayloadBytes =
+    192u * sizeof(std::uint32_t);
+constexpr std::array<std::uint32_t, 4> kTrianglesPosition = {
+    0x3fc00000u, 0xc0100000u, 0x40700000u, 0x11223344u,
+};
+constexpr std::array<std::uint32_t, 4> kTrianglesOldPosition = {
+    0x3f800000u, 0xc0000000u, 0x40400000u, 0x55667788u,
+};
 constexpr std::array<std::uint32_t, 4> kExpectedReorderedPosition = {
     0x3f800000u, 0x40000000u, 0x40400000u, 0u,
 };
@@ -608,6 +627,11 @@ struct DeviceResult {
     std::uint32_t dynamic_response_dest_id = 0;
     std::uint32_t dynamic_response_flags = 0;
     bool dynamic_response_guards_intact = false;
+    std::array<std::uint32_t, 4> triangles_position = {};
+    std::array<std::uint32_t, 4> triangles_old_position = {};
+    std::uint32_t triangles_state16 = 0;
+    std::uint32_t triangles_state18 = 0;
+    bool triangles_guards_intact = false;
     std::string error;
 };
 
@@ -629,7 +653,8 @@ DeviceResult run_device(
     bool solver_fixture_mode,
     bool collision_fixture_mode,
     bool constraints_fixture_mode,
-    bool dynamic_response_fixture_mode)
+    bool dynamic_response_fixture_mode,
+    bool triangles_fixture_mode)
 {
     DeviceResult result;
     result.index = device_index;
@@ -690,6 +715,17 @@ DeviceResult run_device(
             throw std::runtime_error("device has no compute queue");
         }
 
+        VkPhysicalDeviceFeatures enabled_features = {};
+        if (triangles_fixture_mode) {
+            VkPhysicalDeviceFeatures available_features = {};
+            vkGetPhysicalDeviceFeatures(physical_device, &available_features);
+            if (available_features.shaderInt64 != VK_TRUE) {
+                throw std::runtime_error(
+                    "fluid triangle fixture requires shaderInt64");
+            }
+            enabled_features.shaderInt64 = VK_TRUE;
+        }
+
         const float priority = 1.0f;
         VkDeviceQueueCreateInfo queue_info = {
             VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -709,7 +745,7 @@ DeviceResult run_device(
             nullptr,
             0,
             nullptr,
-            nullptr,
+            triangles_fixture_mode ? &enabled_features : nullptr,
         };
         check(vkCreateDevice(physical_device, &device_info, nullptr, &device), "vkCreateDevice");
         volkLoadDevice(device);
@@ -742,8 +778,10 @@ DeviceResult run_device(
                     ? kKernelFixtureCopyBytes
                     : constant_fixture_mode
                         ? kConstantFixtureCopyBytes
-                        : dynamic_response_fixture_mode
-                            ? kDynamicResponsePayloadBytes
+                        : triangles_fixture_mode
+                            ? kTrianglesPayloadBytes
+                            : dynamic_response_fixture_mode
+                                ? kDynamicResponsePayloadBytes
                             : constraints_fixture_mode
                                 ? kConstraintsPayloadBytes
                                 : collision_fixture_mode
@@ -769,7 +807,62 @@ DeviceResult run_device(
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        if (dynamic_response_fixture_mode) {
+        if (triangles_fixture_mode) {
+            const auto byte_offset = [](std::size_t offset) {
+                return static_cast<std::uint32_t>(
+                    offset * sizeof(std::uint32_t));
+            };
+            const auto initialize = [&](std::size_t offset,
+                                        std::initializer_list<std::uint32_t> values) {
+                words[offset - 1u] = kGuardBefore;
+                std::copy(values.begin(), values.end(), words + offset);
+                words[offset + values.size()] = kGuardAfter;
+            };
+            words[0] = byte_offset(kTrianglesStartAddrsOffset);
+            words[1] = 1u;
+            words[2] = byte_offset(kTrianglesWorkUnitOffset);
+            words[3] = 1u;
+            words[4] = byte_offset(kTrianglesErrorOffset);
+            initialize(
+                kTrianglesWorkUnitOffset,
+                {byte_offset(kTrianglesMeshWorkUnitOffset), 0u, 1u, 0u});
+            words[kTrianglesStartAddrsOffset - 1u] = kGuardBefore;
+            std::fill_n(words + kTrianglesStartAddrsOffset, 32u, 0u);
+            words[kTrianglesStartAddrsOffset + 32u] = kGuardAfter;
+            auto *start_addrs = words + kTrianglesStartAddrsOffset;
+            start_addrs[13] = byte_offset(kTrianglesPositionOffset);
+            start_addrs[16] = byte_offset(kTrianglesState16Offset);
+            start_addrs[17] = byte_offset(kTrianglesState17Offset);
+            start_addrs[18] = byte_offset(kTrianglesState18Offset);
+            start_addrs[19] = byte_offset(kTrianglesState19Offset);
+            start_addrs[20] = byte_offset(kTrianglesOldPositionOffset);
+            start_addrs[27] = byte_offset(kTrianglesParametersOffset);
+            words[kTrianglesParametersOffset - 1u] = kGuardBefore;
+            std::fill_n(words + kTrianglesParametersOffset, 40u, 0u);
+            words[kTrianglesParametersOffset] = 0x31415926u;
+            words[kTrianglesParametersOffset + 39u] = 0x27182818u;
+            words[kTrianglesParametersOffset + 40u] = kGuardAfter;
+            words[kTrianglesMeshWorkUnitOffset - 1u] = kGuardBefore;
+            std::fill_n(words + kTrianglesMeshWorkUnitOffset, 40u, 0u);
+            words[kTrianglesMeshWorkUnitOffset] = 0xcafebabeu;
+            words[kTrianglesMeshWorkUnitOffset + 31u] = 0x12345678u;
+            words[kTrianglesMeshWorkUnitOffset + 32u] = 0u;
+            words[kTrianglesMeshWorkUnitOffset + 39u] = 0x87654321u;
+            words[kTrianglesMeshWorkUnitOffset + 40u] = kGuardAfter;
+            initialize(
+                kTrianglesPositionOffset,
+                {kTrianglesPosition[0], kTrianglesPosition[1],
+                 kTrianglesPosition[2], kTrianglesPosition[3]});
+            initialize(
+                kTrianglesOldPositionOffset,
+                {kTrianglesOldPosition[0], kTrianglesOldPosition[1],
+                 kTrianglesOldPosition[2], kTrianglesOldPosition[3]});
+            initialize(kTrianglesState16Offset, {0x10203040u});
+            initialize(kTrianglesState17Offset, {0x50607080u});
+            initialize(kTrianglesState18Offset, {0x90a0b0c0u});
+            initialize(kTrianglesState19Offset, {0xd0e0f000u});
+            initialize(kTrianglesErrorOffset, {0xfeedfaceu});
+        } else if (dynamic_response_fixture_mode) {
             const auto byte_offset = [](std::size_t offset) {
                 return static_cast<std::uint32_t>(
                     offset * sizeof(std::uint32_t));
@@ -1329,7 +1422,8 @@ DeviceResult run_device(
                     ? 3u
                     : kernel_fixture_mode || reorder_fixture_mode ||
                               constraints_fixture_mode ||
-                              dynamic_response_fixture_mode
+                              dynamic_response_fixture_mode ||
+                              triangles_fixture_mode
                         ? 2u
                         : 1u;
         std::array<VkDescriptorSetLayoutBinding, 4> bindings = {};
@@ -1607,7 +1701,80 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        if (dynamic_response_fixture_mode) {
+        if (triangles_fixture_mode) {
+            std::copy_n(
+                words + kTrianglesPositionOffset,
+                result.triangles_position.size(),
+                result.triangles_position.begin());
+            std::copy_n(
+                words + kTrianglesOldPositionOffset,
+                result.triangles_old_position.size(),
+                result.triangles_old_position.begin());
+            result.triangles_state16 = words[kTrianglesState16Offset];
+            result.triangles_state18 = words[kTrianglesState18Offset];
+            const auto guards_match =
+                [&](std::size_t offset, std::size_t count) {
+                    return words[offset - 1u] == kGuardBefore &&
+                        words[offset + count] == kGuardAfter;
+                };
+            result.triangles_guards_intact =
+                guards_match(kTrianglesWorkUnitOffset, 4u) &&
+                guards_match(kTrianglesStartAddrsOffset, 32u) &&
+                guards_match(kTrianglesParametersOffset, 40u) &&
+                guards_match(kTrianglesMeshWorkUnitOffset, 40u) &&
+                guards_match(kTrianglesPositionOffset, 4u) &&
+                guards_match(kTrianglesOldPositionOffset, 4u) &&
+                guards_match(kTrianglesState16Offset, 1u) &&
+                guards_match(kTrianglesState17Offset, 1u) &&
+                guards_match(kTrianglesState18Offset, 1u) &&
+                guards_match(kTrianglesState19Offset, 1u) &&
+                guards_match(kTrianglesErrorOffset, 1u);
+            std::array<std::uint32_t, 32> expected_start_addrs = {};
+            const auto byte_offset = [](std::size_t offset) {
+                return static_cast<std::uint32_t>(
+                    offset * sizeof(std::uint32_t));
+            };
+            expected_start_addrs[13] = byte_offset(kTrianglesPositionOffset);
+            expected_start_addrs[16] = byte_offset(kTrianglesState16Offset);
+            expected_start_addrs[17] = byte_offset(kTrianglesState17Offset);
+            expected_start_addrs[18] = byte_offset(kTrianglesState18Offset);
+            expected_start_addrs[19] = byte_offset(kTrianglesState19Offset);
+            expected_start_addrs[20] = byte_offset(kTrianglesOldPositionOffset);
+            expected_start_addrs[27] = byte_offset(kTrianglesParametersOffset);
+            std::array<std::uint32_t, 40> expected_parameters = {};
+            expected_parameters[0] = 0x31415926u;
+            expected_parameters[39] = 0x27182818u;
+            std::array<std::uint32_t, 40> expected_mesh_work_unit = {};
+            expected_mesh_work_unit[0] = 0xcafebabeu;
+            expected_mesh_work_unit[31] = 0x12345678u;
+            expected_mesh_work_unit[39] = 0x87654321u;
+            result.pass =
+                result.triangles_position == kTrianglesPosition &&
+                result.triangles_old_position == kTrianglesOldPosition &&
+                result.triangles_state16 == 0x10203040u &&
+                result.triangles_state18 == 0x90a0b0c0u &&
+                words[kTrianglesWorkUnitOffset] ==
+                    byte_offset(kTrianglesMeshWorkUnitOffset) &&
+                words[kTrianglesWorkUnitOffset + 1u] == 0u &&
+                words[kTrianglesWorkUnitOffset + 2u] == 1u &&
+                words[kTrianglesWorkUnitOffset + 3u] == 0u &&
+                std::equal(
+                    words + kTrianglesStartAddrsOffset,
+                    words + kTrianglesStartAddrsOffset + 32u,
+                    expected_start_addrs.begin()) &&
+                std::equal(
+                    words + kTrianglesParametersOffset,
+                    words + kTrianglesParametersOffset + 40u,
+                    expected_parameters.begin()) &&
+                std::equal(
+                    words + kTrianglesMeshWorkUnitOffset,
+                    words + kTrianglesMeshWorkUnitOffset + 40u,
+                    expected_mesh_work_unit.begin()) &&
+                words[kTrianglesState17Offset] == 0x50607080u &&
+                words[kTrianglesState19Offset] == 0xd0e0f000u &&
+                words[kTrianglesErrorOffset] == 0xfeedfaceu &&
+                result.triangles_guards_intact;
+        } else if (dynamic_response_fixture_mode) {
             std::copy_n(
                 words + kDynamicResponseNormalOffset,
                 result.dynamic_response_normal.size(),
@@ -2020,9 +2187,11 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = dynamic_response_fixture_mode
-                ? "fluid dynamic response fixture result mismatch"
-                : constraints_fixture_mode
+            result.error = triangles_fixture_mode
+                ? "fluid triangle fixture result mismatch"
+                : dynamic_response_fixture_mode
+                    ? "fluid dynamic response fixture result mismatch"
+                    : constraints_fixture_mode
                     ? "fluid collision constraints fixture result mismatch"
                     : collision_fixture_mode
                     ? "deformable collision fixture result mismatch"
@@ -2905,6 +3074,9 @@ int main(int argc, char **argv)
     const bool dynamic_response_fixture_mode =
         argc == 4 &&
         std::string(argv[2]) == "--fluid-dynamic-response-fixture";
+    const bool triangles_fixture_mode =
+        argc == 4 &&
+        std::string(argv[2]) == "--fluid-triangles-fixture";
     const bool sequence_fixture_mode =
         argc == 6 && std::string(argv[2]) == "--deformable-sequence-fixture";
     const bool incomplete_named_mode =
@@ -2922,6 +3094,7 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--deformable-sequence-fixture" ||
          std::string(argv[2]) == "--fluid-constraints-fixture" ||
          std::string(argv[2]) == "--fluid-dynamic-response-fixture" ||
+         std::string(argv[2]) == "--fluid-triangles-fixture" ||
          std::string(argv[2]) == "--deformable-collision-fixture");
     if ((argc != 2 && argc != 3 &&
          !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
@@ -2930,7 +3103,7 @@ int main(int argc, char **argv)
          !force_fixture_mode && !deformable_fixture_mode &&
          !solver_fixture_mode && !collision_fixture_mode &&
          !constraints_fixture_mode && !dynamic_response_fixture_mode &&
-         !sequence_fixture_mode) ||
+         !triangles_fixture_mode && !sequence_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
                   << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n"
@@ -2946,6 +3119,7 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --deformable-collision-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-constraints-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-dynamic-response-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --fluid-triangles-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-sequence-fixture <update.spv> <collision.spv> <solver.spv>\n";
         return 2;
     }
@@ -2995,14 +3169,15 @@ int main(int argc, char **argv)
         texture_float_fixture_mode || density_fixture_mode ||
         force_fixture_mode || deformable_fixture_mode || solver_fixture_mode ||
         collision_fixture_mode || constraints_fixture_mode ||
-        dynamic_response_fixture_mode;
+        dynamic_response_fixture_mode || triangles_fixture_mode;
     const bool require_memory_result =
         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
         !constant_fixture_mode && !texture_fixture_mode &&
         !texture_float_fixture_mode && !density_fixture_mode &&
         !force_fixture_mode && !deformable_fixture_mode &&
         !solver_fixture_mode && !collision_fixture_mode &&
-        !constraints_fixture_mode && !dynamic_response_fixture_mode;
+        !constraints_fixture_mode && !dynamic_response_fixture_mode &&
+        !triangles_fixture_mode;
     std::vector<std::uint32_t> shader;
     std::array<std::vector<std::uint32_t>, 3> sequence_shaders;
     const auto load_shader = [](const char *path,
@@ -3044,7 +3219,8 @@ int main(int argc, char **argv)
                     texture_float_fixture_mode || density_fixture_mode ||
                     force_fixture_mode || deformable_fixture_mode ||
                     solver_fixture_mode || collision_fixture_mode ||
-                    constraints_fixture_mode || dynamic_response_fixture_mode
+                    constraints_fixture_mode || dynamic_response_fixture_mode ||
+                    triangles_fixture_mode
                 ? argv[3]
                 : argv[2];
         shaders_loaded = load_shader(shader_path, shader);
@@ -3080,7 +3256,8 @@ int main(int argc, char **argv)
                   solver_fixture_mode,
                   collision_fixture_mode,
                   constraints_fixture_mode,
-                  dynamic_response_fixture_mode);
+                  dynamic_response_fixture_mode,
+                  triangles_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -3096,6 +3273,7 @@ int main(int argc, char **argv)
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
            << "  \"test\": \""
            << (sequence_fixture_mode ? "deformable_sequence_fixture" :
+               triangles_fixture_mode ? "fluid_triangles_fixture" :
                dynamic_response_fixture_mode
                    ? "fluid_dynamic_response_fixture" :
                constraints_fixture_mode ? "fluid_constraints_fixture" :
@@ -3122,6 +3300,17 @@ int main(int argc, char **argv)
                << "  \"iteration_count\": 0,\n"
                << "  \"collision_static_shared_bytes\": 4097,\n"
                << "  \"solver_dynamic_shared_bytes\": 7072,\n";
+    } else if (triangles_fixture_mode) {
+        output << "  \"kernel\": "
+                  "\"PxgCudaFluidCollisionTrianglesBatch\",\n"
+               << "  \"particle_count\": 1,\n"
+               << "  \"triangle_count\": 0,\n"
+               << "  \"static_shared_bytes\": 4912,\n"
+               << "  \"requires_shader_int64\": true,\n"
+               << "  \"expected_position_bits\": [\"0x3fc00000\", "
+                  "\"0xc0100000\", \"0x40700000\", \"0x11223344\"],\n"
+               << "  \"expected_old_position_bits\": [\"0x3f800000\", "
+                  "\"0xc0000000\", \"0x40400000\", \"0x55667788\"],\n";
     } else if (dynamic_response_fixture_mode) {
         output << "  \"kernel\": "
                   "\"PxgCudaFluidCollisionDynamicResponseBatch\",\n"
@@ -3274,6 +3463,19 @@ int main(int argc, char **argv)
             output << ",\n"
                    << "      \"guards_intact\": "
                    << (result.sequence_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (triangles_fixture_mode) {
+            output << "      \"output_position_bits\": ";
+            write_bits(result.triangles_position);
+            output << ",\n      \"output_old_position_bits\": ";
+            write_bits(result.triangles_old_position);
+            output << ",\n"
+                   << "      \"output_state16\": \""
+                   << hex32(result.triangles_state16) << "\",\n"
+                   << "      \"output_state18\": \""
+                   << hex32(result.triangles_state18) << "\",\n"
+                   << "      \"guards_intact\": "
+                   << (result.triangles_guards_intact ? "true" : "false")
                    << ",\n";
         } else if (dynamic_response_fixture_mode) {
             output << "      \"output_normal_bits\": ";

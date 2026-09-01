@@ -23,6 +23,7 @@ using Json = nlohmann::json;
 enum class ValueType {
     boolean,
     u32,
+    u64,
     s32,
     f32,
 };
@@ -46,8 +47,12 @@ public:
     SpirvModule(
         std::uint32_t shared_bytes,
         std::uint32_t constant_bytes,
-        bool texture_metadata)
+        bool texture_metadata,
+        bool int64)
     {
+        if (int64) {
+            emit(capabilities_, SpvOpCapability, {SpvCapabilityInt64});
+        }
         emit(capabilities_, SpvOpCapability, {SpvCapabilityShader});
         emit(capabilities_, SpvOpCapability, {SpvCapabilityRoundingModeRTE});
         emit(capabilities_, SpvOpCapability, {SpvCapabilitySignedZeroInfNanPreserve});
@@ -63,6 +68,10 @@ public:
         emit(declarations_, SpvOpTypeInt, {type_u32_, 32u, 0u});
         type_s32_ = allocate_id();
         emit(declarations_, SpvOpTypeInt, {type_s32_, 32u, 1u});
+        if (int64) {
+            type_u64_ = allocate_id();
+            emit(declarations_, SpvOpTypeInt, {type_u64_, 64u, 0u});
+        }
         type_f32_ = allocate_id();
         emit(declarations_, SpvOpTypeFloat, {type_f32_, 32u});
         type_v3u32_ = allocate_id();
@@ -156,6 +165,7 @@ public:
         switch (type) {
         case ValueType::boolean: return type_bool_;
         case ValueType::u32: return type_u32_;
+        case ValueType::u64: return type_u64_;
         case ValueType::s32: return type_s32_;
         case ValueType::f32: return type_f32_;
         }
@@ -175,6 +185,8 @@ public:
                 declarations_,
                 bits == 0u ? SpvOpConstantFalse : SpvOpConstantTrue,
                 {type_id(type), result});
+        } else if (type == ValueType::u64) {
+            emit(declarations_, SpvOpConstant, {type_id(type), result, bits, 0u});
         } else {
             emit(declarations_, SpvOpConstant, {type_id(type), result, bits});
         }
@@ -316,6 +328,7 @@ public:
         switch (type) {
         case ValueType::boolean: pointer_type = &type_ptr_function_bool_; break;
         case ValueType::u32: pointer_type = &type_ptr_function_u32_; break;
+        case ValueType::u64: pointer_type = &type_ptr_function_u64_; break;
         case ValueType::s32: pointer_type = &type_ptr_function_s32_; break;
         case ValueType::f32: pointer_type = &type_ptr_function_f32_; break;
         }
@@ -513,6 +526,9 @@ public:
         if (value.type == ValueType::boolean || type == ValueType::boolean) {
             throw std::runtime_error("cannot bitcast predicate and scalar values");
         }
+        if (value.type == ValueType::u64 || type == ValueType::u64) {
+            throw std::runtime_error("cannot bitcast 32-bit and 64-bit values");
+        }
         return instruction(SpvOpBitcast, type, {value.id});
     }
 
@@ -661,6 +677,7 @@ private:
     std::uint32_t type_void_ = 0u;
     std::uint32_t type_bool_ = 0u;
     std::uint32_t type_u32_ = 0u;
+    std::uint32_t type_u64_ = 0u;
     std::uint32_t type_s32_ = 0u;
     std::uint32_t type_f32_ = 0u;
     std::uint32_t type_v3u32_ = 0u;
@@ -673,6 +690,7 @@ private:
     std::uint32_t type_ptr_input_u32_ = 0u;
     std::uint32_t type_ptr_function_bool_ = 0u;
     std::uint32_t type_ptr_function_u32_ = 0u;
+    std::uint32_t type_ptr_function_u64_ = 0u;
     std::uint32_t type_ptr_function_s32_ = 0u;
     std::uint32_t type_ptr_function_f32_ = 0u;
     std::uint32_t type_shared_array_ = 0u;
@@ -701,6 +719,9 @@ ValueType parse_type(const std::string &type)
     if (type == ".u32" || type == ".b32" ||
         type == ".u16" || type == ".b16" || type == ".s16") {
         return ValueType::u32;
+    }
+    if (type == ".u64" || type == ".s64" || type == ".b64") {
+        return ValueType::u64;
     }
     if (type == ".s32") return ValueType::s32;
     if (type == ".f32") return ValueType::f32;
@@ -767,6 +788,20 @@ bool entry_uses_textures(const Json &entry)
 {
     for (const Json &instruction : entry.at("instructions")) {
         if (instruction.at("base").get<std::string>() == "tex") {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool entry_uses_int64(const Json &entry)
+{
+    for (const Json &instruction : entry.at("instructions")) {
+        const std::string variant =
+            instruction.at("variant").get<std::string>();
+        if (variant.find(".u64") != std::string::npos ||
+            variant.find(".s64") != std::string::npos ||
+            variant.find(".b64") != std::string::npos) {
             return true;
         }
     }
@@ -1592,8 +1627,10 @@ private:
             const bool supported =
                 type_name == ".pred" || type_name == ".u32" ||
                 type_name == ".s32" || type_name == ".b32" ||
-                type_name == ".u16" || type_name == ".s16" ||
-                type_name == ".b16" || type_name == ".f32";
+                type_name == ".u64" || type_name == ".s64" ||
+                type_name == ".b64" || type_name == ".u16" ||
+                type_name == ".s16" || type_name == ".b16" ||
+                type_name == ".f32";
             std::vector<std::string> names;
             for (std::size_t index = 0u; index < count; ++index) {
                 const std::string name =
@@ -1610,10 +1647,13 @@ private:
             }
             const ValueType type = parse_type(type_name);
             const std::uint32_t bit_width =
-                type_name == ".u16" || type_name == ".s16" ||
-                        type_name == ".b16"
-                    ? 16u
-                    : 32u;
+                type_name == ".u64" || type_name == ".s64" ||
+                        type_name == ".b64"
+                    ? 64u
+                    : type_name == ".u16" || type_name == ".s16" ||
+                              type_name == ".b16"
+                        ? 16u
+                        : 32u;
             for (const std::string &name : names) {
                 descriptors.emplace(
                     name, std::make_pair(type, bit_width));
@@ -1849,9 +1889,9 @@ private:
     {
         const RegisterVariable destination = variable(name);
         const Value stored =
-            destination.bit_width == 32u
-                ? value
-                : mask_low_bits(value, destination.bit_width);
+            destination.bit_width == 16u
+                ? mask_low_bits(value, destination.bit_width)
+                : value;
         module_.store_variable(destination.id, stored, destination.type);
     }
 
@@ -1993,6 +2033,50 @@ private:
             SpvOpShiftRightLogical,
             ValueType::u32,
             {address.id, module_.constant(ValueType::u32, 2u).id});
+    }
+
+    Value load_shared_u64(Value byte_address)
+    {
+        const Value low_index = word_index(byte_address);
+        const Value high_index = module_.instruction(
+            SpvOpIAdd,
+            ValueType::u32,
+            {low_index.id, module_.constant(ValueType::u32, 1u).id});
+        const Value low = module_.instruction(
+            SpvOpUConvert,
+            ValueType::u64,
+            {module_.load_shared(low_index).id});
+        const Value high = module_.instruction(
+            SpvOpUConvert,
+            ValueType::u64,
+            {module_.load_shared(high_index).id});
+        const Value shifted = module_.instruction(
+            SpvOpShiftLeftLogical,
+            ValueType::u64,
+            {high.id, module_.constant(ValueType::u32, 32u).id});
+        return module_.instruction(
+            SpvOpBitwiseOr, ValueType::u64, {low.id, shifted.id});
+    }
+
+    void store_shared_u64(Value byte_address, Value value)
+    {
+        const Value base = word_index(byte_address);
+        const Value bits = module_.coerce(value, ValueType::u64);
+        const Value low =
+            module_.instruction(SpvOpUConvert, ValueType::u32, {bits.id});
+        const Value shifted = module_.instruction(
+            SpvOpShiftRightLogical,
+            ValueType::u64,
+            {bits.id, module_.constant(ValueType::u32, 32u).id});
+        const Value high =
+            module_.instruction(SpvOpUConvert, ValueType::u32, {shifted.id});
+        module_.store_shared(base, low);
+        module_.store_shared(
+            module_.instruction(
+                SpvOpIAdd,
+                ValueType::u32,
+                {base.id, module_.constant(ValueType::u32, 1u).id}),
+            high);
     }
 
     bool has_modifier(
@@ -2271,6 +2355,12 @@ private:
             }
             return;
         }
+        if (variant == "ld.shared.u64") {
+            define(
+                operands.at(0),
+                load_shared_u64(address_operand(operands.at(1))));
+            return;
+        }
         if (base == "ld" && has_modifier(instruction, "shared")) {
             const Value address = address_operand(operands.at(1));
             const Value loaded =
@@ -2336,6 +2426,12 @@ private:
         if (base == "st" && has_modifier(instruction, "shared")) {
             const Value address = address_operand(operands.at(0));
             const Value base_index = word_index(address);
+            if (variant == "st.shared.u64") {
+                store_shared_u64(
+                    address,
+                    scalar_operand(operands.at(1), ValueType::u64));
+                return;
+            }
             if (has_modifier(instruction, "u8")) {
                 const Json &memory = operands.at(0);
                 const Json &expression = memory.at("values").at(0);
@@ -2391,7 +2487,11 @@ private:
                     ? ValueType::f32
                     : has_modifier(instruction, "pred")
                         ? ValueType::boolean
-                        : ValueType::u32;
+                        : has_modifier(instruction, "u64") ||
+                                  has_modifier(instruction, "s64") ||
+                                  has_modifier(instruction, "b64")
+                            ? ValueType::u64
+                            : ValueType::u32;
             define(operands.at(0), scalar_operand(operands.at(1), type));
             return;
         }
@@ -2407,6 +2507,15 @@ private:
                 operands.at(0),
                 mask_low_bits(
                     scalar_operand(operands.at(1), ValueType::u32), 16u));
+            return;
+        }
+        if (variant == "cvt.u32.u64") {
+            const Value input =
+                scalar_operand(operands.at(1), ValueType::u64);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpUConvert, ValueType::u32, {input.id}));
             return;
         }
         if (variant == "mul.wide.s16") {
@@ -2470,6 +2579,17 @@ private:
                     SpvOpIMul, ValueType::s32, {a.id, b.id}));
             return;
         }
+        if (variant == "add.s64") {
+            const Value a =
+                scalar_operand(operands.at(1), ValueType::u64);
+            const Value b =
+                scalar_operand(operands.at(2), ValueType::u64);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpIAdd, ValueType::u64, {a.id, b.id}));
+            return;
+        }
         if (base == "add" || base == "sub" || base == "mad") {
             const Value a =
                 scalar_operand(operands.at(1), ValueType::s32);
@@ -2520,6 +2640,24 @@ private:
                     {input.id}));
             return;
         }
+        if (variant == "and.b64" || variant == "or.b64" ||
+            variant == "xor.b64" || variant == "shl.b64") {
+            const Value a =
+                scalar_operand(operands.at(1), ValueType::u64);
+            const Value b = scalar_operand(
+                operands.at(2),
+                variant == "shl.b64" ? ValueType::u32 : ValueType::u64);
+            const SpvOp operation =
+                variant == "and.b64" ? SpvOpBitwiseAnd :
+                variant == "or.b64" ? SpvOpBitwiseOr :
+                variant == "xor.b64" ? SpvOpBitwiseXor :
+                SpvOpShiftLeftLogical;
+            define(
+                operands.at(0),
+                module_.instruction(
+                    operation, ValueType::u64, {a.id, b.id}));
+            return;
+        }
         if (base == "and" || base == "or" ||
             base == "shl" || base == "shr") {
             const Value a =
@@ -2535,6 +2673,21 @@ private:
                 operands.at(0),
                 module_.instruction(
                     operation, ValueType::u32, {a.id, b.id}));
+            return;
+        }
+        if (variant == "setp.eq.s64" || variant == "setp.ne.s64") {
+            const Value a =
+                scalar_operand(operands.at(1), ValueType::u64);
+            const Value b =
+                scalar_operand(operands.at(2), ValueType::u64);
+            define(
+                operands.at(0),
+                module_.instruction(
+                    variant == "setp.eq.s64"
+                        ? SpvOpIEqual
+                        : SpvOpINotEqual,
+                    ValueType::boolean,
+                    {a.id, b.id}));
             return;
         }
         if (base == "setp" && has_modifier(instruction, "f32")) {
@@ -2619,9 +2772,13 @@ private:
         }
         if (variant == "selp.f32" || variant == "selp.b32" ||
             variant == "selp.u32" || variant == "selp.b16" ||
-            variant == "selp.u16") {
+            variant == "selp.u16" || variant == "selp.b64") {
             const ValueType type =
-                variant == "selp.f32" ? ValueType::f32 : ValueType::u32;
+                variant == "selp.f32"
+                    ? ValueType::f32
+                    : variant == "selp.b64"
+                        ? ValueType::u64
+                        : ValueType::u32;
             const Value when_true =
                 scalar_operand(operands.at(1), type);
             const Value when_false =
@@ -2689,6 +2846,41 @@ private:
                     ftz));
             return;
         }
+        if (variant == "clz.b64") {
+            const Value input =
+                scalar_operand(operands.at(1), ValueType::u64);
+            const Value low = module_.instruction(
+                SpvOpUConvert, ValueType::u32, {input.id});
+            const Value shifted = module_.instruction(
+                SpvOpShiftRightLogical,
+                ValueType::u64,
+                {input.id, module_.constant(ValueType::u32, 32u).id});
+            const Value high = module_.instruction(
+                SpvOpUConvert, ValueType::u32, {shifted.id});
+            const Value high_nonzero = module_.instruction(
+                SpvOpINotEqual,
+                ValueType::boolean,
+                {high.id, module_.constant(ValueType::u32, 0u).id});
+            const Value high_msb = module_.ext_instruction(
+                ValueType::u32, GLSLstd450FindUMsb, {high.id});
+            const Value low_msb = module_.ext_instruction(
+                ValueType::u32, GLSLstd450FindUMsb, {low.id});
+            const Value high_count = module_.instruction(
+                SpvOpISub,
+                ValueType::u32,
+                {module_.constant(ValueType::u32, 31u).id, high_msb.id});
+            const Value low_count = module_.instruction(
+                SpvOpISub,
+                ValueType::u32,
+                {module_.constant(ValueType::u32, 63u).id, low_msb.id});
+            define(
+                operands.at(0),
+                module_.instruction(
+                    SpvOpSelect,
+                    ValueType::u32,
+                    {high_nonzero.id, high_count.id, low_count.id}));
+            return;
+        }
         if ((base == "min" || base == "max") &&
             has_modifier(instruction, "f32")) {
             const bool ftz = has_modifier(instruction, "ftz");
@@ -2744,6 +2936,17 @@ private:
                     {input.id}));
             return;
         }
+        if (variant == "min.u32") {
+            const Value a =
+                scalar_operand(operands.at(1), ValueType::u32);
+            const Value b =
+                scalar_operand(operands.at(2), ValueType::u32);
+            define(
+                operands.at(0),
+                module_.ext_instruction(
+                    ValueType::u32, GLSLstd450UMin, {a.id, b.id}));
+            return;
+        }
         if (base == "min" || base == "max") {
             const Value a =
                 scalar_operand(operands.at(1), ValueType::s32);
@@ -2792,7 +2995,7 @@ std::vector<std::uint32_t> emit_oracle(const Json &manifest)
             shared_bytes, required_shared_bytes(manifest, entry, 0u));
     }
     SpirvModule module(
-        shared_bytes, module_constant_bytes(manifest), false);
+        shared_bytes, module_constant_bytes(manifest), false, false);
     const std::uint32_t math = module.allocate_id();
     const std::uint32_t barrier = module.allocate_id();
     const std::uint32_t local = module.allocate_id();
@@ -2845,7 +3048,8 @@ std::vector<std::uint32_t> emit_kernel_entry(
     SpirvModule module(
         required_shared_bytes(manifest, entry, dynamic_shared_bytes),
         module_constant_bytes(manifest),
-        entry_uses_textures(entry));
+        entry_uses_textures(entry),
+        entry_uses_int64(entry));
     const std::uint32_t function = module.allocate_id();
     KernelEntryLowerer(
         module,

@@ -160,6 +160,15 @@ response branch. Native RTX and translated Intel/RTX match the cleared
 accumulators, averaged position, resolved velocity, response vector, unit
 weight, copied ID, cleared flags, and guards bit-for-bit.
 
+The captured 68,441-word `PxgCudaFluidCollisionTrianglesBatch` module uses
+bindings 0/1, local size 64, and 4,912 bytes of static shared memory. It enables
+core `shaderInt64` for the entry's 64-bit triangle candidate mask; other
+selected entries do not acquire the capability solely because they declare an
+unused 64-bit register bank. The focused zero-triangle fixture covers shared
+setup and empty-mesh state writeback. Native RTX and translated Intel/RTX
+preserve position, old position, state words, and every guard bit-for-bit. A
+non-empty triangle-contact fixture remains uncovered.
+
 All three captured deformable entries now use the same heap/parameter/constant
 model. The 175,407-word collision shader additionally declares binding 3 for 17
 texture metadata records and uses 4,097 bytes of static shared memory. Its
