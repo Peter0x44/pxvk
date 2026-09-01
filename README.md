@@ -15,8 +15,9 @@ modules. Direct SPIR-V lowering covers the project oracle,
 `PxgCudaFluidCollisionCapsuleShapesBatch`,
 `PxgCudaFluidCollisionConvexShapesBatch`,
 `PxgCudaFluidCollisionTrianglesBatch`, `KernelFluidSimpleParticle`,
-`radixSortBlocks<32,0,false>`, `PxgCudaDeformableUpdate`,
-`KernelDeformableUberCollision`, and `KernelDeformableUberSolver<512>`. Exact
+`radixSortBlocks<32,0,false>`, the four deformable self-collision stages,
+`PxgCudaDeformableUpdate`, `KernelDeformableUberCollision`, and
+`KernelDeformableUberSolver<512>`. Exact
 native/Vulkan differential fixtures cover the oracle, all twelve translated
 fluid kernels, the translated radix sort kernel, all three translated
 deformable kernels, the ordered deformable update/collision/solver step, and

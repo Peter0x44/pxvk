@@ -58,8 +58,9 @@ then resumes it. The runtime's loader notification patches only CUDART's
 the already selected staged DLL. Other module loads are unchanged.
 
 Generated SPIR-V is deployment data because captured PhysX PTX is proprietary.
-`prepare-sample.ps1` translates the three `SampleCloth` entries, builds the DLL,
-and stages a runnable directory without modifying the original sample.
+`prepare-sample.ps1` translates the nine entries required by `SampleCloth`
+scenes 1 and 2, builds the DLL, and stages a runnable directory without
+modifying the original sample.
 
 ## Build
 

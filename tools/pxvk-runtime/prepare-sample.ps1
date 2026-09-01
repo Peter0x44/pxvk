@@ -128,10 +128,21 @@ $runtimeLauncher = Resolve-BuiltFile $runtimeBuild "pxvk-launch.exe"
 $updateEntry = "_Z24PxgCudaDeformableUpdateDPKhjPi"
 $collisionEntry = "_Z29KernelDeformableUberCollisionPi"
 $solverEntry = "_Z26KernelDeformableUberSolverILj512EEvjbPhPi"
+$selfHashEntry = "_Z41PxgCudaDeformableSelfCollisionCreateHashD11PxgGpuArrayIjES0_S_IK12PxcVectorPadES_IKjEfPi"
+$radixEntry = "_Z15radixSortBlocksILj32ELj0ELb0EEvP5uint4S1_S1_S1_j"
+$selfReorderEntry = "_Z44PxgCudaDeformableSelfCollisionReorderInputsD11PxgGpuArrayIfES_I12PxcVectorPadES2_S2_S_IKjES4_S_IKfES_IKS1_ES8_S8_Pi"
+$selfCellStartEntry = "_Z44PxgCudaDeformableSelfCollisionFindCellStartD11PxgGpuArrayIjES_IKjEPi"
+$selfCompareEntry = "_Z47PxgCudaDeformableSelfCollisionCompareParticlesD11PxgGpuArrayI12PxcVectorPadES_IKjES3_S3_S_IKS0_ES5_S_IKfES5_fffPi"
 $jobs = @(
     @($updateEntry, "64", "0", "deformable-update", "--entry"),
     @($collisionEntry, "64", "0", "deformable-collision", "--entry"),
-    @($solverEntry, "512", "42240", "sample-cloth-solver", "--entry-shared-storage")
+    @($solverEntry, "512", "42240", "sample-cloth-solver", "--entry-shared-storage"),
+    @($selfHashEntry, "128", "0", "self-collision-hash", "--entry"),
+    @($radixEntry, "256", "4096", "radix-sort", "--entry"),
+    @($selfReorderEntry, "128", "0", "self-collision-reorder", "--entry"),
+    @($selfCellStartEntry, "128", "0", "self-collision-cell-start", "--entry"),
+    @($selfCompareEntry, "128", "0", "self-collision-compare", "--entry"),
+    @($solverEntry, "512", "15376", "sample-cloth-self-collision-solver", "--entry-shared-storage")
 )
 foreach ($job in $jobs) {
     $ptx = Resolve-PtxForEntry $captured $job[0]

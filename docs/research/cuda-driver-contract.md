@@ -384,10 +384,10 @@ caller-supplied runtime values. The 32 MiB Mirror's Edge pools are fixture
 evidence, not allocator constants.
 
 `SampleCloth` scene 1 loads the same 17-module PhysX 2.8.0 corpus and launches
-the same three deformable entry names as the game. It is therefore the first
-SDK façade proxy. `SampleParticleFluid` and `SampleCloth` scene 2 launch
-additional entries and remain later qualification cases rather than reasons to
-implement unrelated CUDA features.
+the same three deformable entry names as the game. Scene 2 adds the four-stage
+self-collision path and radix sort, and provides the context teardown/recreation
+qualification case. `SampleParticleFluid` remains a later qualification case;
+neither sample justifies unrelated CUDA features.
 
 No public stream, event, module-unload, array, surface, graphics-resource, or
 peer/IPC lifecycle occurred. Modules remain valid until context teardown.

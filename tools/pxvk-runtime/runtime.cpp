@@ -230,6 +230,10 @@ constexpr KernelSpec kKernelSpecs[] = {
     {"_Z36PxgCudaFluidCollisionTrianglesBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK29PxgFluidCollisionWorkUnitMeshEPi", "fluid-triangles.spv", 20, 64, 0, false, Profile::none},
     {"_Z40PxgCudaFluidCollisionCapsuleShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi", "fluid-capsules.spv", 20, 64, 0, false, Profile::none},
     {"_Z15radixSortBlocksILj32ELj0ELb0EEvP5uint4S1_S1_S1_j", "radix-sort.spv", 20, 256, 4096, false, Profile::none},
+    {"_Z41PxgCudaDeformableSelfCollisionCreateHashD11PxgGpuArrayIjES0_S_IK12PxcVectorPadES_IKjEfPi", "self-collision-hash.spv", 40, 128, 0, false, Profile::none},
+    {"_Z44PxgCudaDeformableSelfCollisionReorderInputsD11PxgGpuArrayIfES_I12PxcVectorPadES2_S2_S_IKjES4_S_IKfES_IKS1_ES8_S8_Pi", "self-collision-reorder.spv", 84, 128, 0, false, Profile::none},
+    {"_Z44PxgCudaDeformableSelfCollisionFindCellStartD11PxgGpuArrayIjES_IKjEPi", "self-collision-cell-start.spv", 20, 128, 0, false, Profile::none},
+    {"_Z47PxgCudaDeformableSelfCollisionCompareParticlesD11PxgGpuArrayI12PxcVectorPadES_IKjES3_S3_S_IKS0_ES5_S_IKfES5_fffPi", "self-collision-compare.spv", 80, 128, 0, false, Profile::none},
     {"_Z38PxgCudaFluidCollisionConstraintsBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi", "fluid-constraints.spv", 20, 128, 0, false, Profile::none},
     {"_Z42PxgCudaFluidCollisionDynamicResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi", "fluid-dynamic-response.spv", 20, 128, 0, false, Profile::none},
     {"_Z24PxgCudaDeformableUpdateDPKhjPi", "deformable-update.spv", 12, 64, 0, false, Profile::deformable_update},
@@ -238,6 +242,7 @@ constexpr KernelSpec kKernelSpecs[] = {
     {"_Z29KernelDeformableUberCollisionPi", "deformable-collision.spv", 4, 64, 0, false, Profile::deformable_collision},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "deformable-solver.spv", 16, 64, 7072, false, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-solver.spv", 16, 512, 42240, true, Profile::deformable_solver},
+    {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-self-collision-solver.spv", 16, 512, 15376, true, Profile::deformable_solver},
     {"_Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj", "fluid-calc-hash.spv", 52, 64, 0, false, Profile::none},
     {"_Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej", "fluid-reorder.spv", 76, 64, 260, false, Profile::none},
     {"_Z26KernelFluidSimpleParticleD17PxgFixedSizeArrayI12PxcVectorPadES_IKS0_E11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj", "fluid-simple-particle.spv", 44, 256, 0, false, Profile::none},
@@ -375,6 +380,7 @@ struct AllocationRecord {
 };
 
 struct HostAllocation {
+    bool live = true;
     void *pointer = nullptr;
     std::size_t size = 0;
 };
@@ -974,6 +980,23 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuCtxDetach(CUcontext context)
             item.second.destructor(context, reinterpret_cast<void *>(item.first),
                                    item.second.value);
     }
+    {
+        std::lock_guard<std::mutex> lock(value.mutex);
+        const bool context_remains = std::any_of(
+            value.contexts.begin(), value.contexts.end(),
+            [](const ContextRecord &item) { return item.live; });
+        if (!context_remains) {
+            const std::size_t before = value.allocations.size();
+            value.allocations.erase(
+                std::remove_if(value.allocations.begin(), value.allocations.end(),
+                    [](const AllocationRecord &item) { return item.global; }),
+                value.allocations.end());
+            value.next_global_address = kGlobalAddressStart;
+            value.write_log("context_globals_reset count=%u",
+                            static_cast<unsigned int>(
+                                before - value.allocations.size()));
+        }
+    }
     return CUDA_SUCCESS;
 }
 
@@ -1086,8 +1109,11 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuModuleGetGlobal_v2(CUdeviceptr *pointer,
     if (size == 0u) return CUDA_ERROR_NOT_FOUND;
     const std::uint32_t base = align_up(value.next_global_address, 16u);
     std::uint32_t end = 0;
-    if (!checked_u32_range(base, size, end) || end > kDeviceAddressStart)
+    if (!checked_u32_range(base, size, end) || end > kDeviceAddressStart) {
+        value.write_log("global_alloc_failed module=%u name=%s bytes=%u next=0x%08x",
+                        module_id, name, size, base);
         return CUDA_ERROR_OUT_OF_MEMORY;
+    }
     std::string error;
     if (!value.backend.ensure_heap(end, error)) return backend_failure(value, "global_alloc", error);
     try {
@@ -1098,6 +1124,8 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuModuleGetGlobal_v2(CUdeviceptr *pointer,
     value.next_global_address = end;
     *pointer = base;
     if (bytes != nullptr) *bytes = size;
+    value.write_log("global_alloc module=%u name=%s base=0x%08x bytes=%u",
+                    module_id, name, base, size);
     return CUDA_SUCCESS;
 }
 
@@ -1142,15 +1170,30 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemHostAlloc(void **pointer, size_t bytes,
     if (pointer == nullptr || bytes == 0u) return CUDA_ERROR_INVALID_VALUE;
     State &value = state();
     std::lock_guard<std::mutex> lock(value.mutex);
+    for (HostAllocation &record : value.host_allocations) {
+        if (!record.live && record.size == bytes) {
+            record.live = true;
+            *pointer = record.pointer;
+            value.write_log("host_alloc pointer=%p bytes=%u reused=1", *pointer,
+                            static_cast<unsigned int>(bytes));
+            return CUDA_SUCCESS;
+        }
+    }
     void *allocation = VirtualAlloc(nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    if (allocation == nullptr) return CUDA_ERROR_OUT_OF_MEMORY;
+    if (allocation == nullptr) {
+        value.write_log("host_alloc_failed bytes=%u win32=%lu",
+                        static_cast<unsigned int>(bytes), GetLastError());
+        return CUDA_ERROR_OUT_OF_MEMORY;
+    }
     try {
-        value.host_allocations.push_back({allocation, bytes});
+        value.host_allocations.push_back({true, allocation, bytes});
     } catch (...) {
         VirtualFree(allocation, 0, MEM_RELEASE);
         return CUDA_ERROR_OUT_OF_MEMORY;
     }
     *pointer = allocation;
+    value.write_log("host_alloc pointer=%p bytes=%u reused=0", *pointer,
+                    static_cast<unsigned int>(bytes));
     return CUDA_SUCCESS;
 }
 
@@ -1161,11 +1204,12 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemFreeHost(void *pointer)
     std::lock_guard<std::mutex> lock(value.mutex);
     const auto found = std::find_if(value.host_allocations.begin(),
         value.host_allocations.end(), [pointer](const HostAllocation &item) {
-            return item.pointer == pointer;
+            return item.live && item.pointer == pointer;
         });
     if (found == value.host_allocations.end()) return CUDA_ERROR_INVALID_VALUE;
-    if (VirtualFree(pointer, 0, MEM_RELEASE) == FALSE) return CUDA_ERROR_OPERATING_SYSTEM;
-    value.host_allocations.erase(found);
+    found->live = false;
+    value.write_log("host_free pointer=%p bytes=%u", pointer,
+                    static_cast<unsigned int>(found->size));
     return CUDA_SUCCESS;
 }
 
@@ -1176,6 +1220,15 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemAlloc_v2(CUdeviceptr *pointer, size_t byt
     std::lock_guard<std::mutex> lock(value.mutex);
     CUresult initialized = require_initialized_locked(value);
     if (initialized != CUDA_SUCCESS) return initialized;
+    for (AllocationRecord &record : value.allocations) {
+        if (!record.live && !record.global && record.size == bytes) {
+            record.live = true;
+            *pointer = record.base;
+            value.write_log("device_alloc base=0x%08x bytes=%u reused=1",
+                            record.base, static_cast<unsigned int>(bytes));
+            return CUDA_SUCCESS;
+        }
+    }
     const std::uint32_t base = align_up(value.next_device_address, 256u);
     std::uint32_t end = 0;
     if (!checked_u32_range(base, bytes, end)) return CUDA_ERROR_OUT_OF_MEMORY;
@@ -1189,7 +1242,7 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemAlloc_v2(CUdeviceptr *pointer, size_t byt
     }
     value.next_device_address = end;
     *pointer = base;
-    value.write_log("device_alloc base=0x%08x bytes=%u", base,
+    value.write_log("device_alloc base=0x%08x bytes=%u reused=0", base,
                     static_cast<unsigned int>(bytes));
     return CUDA_SUCCESS;
 }
@@ -1206,6 +1259,8 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemFree_v2(CUdeviceptr pointer)
     for (AllocationRecord &record : value.allocations) {
         if (record.live && !record.global && record.base == pointer) {
             record.live = false;
+            value.write_log("device_free base=0x%08x bytes=%u",
+                            record.base, record.size);
             return CUDA_SUCCESS;
         }
     }

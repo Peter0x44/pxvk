@@ -187,9 +187,21 @@ int main(int argc, char **argv)
     CUmodule cuda_module = nullptr;
     const std::uint32_t dummy_image = 0;
     if (!expect(module_load(&cuda_module, &dummy_image), "cuModuleLoadData")) return 1;
-    CUdeviceptr global = 0;
-    if (!expect(module_global(&global, nullptr, cuda_module, "solverGpuData"),
-                "cuModuleGetGlobal_v2(bytes=null)")) return 1;
+    const char *global_names[] = {
+        "cCollisionParameters", "updateInstanceData", "parameters_cmem",
+        "gDeformableCollisionInstanceData", "gDeformableCollisionBatchedData",
+        "solverGpuData",
+    };
+    const auto allocate_module_globals = [&](CUmodule target) {
+        for (const char *name : global_names) {
+            CUdeviceptr global = 0;
+            if (!expect(module_global(&global, nullptr, target, name),
+                        "cuModuleGetGlobal_v2(context lifecycle)"))
+                return false;
+        }
+        return true;
+    };
+    if (!allocate_module_globals(cuda_module)) return 1;
 
     CUdeviceptr first = 0;
     CUdeviceptr second = 0;
@@ -214,9 +226,21 @@ int main(int argc, char **argv)
                 "cuMemGetAddressRange_v2") || allocation_base != first || allocation_size != 32)
         return 1;
 
-    void *host = nullptr;
-    if (!expect(host_alloc(&host, 4096, 0), "cuMemHostAlloc") || host == nullptr ||
-        !expect(host_free(host), "cuMemFreeHost")) return 1;
+    constexpr size_t physx_heap_bytes = 128u * 1024u * 1024u;
+    void *first_host = nullptr;
+    if (!expect(host_alloc(&first_host, physx_heap_bytes, 0),
+                "cuMemHostAlloc(PhysX heap first)") ||
+        first_host == nullptr ||
+        !expect(host_free(first_host), "cuMemFreeHost(PhysX heap first)"))
+        return 1;
+    void *second_host = nullptr;
+    if (!expect(host_alloc(&second_host, physx_heap_bytes, 0),
+                "cuMemHostAlloc(PhysX heap reused)") ||
+        second_host != first_host ||
+        !expect(host_free(second_host), "cuMemFreeHost(PhysX heap reused)")) {
+        std::fprintf(stderr, "PhysX host heap was not reused across scene lifecycle\n");
+        return 1;
+    }
 
     CUtexref texture = nullptr;
     if (!expect(module_texture(&texture, cuda_module, "inputSortedPositionsTex"),
@@ -248,8 +272,25 @@ int main(int argc, char **argv)
     }
 
     if (!expect(mem_free(second), "cuMemFree_v2(second)") ||
-        !expect(mem_free(first), "cuMemFree_v2(first)") ||
-        !expect(context_detach(context), "cuCtxDetach")) return 1;
+        !expect(mem_free(first), "cuMemFree_v2(first)")) return 1;
+    CUdeviceptr reused = 0;
+    if (!expect(mem_alloc(&reused, 32), "cuMemAlloc_v2(reused)") ||
+        reused != first ||
+        !expect(mem_free(reused), "cuMemFree_v2(reused)")) {
+        std::fprintf(stderr, "device heap was not reused across scene lifecycle\n");
+        return 1;
+    }
+    if (!expect(context_detach(context), "cuCtxDetach")) return 1;
+    CUcontext recreated_context = nullptr;
+    if (!expect(context_create(&recreated_context, 0, device),
+                "cuCtxCreate_v2(recreated)"))
+        return 1;
+    CUmodule recreated_module = nullptr;
+    if (!expect(module_load(&recreated_module, &dummy_image),
+                "cuModuleLoadData(recreated)") ||
+        !allocate_module_globals(recreated_module) ||
+        !expect(context_detach(recreated_context), "cuCtxDetach(recreated)"))
+        return 1;
     std::puts("pxvk runtime smoke passed: exports, Dark API, memory, Vulkan dispatch");
     FreeLibrary(module);
     return 0;

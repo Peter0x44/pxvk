@@ -45,17 +45,22 @@ The `Module` column uses the stable semantic numbering from the corpus report.
 | `0015` | `fatbin_0007.ptx` | `PxgCudaFluidCollisionBoxShapesBatch` | 20 B | 6,752 B | 0 | Exact fixture | Captured two-work-unit zero-box fixture |
 | `0016` | `fatbin_0013.ptx` | `KernelFluidForce` | 100 B | 0 | 0 | Exact fixture | Focused fixture and four-kernel fluid fixture |
 
-All sixteen launched entries have exact native/Vulkan fixtures for their named
-synthetic cases. Module `0006` contains only collision constants. Module `0017`
-contains resolved deformable self-collision entries, but none launched in the
-captured routes, so they are outside this ledger and the initial compatibility
-target.
+All sixteen Mirror's Edge launched entries have exact native/Vulkan fixtures
+for their named synthetic cases. Module `0006` contains only collision
+constants. Module `0017` contains the four deformable self-collision stages now
+translated for the `SampleCloth` scene-2 runtime path. Those stages have an
+end-to-end SDK workload check but no exact native/Vulkan differential fixture,
+so they remain outside this exact-fixture ledger.
 
 PhysX 2.8.0 `SampleCloth` scene 1 is a secondary proxy for the same three
 deformable entries, not an expansion of this ledger. Its solver launch uses
 local size 512 and 42,240 bytes of dynamic shared memory. The storage-backed
 shared-memory fixture matches native CUDA exactly on Intel and RTX, so the
 sample launch is accepted even where it exceeds native Vulkan Workgroup memory.
+
+`SampleCloth` scene 2 additionally validates context-global reclamation,
+128 MiB host/device heap reuse, radix sorting, four self-collision dispatches,
+and the 15,376-byte storage-backed solver launch.
 
 ## In-game readiness audit
 

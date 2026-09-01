@@ -7,7 +7,7 @@
     .param .s8 solver_types_probe_param_1
 )
 {
-    .reg .pred %p<4>;
+    .reg .pred %p<5>;
     .reg .s16 %rs<8>;
     .reg .s32 %r<12>;
     .reg .f32 %f<6>;
@@ -22,7 +22,9 @@
     or.b16 %rs7, %rs7, %rs3;
     setp.lt.s16 %p1, %rs5, %rs6;
     setp.eq.s16 %p2, %rs1, %rs2;
+    setp.lt.s32 %p4, %r3, %r2;
     or.pred %p3, %p1, %p2;
+    or.pred %p3, %p3, %p4;
     mul.wide.s16 %r4, %rs5, %rs6;
     mov.f32 %f1, 0f40800000;
     neg.ftz.f32 %f2, %f1;

@@ -2882,6 +2882,7 @@ private:
                 operation = SpvOpINotEqual;
             }
             if (variant == "setp.gt.s32") operation = SpvOpSGreaterThan;
+            if (variant == "setp.lt.s32") operation = SpvOpSLessThan;
             if (variant == "setp.lt.s16") operation = SpvOpSLessThan;
             if (operation == SpvOpNop) {
                 unsupported(instruction, "unsupported comparison");
