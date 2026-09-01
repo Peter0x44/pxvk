@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef PXVK_CAPSULE_FIXTURE
+#if defined(PXVK_CAPSULE_FIXTURE)
 #define KERNEL_NAME                                                            \
   "_Z40PxgCudaFluidCollisionCapsuleShapesBatchD11PxgGpuArrayIK32PxgFluidCol" \
   "lisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
@@ -17,6 +17,14 @@
 #define SHAPE_COUNT_LABEL "capsule_count"
 #define SHAPE_LABEL "capsule"
 #define FIXTURE_NAME "cuda-fluid-capsules-fixture"
+#elif defined(PXVK_CONVEX_FIXTURE)
+#define KERNEL_NAME                                                            \
+  "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidColl" \
+  "isionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
+#define KERNEL_LABEL "PxgCudaFluidCollisionConvexShapesBatch"
+#define SHAPE_COUNT_LABEL "convex_count"
+#define SHAPE_LABEL "convex"
+#define FIXTURE_NAME "cuda-fluid-convexes-fixture"
 #else
 #define KERNEL_NAME                                                            \
   "_Z36PxgCudaFluidCollisionBoxShapesBatchD11PxgGpuArrayIK32PxgFluidCollisio" \
@@ -28,14 +36,23 @@
 #endif
 #define GUARD_BEFORE 0x13579bdfu
 #define GUARD_AFTER 0x2468ace0u
-#define HEAP_WORDS 160u
-
 #define WORK_UNIT_OFFSET 8u
+#define WORK_UNIT_COUNT 2u
+#if defined(PXVK_CONVEX_FIXTURE)
+#define DISPATCH_WORKGROUP_COUNT 5u
+#define DISPATCH_REPORT "  \"dispatch_workgroup_count\": 5,\n"
+#else
+#define DISPATCH_WORKGROUP_COUNT 2u
+#define DISPATCH_REPORT ""
+#endif
 #define SHAPE_START_ADDRS_OFFSET 20u
 #define PARAMETERS_OFFSET 64u
 #define POSITION_OFFSET 112u
 #define OLD_POSITION_OFFSET 120u
 #define ERROR_OFFSET 128u
+#define HEAP_WORDS 160u
+#define WORK_UNIT_WORDS (WORK_UNIT_COUNT * 4u)
+#define SHAPE_START_ADDRS_WORDS (WORK_UNIT_COUNT * 20u)
 
 typedef struct cuda_api {
   HMODULE library;
@@ -214,8 +231,8 @@ int main(int argc, char **argv) {
   CUfunction function = NULL;
   CUdeviceptr heap_device = 0;
   uint32_t heap[HEAP_WORDS] = {0};
-  uint32_t work_units[8] = {0};
-  uint32_t shape_start_addrs[40] = {0};
+  uint32_t work_units[WORK_UNIT_WORDS] = {0};
+  uint32_t shape_start_addrs[SHAPE_START_ADDRS_WORDS] = {0};
   uint32_t parameters[40] = {0};
   uint32_t shape_array[2];
   uint32_t work_array[2];
@@ -257,12 +274,12 @@ int main(int argc, char **argv) {
       !heap_pointer(heap_device, PARAMETERS_OFFSET, &parameters_pointer)) {
     goto cleanup;
   }
-  shape_array[1] = 2u;
-  work_array[1] = 2u;
+  shape_array[1] = WORK_UNIT_COUNT;
+  work_array[1] = WORK_UNIT_COUNT;
   work_units[1] = 1u;
   work_units[6] = 1u;
 
-  for (record = 0u; record < 2u; ++record) {
+  for (record = 0u; record < WORK_UNIT_COUNT; ++record) {
     const size_t base = record * 20u;
     shape_start_addrs[base + 1u] = 0u;
     shape_start_addrs[base + 2u] = position_pointer;
@@ -273,8 +290,9 @@ int main(int argc, char **argv) {
   parameters[0] = 0x31415926u;
   parameters[39] = 0x27182818u;
 
-  initialize_range(heap, WORK_UNIT_OFFSET, work_units, 8u);
-  initialize_range(heap, SHAPE_START_ADDRS_OFFSET, shape_start_addrs, 40u);
+  initialize_range(heap, WORK_UNIT_OFFSET, work_units, WORK_UNIT_WORDS);
+  initialize_range(heap, SHAPE_START_ADDRS_OFFSET, shape_start_addrs,
+                   SHAPE_START_ADDRS_WORDS);
   initialize_range(heap, PARAMETERS_OFFSET, parameters, 40u);
   initialize_range(heap, POSITION_OFFSET, input_position, 4u);
   initialize_range(heap, OLD_POSITION_OFFSET, input_old_position, 4u);
@@ -283,22 +301,25 @@ int main(int argc, char **argv) {
   CUDA_TRY(&api, api.cuMemcpyHtoD_v2(heap_device, heap, sizeof(heap)));
   {
     void *launch_parameters[] = {shape_array, work_array, &error_pointer};
-    CUDA_TRY(&api, api.cuLaunchKernel(function, 2, 1, 1, 64, 1, 1, 0, NULL,
-                                      launch_parameters, NULL));
+    CUDA_TRY(&api,
+             api.cuLaunchKernel(function, DISPATCH_WORKGROUP_COUNT, 1, 1, 64, 1,
+                                1, 0, NULL, launch_parameters, NULL));
   }
   CUDA_TRY(&api, api.cuCtxSynchronize());
   CUDA_TRY(&api, api.cuMemcpyDtoH_v2(heap, heap_device, sizeof(heap)));
 
   guards_intact =
-      range_guards_match(heap, WORK_UNIT_OFFSET, 8u) &&
-      range_guards_match(heap, SHAPE_START_ADDRS_OFFSET, 40u) &&
+      range_guards_match(heap, WORK_UNIT_OFFSET, WORK_UNIT_WORDS) &&
+      range_guards_match(heap, SHAPE_START_ADDRS_OFFSET,
+                         SHAPE_START_ADDRS_WORDS) &&
       range_guards_match(heap, PARAMETERS_OFFSET, 40u) &&
       range_guards_match(heap, POSITION_OFFSET, 4u) &&
       range_guards_match(heap, OLD_POSITION_OFFSET, 4u) &&
       range_guards_match(heap, ERROR_OFFSET, 1u);
   pass = guards_intact &&
-         words_equal(heap, WORK_UNIT_OFFSET, work_units, 8u) &&
-         words_equal(heap, SHAPE_START_ADDRS_OFFSET, shape_start_addrs, 40u) &&
+         words_equal(heap, WORK_UNIT_OFFSET, work_units, WORK_UNIT_WORDS) &&
+         words_equal(heap, SHAPE_START_ADDRS_OFFSET, shape_start_addrs,
+                     SHAPE_START_ADDRS_WORDS) &&
          words_equal(heap, PARAMETERS_OFFSET, parameters, 40u) &&
          words_equal(heap, POSITION_OFFSET, input_position, 4u) &&
          words_equal(heap, OLD_POSITION_OFFSET, input_old_position, 4u) &&
@@ -314,11 +335,12 @@ int main(int argc, char **argv) {
           "  \"schema_version\": 1,\n"
           "  \"device\": \"%s\",\n"
           "  \"kernel\": \"" KERNEL_LABEL "\",\n"
-          "  \"work_unit_count\": 2,\n"
+          "  \"work_unit_count\": %u,\n"
+          DISPATCH_REPORT
           "  \"particle_count\": 1,\n"
           "  \"" SHAPE_COUNT_LABEL "\": 0,\n"
           "  \"input_position_bits\": ",
-          device_name);
+          device_name, (unsigned int)WORK_UNIT_COUNT);
   write_words(output, input_position, 4u);
   fprintf(output, ",\n  \"input_old_position_bits\": ");
   write_words(output, input_old_position, 4u);

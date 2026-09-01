@@ -189,6 +189,14 @@ static shared memory. The minimum trace-shaped two-work-unit zero-capsule
 fixture crosses five barriers and matches native CUDA exactly on Intel and
 NVIDIA Vulkan adapters. Capsule-contact geometry remains uncovered.
 
+`PxgCudaFluidCollisionConvexShapesBatch` needs no additional instruction
+lowering beyond the existing collision surface. Its 1,433 instructions lower
+to a deterministic 75,510-word module with local size 64 and 4,225 bytes of
+static shared memory. The minimum trace-observed five-workgroup, two-work-unit
+zero-convex fixture crosses three barriers on its in-range path and matches
+native CUDA exactly on Intel and NVIDIA Vulkan adapters.
+Convex-contact geometry remains uncovered.
+
 Validate and execute the module:
 
 ```powershell
@@ -302,7 +310,7 @@ The frontend does not yet provide:
 - general type inference beyond declared register banks and the 147 finite
   opcode contracts;
 - reachability or dead-code elimination;
-- SPIR-V emission beyond the project oracle and the thirteen launched entries
+- SPIR-V emission beyond the project oracle and the fourteen launched entries
   marked **Exact fixture** in
   [`../../docs/research/kernel-status.md`](../../docs/research/kernel-status.md);
 - shader caching;

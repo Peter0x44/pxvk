@@ -13,11 +13,12 @@ modules. Direct SPIR-V lowering covers the project oracle,
 `PxgCudaFluidCollisionStaticResponseBatch`,
 `PxgCudaFluidCollisionBoxShapesBatch`,
 `PxgCudaFluidCollisionCapsuleShapesBatch`,
+`PxgCudaFluidCollisionConvexShapesBatch`,
 `PxgCudaFluidCollisionTrianglesBatch`, `PxgCudaDeformableUpdate`,
 `KernelDeformableUberCollision`, and `KernelDeformableUberSolver<512>`. Exact
-native/Vulkan differential fixtures cover the oracle, all ten translated fluid
-kernels, all three translated deformable kernels, and the ordered deformable
-update/collision/solver step.
+native/Vulkan differential fixtures cover the oracle, all eleven translated
+fluid kernels, all three translated deformable kernels, and the ordered
+deformable update/collision/solver step.
 
 See [`docs/charter.md`](docs/charter.md) for scope and
 [`docs/research/README.md`](docs/research/README.md) for the evidence index.
@@ -62,7 +63,7 @@ python .\extract-physx-ptx.py `
 ```
 
 The extractor needs no CUDA toolkit. It emits stable `fatbin_####.ptx` files
-plus a source/module hash manifest. Keep that output local. Add the ten
+plus a source/module hash manifest. Keep that output local. Add the eleven
 trace-shaped fluid fixtures, the focused deformable fixtures, and the ordered
 three-kernel deformable step by passing either this directory or a ZLUDA trace
 module directory:
@@ -74,8 +75,8 @@ module directory:
 The suite resolves modules by their PTX entry names rather than trace-specific
 module numbers. It compiles, validates, and executes calc-hash, reorder,
 density, force, fluid collision constraints, dynamic response, static response,
-boxes, capsules, triangles, the three focused deformable kernels, and the
-ordered deformable step.
+boxes, capsules, convexes, triangles, the three focused deformable kernels, and
+the ordered deformable step.
 Any failed device, shader validation, guard range, or exact result returns a
 nonzero process exit code.
 
@@ -83,8 +84,8 @@ nonzero process exit code.
 
 Each runner still writes a focused JSON report for failure diagnosis. The
 committed reference is one deterministic bundle:
-`tools/reference/expected/reference-workstation.json`. It contains twelve native
-CUDA reports and all twenty Vulkan reports under stable keys.
+`tools/reference/expected/reference-workstation.json`. It contains thirteen
+native CUDA reports and all twenty-one Vulkan reports under stable keys.
 
 Compare a complete local run against it:
 
@@ -95,7 +96,7 @@ Compare a complete local run against it:
 
 After classifying a deliberate result change, the same command with
 `-AcceptReferenceBundle` replaces only the Vulkan section. To assemble a new
-bundle or replace native CUDA evidence, generate all twelve native runner JSON
+bundle or replace native CUDA evidence, generate all thirteen native runner JSON
 files and run:
 
 ```powershell
@@ -108,6 +109,7 @@ python .\tools\build-reference-bundle.py `
   --cuda-fluid-static-response .\native-fluid-static-response.json `
   --cuda-fluid-boxes .\native-fluid-boxes.json `
   --cuda-fluid-capsules .\native-fluid-capsules.json `
+  --cuda-fluid-convexes .\native-fluid-convexes.json `
   --cuda-fluid-triangles .\native-fluid-triangles.json `
   --cuda-deformable .\native-deformable.json `
   --cuda-deformable-solver .\native-deformable-solver.json `

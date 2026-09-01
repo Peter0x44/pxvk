@@ -14,12 +14,12 @@ standalone JSON report; `tools/build-reference-bundle.py` stores it at
 
 The original native report had SHA-256
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Twelve native runner reports are stored in the deterministic reference bundle:
-the semantic oracle, four-kernel fluid pipeline, focused fluid constraints,
-dynamic response, static response, boxes, capsules, and triangles, all three
-focused deformable workloads, and the ordered deformable step. The bundle has
-SHA-256
-`293c096bde73d53769234fe8dc5a6858e36366fb45c0bd4ae175f1d31d6151ce`.
+Thirteen native runner reports are stored in the deterministic reference
+bundle: the semantic oracle, four-kernel fluid pipeline, focused fluid
+constraints, dynamic response, static response, boxes, capsules, convexes, and
+triangles, all three focused deformable workloads, and the ordered deformable
+step. The bundle has SHA-256
+`c0a93382ed6a9529cc1735d78f193555efd5da8f1aecafbbb74096fc35253046`.
 
 ## Environment
 
@@ -158,6 +158,26 @@ intact. The native report SHA-256 is
 `e52b66988554fecd599f8ae48daf1726ee97a6c36228ea51f27890e98478d4a4`;
 the report is supplied as `--cuda-fluid-capsules`. This fixture does not cover a
 capsule-contact record.
+
+The focused convex-collision report uses the extracted convex module:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-fluid-convexes-fixture.exe `
+  .\local-ptx\fatbin_0008.ptx `
+  .\native-fluid-convexes.json
+```
+
+It launches `PxgCudaFluidCollisionConvexShapesBatch` with the minimum
+trace-observed five-workgroup grid, two fixture work-unit records, one particle,
+and zero convexes. The first two workgroups copy their work-unit and 80-byte
+shape-start records; the active workgroup also copies the parameter block and
+loads position and old position. The three surplus workgroups take the
+out-of-range exit, while the zero-count path crosses three shared-memory
+barriers. Both vectors and every guard remain intact. The native report SHA-256
+is
+`1e9ba7104210ffcd33d7d0dd60a4b8538447ca8544a8fea916370c346b186456`;
+the report is supplied as `--cuda-fluid-convexes`. This fixture does not cover a
+convex-contact record.
 
 The focused deformable report uses the extracted PhysX module on the native
 NVIDIA reference system:

@@ -715,7 +715,8 @@ DeviceResult run_device(
     bool constraints_fixture_mode,
     bool dynamic_response_fixture_mode,
     bool static_response_fixture_mode,
-    bool boxes_fixture_mode,
+    bool shape_batches_fixture_mode,
+    bool convexes_fixture_mode,
     bool triangles_fixture_mode)
 {
     DeviceResult result;
@@ -840,7 +841,7 @@ DeviceResult run_device(
                     ? kKernelFixtureCopyBytes
                     : constant_fixture_mode
                         ? kConstantFixtureCopyBytes
-                        : boxes_fixture_mode
+                        : shape_batches_fixture_mode
                             ? kBoxesPayloadBytes
                         : triangles_fixture_mode
                             ? kTrianglesPayloadBytes
@@ -873,7 +874,7 @@ DeviceResult run_device(
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        if (boxes_fixture_mode) {
+        if (shape_batches_fixture_mode) {
             const auto byte_offset = [](std::size_t offset) {
                 return static_cast<std::uint32_t>(
                     offset * sizeof(std::uint32_t));
@@ -1621,7 +1622,7 @@ DeviceResult run_device(
                               constraints_fixture_mode ||
                               dynamic_response_fixture_mode ||
                               static_response_fixture_mode ||
-                              boxes_fixture_mode || triangles_fixture_mode
+                              shape_batches_fixture_mode || triangles_fixture_mode
                         ? 2u
                         : 1u;
         std::array<VkDescriptorSetLayoutBinding, 4> bindings = {};
@@ -1846,7 +1847,11 @@ DeviceResult run_device(
             &descriptor_set,
             0,
             nullptr);
-        vkCmdDispatch(command_buffer, boxes_fixture_mode ? 2u : 1u, 1, 1);
+        vkCmdDispatch(
+            command_buffer,
+            convexes_fixture_mode ? 5u : shape_batches_fixture_mode ? 2u : 1u,
+            1,
+            1);
         VkBufferMemoryBarrier download_barrier = {
             VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             nullptr,
@@ -1899,7 +1904,7 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        if (boxes_fixture_mode) {
+        if (shape_batches_fixture_mode) {
             std::copy_n(
                 words + kBoxesPositionOffset,
                 result.boxes_position.size(),
@@ -2559,8 +2564,8 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = boxes_fixture_mode
-                ? "fluid box/capsule fixture result mismatch"
+            result.error = shape_batches_fixture_mode
+                ? "fluid shape-batch fixture result mismatch"
                 : triangles_fixture_mode
                     ? "fluid triangle fixture result mismatch"
                 : static_response_fixture_mode
@@ -3459,9 +3464,14 @@ int main(int argc, char **argv)
     const bool capsules_fixture_mode =
         argc == 4 &&
         std::string(argv[2]) == "--fluid-capsules-fixture";
+    const bool convexes_fixture_mode =
+        argc == 4 &&
+        std::string(argv[2]) == "--fluid-convexes-fixture";
     const bool triangles_fixture_mode =
         argc == 4 &&
         std::string(argv[2]) == "--fluid-triangles-fixture";
+    const bool shape_batches_fixture_mode =
+        boxes_fixture_mode || capsules_fixture_mode || convexes_fixture_mode;
     const bool sequence_fixture_mode =
         argc == 6 && std::string(argv[2]) == "--deformable-sequence-fixture";
     const bool incomplete_named_mode =
@@ -3482,6 +3492,7 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--fluid-static-response-fixture" ||
          std::string(argv[2]) == "--fluid-boxes-fixture" ||
          std::string(argv[2]) == "--fluid-capsules-fixture" ||
+         std::string(argv[2]) == "--fluid-convexes-fixture" ||
          std::string(argv[2]) == "--fluid-triangles-fixture" ||
          std::string(argv[2]) == "--deformable-collision-fixture");
     if ((argc != 2 && argc != 3 &&
@@ -3491,8 +3502,8 @@ int main(int argc, char **argv)
          !force_fixture_mode && !deformable_fixture_mode &&
          !solver_fixture_mode && !collision_fixture_mode &&
          !constraints_fixture_mode && !dynamic_response_fixture_mode &&
-         !static_response_fixture_mode && !boxes_fixture_mode &&
-         !capsules_fixture_mode && !triangles_fixture_mode &&
+         !static_response_fixture_mode && !shape_batches_fixture_mode &&
+         !triangles_fixture_mode &&
          !sequence_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
@@ -3512,6 +3523,7 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --fluid-static-response-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-boxes-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-capsules-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --fluid-convexes-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-triangles-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-sequence-fixture <update.spv> <collision.spv> <solver.spv>\n";
         return 2;
@@ -3563,8 +3575,7 @@ int main(int argc, char **argv)
         force_fixture_mode || deformable_fixture_mode || solver_fixture_mode ||
         collision_fixture_mode || constraints_fixture_mode ||
         dynamic_response_fixture_mode || static_response_fixture_mode ||
-        boxes_fixture_mode || capsules_fixture_mode ||
-        triangles_fixture_mode;
+        shape_batches_fixture_mode || triangles_fixture_mode;
     const bool require_memory_result =
         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
         !constant_fixture_mode && !texture_fixture_mode &&
@@ -3572,8 +3583,8 @@ int main(int argc, char **argv)
         !force_fixture_mode && !deformable_fixture_mode &&
         !solver_fixture_mode && !collision_fixture_mode &&
         !constraints_fixture_mode && !dynamic_response_fixture_mode &&
-        !static_response_fixture_mode && !boxes_fixture_mode &&
-        !capsules_fixture_mode && !triangles_fixture_mode;
+        !static_response_fixture_mode && !shape_batches_fixture_mode &&
+        !triangles_fixture_mode;
     std::vector<std::uint32_t> shader;
     std::array<std::vector<std::uint32_t>, 3> sequence_shaders;
     const auto load_shader = [](const char *path,
@@ -3616,8 +3627,8 @@ int main(int argc, char **argv)
                     force_fixture_mode || deformable_fixture_mode ||
                     solver_fixture_mode || collision_fixture_mode ||
                     constraints_fixture_mode || dynamic_response_fixture_mode ||
-                    static_response_fixture_mode || boxes_fixture_mode ||
-                    capsules_fixture_mode || triangles_fixture_mode
+                    static_response_fixture_mode ||
+                    shape_batches_fixture_mode || triangles_fixture_mode
                 ? argv[3]
                 : argv[2];
         shaders_loaded = load_shader(shader_path, shader);
@@ -3655,7 +3666,8 @@ int main(int argc, char **argv)
                   constraints_fixture_mode,
                   dynamic_response_fixture_mode,
                   static_response_fixture_mode,
-                  boxes_fixture_mode || capsules_fixture_mode,
+                  shape_batches_fixture_mode,
+                  convexes_fixture_mode,
                   triangles_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
@@ -3673,6 +3685,7 @@ int main(int argc, char **argv)
            << "  \"test\": \""
            << (sequence_fixture_mode ? "deformable_sequence_fixture" :
                capsules_fixture_mode ? "fluid_capsules_fixture" :
+               convexes_fixture_mode ? "fluid_convexes_fixture" :
                boxes_fixture_mode ? "fluid_boxes_fixture" :
                triangles_fixture_mode ? "fluid_triangles_fixture" :
                static_response_fixture_mode
@@ -3703,19 +3716,29 @@ int main(int argc, char **argv)
                << "  \"iteration_count\": 0,\n"
                << "  \"collision_static_shared_bytes\": 4097,\n"
                << "  \"solver_dynamic_shared_bytes\": 7072,\n";
-    } else if (boxes_fixture_mode || capsules_fixture_mode) {
+    } else if (shape_batches_fixture_mode) {
         output << "  \"kernel\": \""
-               << (capsules_fixture_mode
-                       ? "PxgCudaFluidCollisionCapsuleShapesBatch"
-                       : "PxgCudaFluidCollisionBoxShapesBatch")
+               << (convexes_fixture_mode
+                       ? "PxgCudaFluidCollisionConvexShapesBatch"
+                       : capsules_fixture_mode
+                           ? "PxgCudaFluidCollisionCapsuleShapesBatch"
+                           : "PxgCudaFluidCollisionBoxShapesBatch")
                << "\",\n"
-               << "  \"work_unit_count\": 2,\n"
-               << "  \"particle_count\": 1,\n"
+               << "  \"work_unit_count\": 2,\n";
+        if (convexes_fixture_mode) {
+            output << "  \"dispatch_workgroup_count\": 5,\n";
+        }
+        output << "  \"particle_count\": 1,\n"
                << "  \""
-               << (capsules_fixture_mode ? "capsule_count" : "box_count")
+               << (convexes_fixture_mode
+                       ? "convex_count"
+                       : capsules_fixture_mode ? "capsule_count" : "box_count")
                << "\": 0,\n"
                << "  \"static_shared_bytes\": "
-               << (capsules_fixture_mode ? 2816 : 6752) << ",\n"
+               << (convexes_fixture_mode
+                       ? 4225
+                       : capsules_fixture_mode ? 2816 : 6752)
+               << ",\n"
                << "  \"expected_position_bits\": [\"0x3fc00000\", "
                   "\"0xc0100000\", \"0x40700000\", \"0x11223344\"],\n"
                << "  \"expected_old_position_bits\": [\"0x3f800000\", "
@@ -3898,7 +3921,7 @@ int main(int argc, char **argv)
                    << "      \"guards_intact\": "
                    << (result.sequence_guards_intact ? "true" : "false")
                    << ",\n";
-        } else if (boxes_fixture_mode || capsules_fixture_mode) {
+        } else if (shape_batches_fixture_mode) {
             output << "      \"output_position_bits\": ";
             write_bits(result.boxes_position);
             output << ",\n      \"output_old_position_bits\": ";

@@ -429,6 +429,26 @@ and
 `1642ce984d610bc860bdba6d3c1167d596fce99b10ba60ac61c25c773a5b1a2a`.
 No capsule-contact geometry is covered.
 
+`PxgCudaFluidCollisionConvexShapesBatch` is the fourteenth captured entry to
+compile and execute. It contains 1,433 instructions in 149 basic blocks with
+224 CFG edges, a 20-byte packed parameter block, 4,225 bytes of static shared
+memory, and local size 64. Its finite instruction surface was already covered
+by the translated collision entries. The deterministic 75,510-word module
+passes Vulkan 1.2 validation; SHA-256 is
+`7f10bd7049e51f9a4448ebb265064c9e26f54666e39ea6bde7a7f46cfac86cd8`.
+
+The focused fixture uses the minimum trace-observed five-workgroup dispatch,
+two work-unit records, one particle, and zero convexes. The surplus workgroups
+take the out-of-range exit; the first two copy both work-unit and 80-byte
+shape-start records, copy the active parameter block, load position and old
+position, cross three shared-memory barriers, and take the empty-shape exit.
+Native CUDA and PTX-derived Intel/RTX Vulkan preserve both vectors and every
+guard bit-for-bit. Native and Vulkan report SHA-256 values are
+`1e9ba7104210ffcd33d7d0dd60a4b8538447ca8544a8fea916370c346b186456`
+and
+`aa5a42405744e4dddd5e64f01f74eb22118caaa7200a1a56c6249cbfb67634b3`.
+No convex-contact geometry is covered.
+
 The first deformable-family entry, `PxgCudaDeformableUpdate`, contains the
 finite unsigned `setp.lt.u32` comparison and bitwise `selp.b32` select variants.
 Both lower directly to SPIR-V unsigned comparison and `OpSelect`; the committed
@@ -564,7 +584,7 @@ Reproduce the complete portable path from the repository root:
 
 The directory must contain the extracted modules named in
 `kernel-status.md`. The script parses, emits, validates when `spirv-val.exe` is
-available, and executes all thirteen translated entries plus the ordered
+available, and executes all fourteen translated entries plus the ordered
 deformable step. Proprietary PTX and generated derivatives remain local.
 
 The emitted modules declare float32 `RoundingModeRTE` and

@@ -77,6 +77,14 @@ target_compile_definitions(
     cuda-fluid-capsules-fixture
     PRIVATE _WIN32_WINNT=0x0601 PXVK_CAPSULE_FIXTURE)
 
+add_executable(cuda-fluid-convexes-fixture shape_batches.c)
+target_include_directories(
+    cuda-fluid-convexes-fixture PRIVATE "${CUDA_DRIVER_INCLUDE_DIR}")
+target_compile_features(cuda-fluid-convexes-fixture PRIVATE c_std_11)
+target_compile_definitions(
+    cuda-fluid-convexes-fixture
+    PRIVATE _WIN32_WINNT=0x0601 PXVK_CONVEX_FIXTURE)
+
 add_executable(cuda-fluid-triangles-fixture triangles.c)
 target_include_directories(
     cuda-fluid-triangles-fixture PRIVATE "${CUDA_DRIVER_INCLUDE_DIR}")
@@ -102,6 +110,7 @@ if(MSVC)
             cuda-fluid-static-response-fixture
             cuda-fluid-boxes-fixture
             cuda-fluid-capsules-fixture
+            cuda-fluid-convexes-fixture
             cuda-fluid-triangles-fixture
             cuda-deformable-sequence-fixture)
         target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -118,6 +127,7 @@ else()
             cuda-fluid-static-response-fixture
             cuda-fluid-boxes-fixture
             cuda-fluid-capsules-fixture
+            cuda-fluid-convexes-fixture
             cuda-fluid-triangles-fixture
             cuda-deformable-sequence-fixture)
         target_compile_options(${target} PRIVATE -Wall -Wextra)

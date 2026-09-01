@@ -183,6 +183,15 @@ particle loads, and the empty-shape exit. Native RTX and translated Intel/RTX
 preserve position, old position, and all guards exactly. Capsule-contact
 geometry remains uncovered.
 
+The captured 75,510-word `PxgCudaFluidCollisionConvexShapesBatch` module uses
+bindings 0/1, the minimum trace-observed five-workgroup dispatch, local size 64,
+and 4,225 bytes of static shared memory. Its two-work-unit zero-convex fixture
+verifies surplus-workgroup exits, both work-unit and 80-byte shape-start
+records, the active parameter copy, particle loads, three barriers, and the
+empty-shape exit. Native RTX and translated Intel/RTX preserve position, old
+position, and all guards exactly. Convex-contact geometry remains
+uncovered.
+
 The captured 68,441-word `PxgCudaFluidCollisionTrianglesBatch` module uses
 bindings 0/1, local size 64, and 4,912 bytes of static shared memory. It enables
 core `shaderInt64` for the entry's 64-bit triangle candidate mask; other

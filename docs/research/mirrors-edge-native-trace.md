@@ -393,7 +393,7 @@ materially expanded:
 | Kernel stem | Calls | Notable observation |
 |---|---:|---|
 | `KernelFluidSimpleParticle` | 514 | 44-byte parameter buffer; grid X 2–10 |
-| Fluid convex-shape collision | 476 | 20-byte parameters |
+| Fluid convex-shape collision | 476 | 20-byte parameters; grid X 5–34; block X 64 |
 | Fluid capsule-shape collision | 512 | 20-byte parameters |
 | Fluid box-shape collision | 1,088 | largest collision-call family |
 | Fluid triangle collision | 638 | grid X reached 94 |
