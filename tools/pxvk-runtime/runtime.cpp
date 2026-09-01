@@ -208,6 +208,7 @@ bool id_from_handle(T handle, std::uint32_t base, std::size_t count, std::uint32
 enum class Profile {
     none,
     deformable_update,
+    deformable_self_collision,
     deformable_collision,
     deformable_solver,
     fluid_density,
@@ -233,7 +234,7 @@ constexpr KernelSpec kKernelSpecs[] = {
     {"_Z41PxgCudaDeformableSelfCollisionCreateHashD11PxgGpuArrayIjES0_S_IK12PxcVectorPadES_IKjEfPi", "self-collision-hash.spv", 40, 128, 0, false, Profile::none},
     {"_Z44PxgCudaDeformableSelfCollisionReorderInputsD11PxgGpuArrayIfES_I12PxcVectorPadES2_S2_S_IKjES4_S_IKfES_IKS1_ES8_S8_Pi", "self-collision-reorder.spv", 84, 128, 0, false, Profile::none},
     {"_Z44PxgCudaDeformableSelfCollisionFindCellStartD11PxgGpuArrayIjES_IKjEPi", "self-collision-cell-start.spv", 20, 128, 0, false, Profile::none},
-    {"_Z47PxgCudaDeformableSelfCollisionCompareParticlesD11PxgGpuArrayI12PxcVectorPadES_IKjES3_S3_S_IKS0_ES5_S_IKfES5_fffPi", "self-collision-compare.spv", 80, 128, 0, false, Profile::none},
+    {"_Z47PxgCudaDeformableSelfCollisionCompareParticlesD11PxgGpuArrayI12PxcVectorPadES_IKjES3_S3_S_IKS0_ES5_S_IKfES5_fffPi", "self-collision-compare.spv", 80, 128, 0, false, Profile::deformable_self_collision},
     {"_Z38PxgCudaFluidCollisionConstraintsBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi", "fluid-constraints.spv", 20, 128, 0, false, Profile::none},
     {"_Z42PxgCudaFluidCollisionDynamicResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi", "fluid-dynamic-response.spv", 20, 128, 0, false, Profile::none},
     {"_Z24PxgCudaDeformableUpdateDPKhjPi", "deformable-update.spv", 12, 64, 0, false, Profile::deformable_update},
@@ -241,6 +242,7 @@ constexpr KernelSpec kKernelSpecs[] = {
     {"_Z19KernelFluidDensityD17PxgFixedSizeArrayIfES0_15DensityDebugGPUPiS_IK6float4ES_IKjES7_S7_S7_", "fluid-density.spv", 84, 192, 0, false, Profile::fluid_density},
     {"_Z29KernelDeformableUberCollisionPi", "deformable-collision.spv", 4, 64, 0, false, Profile::deformable_collision},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "deformable-solver.spv", 16, 64, 7072, false, Profile::deformable_solver},
+    {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-pipe-solver.spv", 16, 128, 3168, false, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-solver.spv", 16, 512, 42240, true, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-damping-solver.spv", 16, 512, 23616, true, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-self-collision-solver.spv", 16, 512, 15376, true, Profile::deformable_solver},
@@ -293,6 +295,12 @@ constexpr const char *kCollisionTextures[] = {
     "texTriangleOrigin", "texTriangleEdge0", "texTriangleEdge1",
     "texTriangleAabbMin", "texTriangleAabbMax", "texConvexPlane",
 };
+// Metadata indices follow the SampleCloth module manifest, including its unused
+// iuiFromSiTex slot; removing that slot shifts every live float texture.
+constexpr const char *kSelfCollisionTextures[] = {
+    "ciFromSiTex", "uiFromSiTex", "iuiFromSiTex", "invMassSiTex",
+    "positionSiTex", "newPositionSiTex", "originalPositionSiTex",
+};
 constexpr const char *kDensityTextures[] = {
     "inputSortedPositionsTex", "inputParticleHashKeyTex", "inputCellStartTex",
     "inputCellEndTex",
@@ -318,6 +326,9 @@ ResourceProfile resources_for(Profile profile)
     case Profile::deformable_collision:
         return {kCollisionConstants, std::size(kCollisionConstants), 17992,
                 kCollisionTextures, std::size(kCollisionTextures)};
+    case Profile::deformable_self_collision:
+        return {nullptr, 0, 0, kSelfCollisionTextures,
+                std::size(kSelfCollisionTextures)};
     case Profile::deformable_solver:
         return {kSolverConstants, std::size(kSolverConstants), 5888, nullptr, 0};
     case Profile::fluid_density:

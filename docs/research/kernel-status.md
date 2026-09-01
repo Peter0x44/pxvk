@@ -58,9 +58,10 @@ local size 512 and 42,240 bytes of dynamic shared memory. The storage-backed
 shared-memory fixture matches native CUDA exactly on Intel and RTX, so the
 sample launch is accepted even where it exceeds native Vulkan Workgroup memory.
 
-`SampleCloth` scene 2 additionally validates context-global reclamation,
-128 MiB host/device heap reuse, radix sorting, four self-collision dispatches,
-and the 15,376-byte storage-backed solver launch.
+`SampleCloth` scene 2 exercises context-global reclamation, 128 MiB
+host/device heap reuse, radix sorting, four self-collision dispatches, and the
+15,376-byte storage-backed solver launch. Dispatch completion alone did not
+validate the self-collision result.
 
 `SampleCloth` scene 3 creates three hardware cloths and launches the same
 512-thread solver with a third dynamic-shared shape: 23,616 bytes and a
@@ -69,6 +70,47 @@ scene-1 and 15,376-byte scene-2 shapes. It returned
 `CUDA_ERROR_NOT_SUPPORTED` for the scene-3 solver launch; PhysXCore then faulted
 instead of recovering from that internal launch failure. A separately emitted
 storage-backed solver shader now covers the observed 23,616-byte shape.
+
+`SampleCloth` scene 4 uses the same solver with a 128-thread block, 3,168 bytes
+of dynamic shared memory, and a two-block grid. This shape fits native Vulkan
+Workgroup memory, but it was absent from the runtime catalog and produced the
+same `CUDA_ERROR_NOT_SUPPORTED` followed by a PhysXCore access violation. A
+separately emitted Workgroup-memory shader now covers the observed shape.
+
+The first visual scene-2 comparison exposed a runtime resource-layout defect in
+`PxgCudaDeformableSelfCollisionCompareParticles`. The shader indexes texture
+metadata in the source module's seven-reference order:
+`ciFromSiTex`, `uiFromSiTex`, the unused `iuiFromSiTex` slot,
+`invMassSiTex`, `positionSiTex`, `newPositionSiTex`, and
+`originalPositionSiTex`. The runtime supplied no self-collision texture
+profile. Supplying only the six referenced textures also failed because it
+shifted every live float-texture index. Supplying the complete seven-slot
+layout restored sustained scene-2 motion without the previously observed
+self-penetrating triangular fold. This is a visual runtime result, not an exact
+native/Vulkan output differential.
+
+The earlier 800-frame native/pxvk position series was scene 1: its trace
+contains only update, deformable collision, and the 42,240-byte solver launch.
+It contains no self-collision dispatch and therefore cannot qualify scene 2.
+
+### Self-collision qualification strategy
+
+1. Treat the seven-slot `SampleCloth` resource layout as the immediate runtime
+   contract; retain unused manifest slots because shader indices include them.
+2. Generate a resource-layout sidecar with every deployed SPIR-V shader rather
+   than extending handwritten runtime profiles. The Mirror's Edge module has a
+   different six-reference layout, so a global hardcoded order is not a safe
+   final design.
+3. Capture one scene-2 pre-step device heap, packed launch parameters, constant
+   ranges, and texture bindings. Replay the eight-dispatch sequence after each
+   native and Vulkan dispatch.
+4. Compare integer stages exactly in order: create hash, radix sort, reorder,
+   and cell-start. Then compare the self-collision response ranges after
+   `CompareParticles`, followed by collision and the iterative solver. The
+   first mismatching live range owns the next focused fixture.
+5. Add a long-run mesh self-intersection check over fixed 20 ms steps. Visual
+   screenshots remain a smoke test; the acceptance gate is no penetrations
+   where the native reference has none.
 
 ## In-game readiness audit
 

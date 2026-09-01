@@ -125,6 +125,7 @@ $frontend = Resolve-BuiltFile $frontendBuild "ptx-frontend.exe"
 $emitter = Resolve-BuiltFile $frontendBuild "ptx-spirv-emitter.exe"
 $runtime = Resolve-BuiltFile $runtimeBuild "nvcuda.dll"
 $runtimeLauncher = Resolve-BuiltFile $runtimeBuild "pxvk-launch.exe"
+$frameLimiter = Resolve-BuiltFile $runtimeBuild "pxvk-frame-limit.dll"
 $updateEntry = "_Z24PxgCudaDeformableUpdateDPKhjPi"
 $collisionEntry = "_Z29KernelDeformableUberCollisionPi"
 $solverEntry = "_Z26KernelDeformableUberSolverILj512EEvjbPhPi"
@@ -136,6 +137,7 @@ $selfCompareEntry = "_Z47PxgCudaDeformableSelfCollisionCompareParticlesD11PxgGpu
 $jobs = @(
     @($updateEntry, "64", "0", "deformable-update", "--entry"),
     @($collisionEntry, "64", "0", "deformable-collision", "--entry"),
+    @($solverEntry, "128", "3168", "sample-cloth-pipe-solver", "--entry"),
     @($solverEntry, "512", "42240", "sample-cloth-solver", "--entry-shared-storage"),
     @($solverEntry, "512", "23616", "sample-cloth-damping-solver", "--entry-shared-storage"),
     @($selfHashEntry, "128", "0", "self-collision-hash", "--entry"),
@@ -154,6 +156,7 @@ foreach ($job in $jobs) {
 }
 Copy-Item -LiteralPath $runtime -Destination (Join-Path $applicationDirectory "nvcuda.dll") -Force
 Copy-Item -LiteralPath $runtimeLauncher -Destination (Join-Path $applicationDirectory "pxvk-launch.exe") -Force
+Copy-Item -LiteralPath $frameLimiter -Destination (Join-Path $applicationDirectory "pxvk-frame-limit.dll") -Force
 
 $launcher = Join-Path $applicationDirectory "run-pxvk-samplecloth.cmd"
 $launcherText = @'
@@ -165,5 +168,33 @@ set "PXVK_LOG=%~dp0pxvk-runtime.log"
 '@
 [System.IO.File]::WriteAllText($launcher, $launcherText,
     [System.Text.Encoding]::ASCII)
+
+$nativeLauncher = Join-Path $applicationDirectory "run-native-cuda-samplecloth.cmd"
+$nativeLauncherText = @'
+@echo off
+setlocal
+pushd "%~dp0"
+set "PXVK_SHADER_DIR="
+set "PXVK_LOG="
+"%~dp0SampleCloth.exe" %*
+set "PXVK_NATIVE_EXIT=%ERRORLEVEL%"
+popd
+exit /b %PXVK_NATIVE_EXIT%
+'@
+[System.IO.File]::WriteAllText($nativeLauncher, $nativeLauncherText,
+    [System.Text.Encoding]::ASCII)
+
+$limitedNativeLauncher = Join-Path $applicationDirectory "run-native-cuda-50fps-samplecloth.cmd"
+$limitedNativeLauncherText = @'
+@echo off
+setlocal
+set "PXVK_SHADER_DIR="
+set "PXVK_LOG="
+"%~dp0pxvk-launch.exe" --inject-dll "%~dp0pxvk-frame-limit.dll" "%~dp0SampleCloth.exe" %*
+'@
+[System.IO.File]::WriteAllText($limitedNativeLauncher, $limitedNativeLauncherText,
+    [System.Text.Encoding]::ASCII)
 Write-Host "Prepared pxvk SampleCloth stage: $applicationDirectory"
-Write-Host "Run: $launcher"
+Write-Host "Run pxvk: $launcher"
+Write-Host "Run native CUDA: $nativeLauncher"
+Write-Host "Run native CUDA at 50 FPS: $limitedNativeLauncher"

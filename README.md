@@ -38,8 +38,8 @@ translated kernel set.
 
 Given a local PhysX 2.8 `SampleCloth` directory and extracted PTX, one command
 builds the x86 runtime and frontend, runs the runtime contract smoke test,
-translates the three deformable shaders, and creates an isolated runnable
-stage:
+translates the eleven shaders required by scenes 1 through 4, and creates an
+runnable stage:
 
 ```powershell
 .\tools\pxvk-runtime\prepare-sample.ps1 `
@@ -48,9 +48,13 @@ stage:
   -OutputDirectory .\local-run\SampleCloth
 ```
 
-Run `run-pxvk-samplecloth.cmd` in the resulting application directory. The
-launcher selects the staged `spirv` directory and writes `pxvk-runtime.log`
-beside the sample. The original sample and proprietary PTX remain unchanged.
+Run `run-pxvk-samplecloth.cmd` in the resulting application directory for
+Vulkan, `run-native-cuda-samplecloth.cmd` for unrestricted installed NVIDIA
+CUDA, or `run-native-cuda-50fps-samplecloth.cmd` for NVIDIA CUDA paced to the
+sample's fixed 50 Hz simulation step. All three use the same staged executable
+and media; the pxvk launcher also selects the staged `spirv` directory and
+writes `pxvk-runtime.log` beside the sample. The original sample and
+proprietary PTX remain unchanged.
 
 ## Run the portable suite on AMD
 

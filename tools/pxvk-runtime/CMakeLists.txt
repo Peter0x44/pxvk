@@ -57,6 +57,24 @@ else()
         -Wno-cast-function-type -Wno-missing-field-initializers)
     target_link_options(nvcuda PRIVATE -static-libgcc -static-libstdc++ -Wl,--kill-at)
 endif()
+add_library(pxvk-frame-limit SHARED frame_limiter.cpp)
+set_target_properties(pxvk-frame-limit PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+    PREFIX ""
+    OUTPUT_NAME "pxvk-frame-limit")
+target_compile_definitions(pxvk-frame-limit PRIVATE
+    NOMINMAX _WIN32_WINNT=0x0601)
+if(MSVC)
+    target_compile_options(pxvk-frame-limit PRIVATE /W4 /EHsc)
+else()
+    target_compile_options(pxvk-frame-limit PRIVATE
+        -Wall -Wextra -Wpedantic -Wno-cast-function-type)
+    target_link_options(pxvk-frame-limit PRIVATE
+        -static-libgcc -static-libstdc++ -Wl,--kill-at)
+endif()
+
 
 add_executable(pxvk-launch WIN32 runtime_launcher.cpp)
 set_target_properties(pxvk-launch PROPERTIES

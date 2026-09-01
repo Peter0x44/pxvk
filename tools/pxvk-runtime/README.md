@@ -58,9 +58,16 @@ then resumes it. The runtime's loader notification patches only CUDART's
 the already selected staged DLL. Other module loads are unchanged.
 
 Generated SPIR-V is deployment data because captured PhysX PTX is proprietary.
-`prepare-sample.ps1` translates the nine entries required by `SampleCloth`
-scenes 1 and 2, builds the DLL, and stages a runnable directory without
-modifying the original sample.
+`prepare-sample.ps1` translates the eleven entries required by `SampleCloth`
+scenes 1 through 4, builds the DLL, and stages a runnable directory without
+modifying the original sample. The stage includes
+`run-pxvk-samplecloth.cmd` for Vulkan,
+`run-native-cuda-samplecloth.cmd` for unrestricted installed NVIDIA CUDA, and
+`run-native-cuda-50fps-samplecloth.cmd` for NVIDIA CUDA limited at the sample's
+fixed 50 Hz simulation rate. The limited launcher injects
+`pxvk-frame-limit.dll`, which paces GLUT's `SwapBuffers` import without
+replacing the system CUDA driver. All three paths use the same executable and
+media.
 
 ## Build
 

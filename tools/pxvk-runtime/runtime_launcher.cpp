@@ -60,17 +60,39 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     int argument_count = 0;
     wchar_t **arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
     if (arguments == nullptr || argument_count < 2)
-        return fail(L"Usage: pxvk-launch.exe <32-bit application> [arguments]");
+        return fail(L"Usage: pxvk-launch.exe [--inject-dll <path>] "
+                    L"<32-bit application> [arguments]");
+
+    int application_argument = 1;
+    std::wstring injected_path;
+    if (lstrcmpW(arguments[1], L"--inject-dll") == 0) {
+        if (argument_count < 4) {
+            LocalFree(arguments);
+            return fail(L"--inject-dll requires a DLL and an application");
+        }
+        wchar_t injected_buffer[32768]{};
+        if (GetFullPathNameW(arguments[2],
+                             static_cast<DWORD>(std::size(injected_buffer)),
+                             injected_buffer, nullptr) == 0) {
+            const DWORD error = GetLastError();
+            LocalFree(arguments);
+            return fail(L"Cannot resolve the injected DLL path", error);
+        }
+        injected_path = injected_buffer;
+        application_argument = 3;
+    }
 
     wchar_t application_buffer[32768]{};
-    if (GetFullPathNameW(arguments[1], static_cast<DWORD>(std::size(application_buffer)),
+    if (GetFullPathNameW(arguments[application_argument],
+                         static_cast<DWORD>(std::size(application_buffer)),
                          application_buffer, nullptr) == 0) {
+        const DWORD error = GetLastError();
         LocalFree(arguments);
-        return fail(L"Cannot resolve the application path", GetLastError());
+        return fail(L"Cannot resolve the application path", error);
     }
     const std::wstring application(application_buffer);
     std::wstring command_line;
-    for (int i = 1; i < argument_count; ++i) {
+    for (int i = application_argument; i < argument_count; ++i) {
         if (!command_line.empty()) command_line.push_back(L' ');
         command_line += quote(arguments[i]);
     }
@@ -91,7 +113,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     wchar_t launcher_path[32768]{};
     GetModuleFileNameW(nullptr, launcher_path,
                        static_cast<DWORD>(std::size(launcher_path)));
-    const std::wstring runtime_path = directory(launcher_path) + L"\\nvcuda.dll";
+    const std::wstring runtime_path =
+        injected_path.empty()
+            ? directory(launcher_path) + L"\\nvcuda.dll"
+            : injected_path;
     const SIZE_T path_bytes = (runtime_path.size() + 1u) * sizeof(wchar_t);
     void *remote_path = VirtualAllocEx(process.hProcess, nullptr, path_bytes,
                                        MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
@@ -121,7 +146,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         VirtualFreeEx(process.hProcess, remote_path, 0, MEM_RELEASE);
         CloseHandle(process.hThread);
         CloseHandle(process.hProcess);
-        return fail(L"Cannot inject nvcuda.dll", GetLastError());
+        return fail(L"Cannot inject the selected DLL", GetLastError());
     }
     WaitForSingleObject(injection, INFINITE);
     DWORD injected_module = 0;
@@ -132,7 +157,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         TerminateProcess(process.hProcess, 2);
         CloseHandle(process.hThread);
         CloseHandle(process.hProcess);
-        return fail(L"The target process rejected nvcuda.dll");
+        return fail(L"The target process rejected the selected DLL");
     }
 
     ResumeThread(process.hThread);
