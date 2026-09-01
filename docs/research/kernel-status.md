@@ -11,8 +11,9 @@ launch chronology remains in
 
 Status meanings:
 
-- **Exact fixture:** PTX-derived SPIR-V executes through Vulkan and matches a
-  native RTX CUDA fixture bit-for-bit, including guard ranges.
+- **Exact fixture:** PTX-derived SPIR-V executes one named synthetic case through
+  Vulkan and matches native RTX CUDA bit-for-bit, including guard ranges. This
+  is translation evidence, not complete branch or in-game workload coverage.
 - **Lowering:** frontend/emitter work is active, but no exact native/Vulkan
   fixture has passed yet.
 - **Not translated:** the captured entry is cataloged but not accepted by the
@@ -30,7 +31,7 @@ The `Module` column uses the stable semantic numbering from the corpus report.
 | `0001` | `fatbin_0008.ptx` | `PxgCudaFluidCollisionConvexShapesBatch` | 20 B | 4,225 B | 0 | Exact fixture | Minimum-grid two-work-unit zero-convex fixture |
 | `0002` | `fatbin_0005.ptx` | `PxgCudaFluidCollisionTrianglesBatch` | 20 B | 4,912 B | 0 | Exact fixture | Focused one-particle zero-triangle fixture |
 | `0003` | `fatbin_0006.ptx` | `PxgCudaFluidCollisionCapsuleShapesBatch` | 20 B | 2,816 B | 0 | Exact fixture | Captured two-work-unit zero-capsule fixture |
-| `0004` | `fatbin_0009.ptx` | `radixSortBlocks<32,0,false>` | 20 B | 4 B | 4,096 B | Exact fixture | Focused ten-element partial-tile sort fixture |
+| `0004` | `fatbin_0009.ptx` | `radixSortBlocks<32,0,false>` | 20 B | 4 B | 4,096 B | Exact fixture | Captured 64-element in-place launch shape with duplicate-key stability |
 | `0005` | `fatbin_0002.ptx` | `PxgCudaFluidCollisionConstraintsBatch` | 20 B | 1,840 B | 0 | Exact fixture | Focused one-particle no-contact fixture |
 | `0007` | `fatbin_0003.ptx` | `PxgCudaFluidCollisionDynamicResponseBatch` | 20 B | 304 B | 0 | Exact fixture | Focused one-particle active-constraint response |
 | `0008` | `fatbin_0016.ptx` | `PxgCudaDeformableUpdate` | 12 B | 0 | 0 | Exact fixture | Focused fixture and ordered deformable step |
@@ -44,10 +45,41 @@ The `Module` column uses the stable semantic numbering from the corpus report.
 | `0015` | `fatbin_0007.ptx` | `PxgCudaFluidCollisionBoxShapesBatch` | 20 B | 6,752 B | 0 | Exact fixture | Captured two-work-unit zero-box fixture |
 | `0016` | `fatbin_0013.ptx` | `KernelFluidForce` | 100 B | 0 | 0 | Exact fixture | Focused fixture and four-kernel fluid fixture |
 
-All sixteen launched entries have exact native/Vulkan fixtures. Module `0006`
-contains only collision constants. Module `0017` contains
-resolved deformable self-collision entries, but none launched in the captured
-routes, so they are outside this ledger and the initial compatibility target.
+All sixteen launched entries have exact native/Vulkan fixtures for their named
+synthetic cases. Module `0006` contains only collision constants. Module `0017`
+contains resolved deformable self-collision entries, but none launched in the
+captured routes, so they are outside this ledger and the initial compatibility
+target.
+
+## In-game readiness audit
+
+The exact-fixture ledger answers whether each selected entry can translate and
+match native CUDA on one controlled input. It does not answer whether the
+fixtures exercise the state observed in the game. Comparing the fixture sources
+with the first packed launch samples from the fluid, glass, and cloth captures
+shows these remaining gaps:
+
+| Family | Captured launch evidence | Current exact fixture | Workload confidence |
+|---|---|---|---|
+| Fluid hash/reorder/density/force | First glass sample carries 64 particles; traced grids reach 5/5/2/3 workgroups | [`main.c`](../../tools/cuda-physx-fixture/main.c) runs one particle in one workgroup | **Low-medium:** scalar, texture, and one-cell paths match; multi-particle neighbor cells and multi-workgroup tails do not |
+| Radix sort | First glass and cloth samples sort 64 elements in place: output and input key/value pointers alias | [`radix_sort.c`](../../tools/cuda-physx-fixture/radix_sort.c) now matches the 64-element aliasing contract and checks stable duplicates | **Medium-high standalone:** all rank phases and the captured alias/count shape match; placement inside a captured full fluid step does not |
+| Fluid constraint/response | Two work units in the first packed samples; traced grids reach three workgroups | One no-contact constraint plus one active dynamic and one active static response | **Low-medium:** response plumbing matches; alternate flags, multiple contacts, damping, clamping, and compaction contention do not |
+| Triangle/box/capsule/convex collision | Broken-glass trace reaches 94 triangle workgroups, 34 convex workgroups, and repeated box/capsule launches | [`triangles.c`](../../tools/cuda-physx-fixture/triangles.c) and [`shape_batches.c`](../../tools/cuda-physx-fixture/shape_batches.c) use zero geometry | **Low:** setup, barriers, and empty exits match; no contact geometry executes |
+| Simple particle | First glass sample carries 32 particles; traced grids range from 2 to 10 | [`simple_particle.c`](../../tools/cuda-physx-fixture/simple_particle.c) integrates one particle in one workgroup and skips the velocity clamp | **Low-medium:** parameter staging and integration match; multi-fluid lookup, clamp, tails, and traced grid sizes do not |
+| Deformable update/collision/solver | Cloth sample has 6 update instances, grids 28/30/6, and 5 solver iterations | Focused and ordered fixtures use one particle, zero shapes, one workgroup, and zero solver iterations | **Low:** ordering and heap plumbing match, but collision geometry and the iterative solver core do not execute |
+
+The deformable solver gap is structural, not just a smaller data set. With the
+fixture's iteration count of zero, the pinned PTX branch at `BB14_6` jumps
+directly to `BB14_75`, bypassing the constraint-iteration body. The captured
+subway launch passes five iterations. Likewise, every geometry fixture reports
+a zero shape or triangle count, so successful execution cannot validate its
+contact math.
+
+Current conclusion: all launched entries have credible parser, lowering,
+resource-layout, and branch-specific differential evidence. They are **not yet
+validated for in-game PhysX state**. That claim still requires the captured
+pre/post device-pool replays and three game routes defined in
+[`validation-plan.md`](validation-plan.md#real-physx-kernel-fixtures).
 
 ## Exact CUDA symbols
 

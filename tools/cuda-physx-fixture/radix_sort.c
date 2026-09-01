@@ -12,14 +12,10 @@
 #define KERNEL_NAME "_Z15radixSortBlocksILj32ELj0ELb0EEvP5uint4S1_S1_S1_j"
 #define GUARD_BEFORE 0x13579bdfu
 #define GUARD_AFTER 0x2468ace0u
-#define HEAP_WORDS 64u
-#define IN_KEYS_OFFSET 8u
-#define IN_VALUES_OFFSET 20u
-#define OUT_KEYS_OFFSET 32u
-#define OUT_VALUES_OFFSET 48u
-#define ELEMENT_COUNT 10u
-#define TILE_WORDS 12u
-#define SENTINEL 0x5555aaaau
+#define HEAP_WORDS 160u
+#define KEYS_OFFSET 8u
+#define VALUES_OFFSET 80u
+#define ELEMENT_COUNT 64u
 
 typedef struct cuda_api {
     HMODULE library;
@@ -192,23 +188,49 @@ static void write_words(FILE *output, const uint32_t *values, size_t words)
     fputc(']', output);
 }
 
+static uint32_t fixture_key(size_t index)
+{
+    if (index % 11u == 0u) return 0x12345678u;
+    if (index == 1u) return 0u;
+    if (index == 2u) return UINT32_MAX;
+    if (index == 3u) return 0x80000000u;
+    return ((uint32_t)index * 0x45d9f3bu) ^
+           ((uint32_t)index << 24u) ^
+           0x9e3779b9u;
+}
+
+static void initialize_fixture(uint32_t *keys, uint32_t *values)
+{
+    size_t index;
+    for (index = 0u; index < ELEMENT_COUNT; ++index) {
+        keys[index] = fixture_key(index);
+        values[index] = (uint32_t)index;
+    }
+}
+
+static void stable_sort_reference(uint32_t *keys, uint32_t *values)
+{
+    size_t index;
+    for (index = 1u; index < ELEMENT_COUNT; ++index) {
+        const uint32_t key = keys[index];
+        const uint32_t value = values[index];
+        size_t position = index;
+        while (position > 0u && keys[position - 1u] > key) {
+            keys[position] = keys[position - 1u];
+            values[position] = values[position - 1u];
+            --position;
+        }
+        keys[position] = key;
+        values[position] = value;
+    }
+}
+
 int main(int argc, char **argv)
 {
-    static const uint32_t input_keys[ELEMENT_COUNT] = {
-        0xfffffffeu, 0x00000001u, 0x80000000u, 0x00000007u, 0x00010000u,
-        0xdeadbeefu, 0x00000000u, 0x55555555u, 0x2aaaaaabu, 0x00000001u,
-    };
-    static const uint32_t input_values[ELEMENT_COUNT] = {
-        0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u,
-    };
-    static const uint32_t expected_keys[TILE_WORDS] = {
-        0x00000000u, 0x00000001u, 0x00000001u, 0x00000007u,
-        0x00010000u, 0x2aaaaaabu, 0x55555555u, 0x80000000u,
-        0xdeadbeefu, 0xfffffffeu, SENTINEL, SENTINEL,
-    };
-    static const uint32_t expected_values[TILE_WORDS] = {
-        6u, 1u, 9u, 3u, 4u, 8u, 7u, 2u, 5u, 0u, SENTINEL, SENTINEL,
-    };
+    uint32_t input_keys[ELEMENT_COUNT];
+    uint32_t input_values[ELEMENT_COUNT];
+    uint32_t expected_keys[ELEMENT_COUNT];
+    uint32_t expected_values[ELEMENT_COUNT];
     cuda_api api;
     char *ptx = NULL;
     CUdevice device = 0;
@@ -218,14 +240,12 @@ int main(int argc, char **argv)
     CUdeviceptr heap_device = 0;
     uint32_t heap[HEAP_WORDS] = {0};
     uint32_t parameters[5];
-    uint32_t sentinel_tile[TILE_WORDS];
     uint32_t element_count = ELEMENT_COUNT;
     char device_name[256] = {0};
     FILE *output = NULL;
     bool guards_intact = true;
     bool pass = false;
     int exit_code = 1;
-    size_t index;
 
     if (argc != 3) {
         fprintf(stderr, "usage: cuda-radix-sort-fixture <radix.ptx> <output.json>\n");
@@ -243,19 +263,20 @@ int main(int argc, char **argv)
     CUDA_TRY(&api, api.cuModuleGetFunction(&function, module, KERNEL_NAME));
     CUDA_TRY(&api, api.cuMemAlloc_v2(&heap_device, sizeof(heap)));
 
-    if (!heap_pointer(heap_device, OUT_KEYS_OFFSET, &parameters[0]) ||
-        !heap_pointer(heap_device, OUT_VALUES_OFFSET, &parameters[1]) ||
-        !heap_pointer(heap_device, IN_KEYS_OFFSET, &parameters[2]) ||
-        !heap_pointer(heap_device, IN_VALUES_OFFSET, &parameters[3])) {
+    if (!heap_pointer(heap_device, KEYS_OFFSET, &parameters[0]) ||
+        !heap_pointer(heap_device, VALUES_OFFSET, &parameters[1]) ||
+        !heap_pointer(heap_device, KEYS_OFFSET, &parameters[2]) ||
+        !heap_pointer(heap_device, VALUES_OFFSET, &parameters[3])) {
         goto cleanup;
     }
     parameters[4] = element_count;
 
-    for (index = 0u; index < TILE_WORDS; ++index) sentinel_tile[index] = SENTINEL;
-    initialize_range(heap, IN_KEYS_OFFSET, input_keys, ELEMENT_COUNT);
-    initialize_range(heap, IN_VALUES_OFFSET, input_values, ELEMENT_COUNT);
-    initialize_range(heap, OUT_KEYS_OFFSET, sentinel_tile, TILE_WORDS);
-    initialize_range(heap, OUT_VALUES_OFFSET, sentinel_tile, TILE_WORDS);
+    initialize_fixture(input_keys, input_values);
+    memcpy(expected_keys, input_keys, sizeof(expected_keys));
+    memcpy(expected_values, input_values, sizeof(expected_values));
+    stable_sort_reference(expected_keys, expected_values);
+    initialize_range(heap, KEYS_OFFSET, input_keys, ELEMENT_COUNT);
+    initialize_range(heap, VALUES_OFFSET, input_values, ELEMENT_COUNT);
 
     CUDA_TRY(&api, api.cuMemcpyHtoD_v2(heap_device, heap, sizeof(heap)));
     {
@@ -277,15 +298,11 @@ int main(int argc, char **argv)
     CUDA_TRY(&api, api.cuCtxSynchronize());
     CUDA_TRY(&api, api.cuMemcpyDtoH_v2(heap, heap_device, sizeof(heap)));
 
-    guards_intact = range_guards_match(heap, IN_KEYS_OFFSET, ELEMENT_COUNT) &&
-                    range_guards_match(heap, IN_VALUES_OFFSET, ELEMENT_COUNT) &&
-                    range_guards_match(heap, OUT_KEYS_OFFSET, TILE_WORDS) &&
-                    range_guards_match(heap, OUT_VALUES_OFFSET, TILE_WORDS);
+    guards_intact = range_guards_match(heap, KEYS_OFFSET, ELEMENT_COUNT) &&
+                    range_guards_match(heap, VALUES_OFFSET, ELEMENT_COUNT);
     pass = guards_intact &&
-           words_equal(heap, IN_KEYS_OFFSET, input_keys, ELEMENT_COUNT) &&
-           words_equal(heap, IN_VALUES_OFFSET, input_values, ELEMENT_COUNT) &&
-           words_equal(heap, OUT_KEYS_OFFSET, expected_keys, TILE_WORDS) &&
-           words_equal(heap, OUT_VALUES_OFFSET, expected_values, TILE_WORDS);
+           words_equal(heap, KEYS_OFFSET, expected_keys, ELEMENT_COUNT) &&
+           words_equal(heap, VALUES_OFFSET, expected_values, ELEMENT_COUNT);
 
     output = fopen(argv[2], "wb");
     if (output == NULL) {
@@ -297,7 +314,8 @@ int main(int argc, char **argv)
             "  \"schema_version\": 1,\n"
             "  \"device\": \"%s\",\n"
             "  \"kernel\": \"radixSortBlocks<32,0,false>\",\n"
-            "  \"element_count\": 10,\n"
+            "  \"element_count\": 64,\n"
+            "  \"in_place\": true,\n"
             "  \"dynamic_shared_bytes\": 4096,\n"
             "  \"input_keys\": ",
             device_name);
@@ -305,13 +323,13 @@ int main(int argc, char **argv)
     fprintf(output, ",\n  \"input_values\": ");
     write_words(output, input_values, ELEMENT_COUNT);
     fprintf(output, ",\n  \"expected_keys\": ");
-    write_words(output, expected_keys, TILE_WORDS);
+    write_words(output, expected_keys, ELEMENT_COUNT);
     fprintf(output, ",\n  \"expected_values\": ");
-    write_words(output, expected_values, TILE_WORDS);
+    write_words(output, expected_values, ELEMENT_COUNT);
     fprintf(output, ",\n  \"output_keys\": ");
-    write_words(output, heap + OUT_KEYS_OFFSET, TILE_WORDS);
+    write_words(output, heap + KEYS_OFFSET, ELEMENT_COUNT);
     fprintf(output, ",\n  \"output_values\": ");
-    write_words(output, heap + OUT_VALUES_OFFSET, TILE_WORDS);
+    write_words(output, heap + VALUES_OFFSET, ELEMENT_COUNT);
     fprintf(output,
             ",\n"
             "  \"guards_intact\": %s,\n"
@@ -325,10 +343,10 @@ int main(int argc, char **argv)
     printf("%s  %s: keys=[0x%08x,0x%08x,0x%08x,0x%08x,...]\n",
            pass ? "PASS" : "FAIL",
            device_name,
-           heap[OUT_KEYS_OFFSET],
-           heap[OUT_KEYS_OFFSET + 1u],
-           heap[OUT_KEYS_OFFSET + 2u],
-           heap[OUT_KEYS_OFFSET + 3u]);
+           heap[KEYS_OFFSET],
+           heap[KEYS_OFFSET + 1u],
+           heap[KEYS_OFFSET + 2u],
+           heap[KEYS_OFFSET + 3u]);
     exit_code = pass ? 0 : 1;
 
 cleanup:

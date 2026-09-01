@@ -278,10 +278,12 @@ lowering adds `ld.global.v4.u32` and lowers `ld.volatile.shared`/
 `st.volatile.shared` to SPIR-V accesses with the Volatile memory operand, each
 volatile store followed by a subgroup-scope `OpControlBarrier`; the fixture
 pipeline requires subgroup size 32 so the sm_52 warp-synchronous scan maps to
-one subgroup. A focused ten-element partial-tile fixture exercises the vec4
-and guarded scalar load/store paths, the `-1` padding, all 32 rank phases, and
-a duplicate-key stability check. Native RTX and translated Intel/RTX match the
-sorted keys, permuted values, untouched padding tails, and all guards exactly.
+one subgroup. The fixture now mirrors the first captured glass and cloth
+launches: 64 elements with output/input key and value pointers aliased in place.
+Its deterministic data includes duplicate and boundary keys, exercises vec4
+and guarded scalar loads, `-1` padding, all 32 rank phases, and stable duplicate
+ordering. Native RTX and translated Intel/RTX match all sorted keys, permuted
+values, and guards exactly.
 
 `PxgCudaDeformableUpdate`, `KernelDeformableUberCollision`, and
 `KernelDeformableUberSolver<512>` are the fifth through seventh captured entries
@@ -291,7 +293,9 @@ all pass Vulkan 1.2 validation. Native RTX and translated Intel/RTX match exact
 output bits and guard ranges for all three focused fixtures. Collision uses the
 captured local size 64 and 4,097-byte static shared layout; the solver uses
 local size 64 and the captured 7,072-byte dynamic shared allocation.
-Every launched entry now compiles, validates, and executes exactly.
+Every launched entry now compiles, validates, and executes its named synthetic
+fixture exactly; the branch and workload gaps remain explicit in
+[`kernel-status.md`](kernel-status.md#in-game-readiness-audit).
 
 The same three modules also execute as one ordered step. Native CUDA queues
 update, collision, and solver on the default stream without intermediate host

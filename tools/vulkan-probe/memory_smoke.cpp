@@ -261,29 +261,55 @@ constexpr std::array<std::uint32_t, 4> kSimpleParticleInput = {
 constexpr std::array<std::uint32_t, 4> kExpectedSimpleParticleOutput = {
     0x3fe00000u, 0x00000000u, 0x40440000u, 0x00000000u,
 };
-constexpr std::size_t kRadixInKeysOffset = 8;
-constexpr std::size_t kRadixInValuesOffset = 20;
-constexpr std::size_t kRadixOutKeysOffset = 32;
-constexpr std::size_t kRadixOutValuesOffset = 48;
-constexpr std::size_t kRadixElementCount = 10;
-constexpr std::size_t kRadixTileWords = 12;
-constexpr std::uint32_t kRadixSentinel = 0x5555aaaau;
-constexpr VkDeviceSize kRadixPayloadBytes = 64u * sizeof(std::uint32_t);
-constexpr std::array<std::uint32_t, 10> kRadixInputKeys = {
-    0xfffffffeu, 0x00000001u, 0x80000000u, 0x00000007u, 0x00010000u,
-    0xdeadbeefu, 0x00000000u, 0x55555555u, 0x2aaaaaabu, 0x00000001u,
+constexpr std::size_t kRadixKeysOffset = 8;
+constexpr std::size_t kRadixValuesOffset = 80;
+constexpr std::size_t kRadixElementCount = 64;
+constexpr VkDeviceSize kRadixPayloadBytes =
+    160u * sizeof(std::uint32_t);
+
+struct RadixFixture {
+    std::array<std::uint32_t, kRadixElementCount> input_keys = {};
+    std::array<std::uint32_t, kRadixElementCount> input_values = {};
+    std::array<std::uint32_t, kRadixElementCount> expected_keys = {};
+    std::array<std::uint32_t, kRadixElementCount> expected_values = {};
 };
-constexpr std::array<std::uint32_t, 10> kRadixInputValues = {
-    0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u,
-};
-constexpr std::array<std::uint32_t, 12> kExpectedRadixKeys = {
-    0x00000000u, 0x00000001u, 0x00000001u, 0x00000007u,
-    0x00010000u, 0x2aaaaaabu, 0x55555555u, 0x80000000u,
-    0xdeadbeefu, 0xfffffffeu, kRadixSentinel, kRadixSentinel,
-};
-constexpr std::array<std::uint32_t, 12> kExpectedRadixValues = {
-    6u, 1u, 9u, 3u, 4u, 8u, 7u, 2u, 5u, 0u, kRadixSentinel, kRadixSentinel,
-};
+
+constexpr std::uint32_t radix_fixture_key(std::size_t index) {
+    if (index % 11u == 0u) return 0x12345678u;
+    if (index == 1u) return 0u;
+    if (index == 2u) return 0xffffffffu;
+    if (index == 3u) return 0x80000000u;
+    return (static_cast<std::uint32_t>(index) * 0x45d9f3bu) ^
+        (static_cast<std::uint32_t>(index) << 24u) ^
+        0x9e3779b9u;
+}
+
+constexpr RadixFixture make_radix_fixture() {
+    RadixFixture fixture = {};
+    for (std::size_t index = 0; index < kRadixElementCount; ++index) {
+        fixture.input_keys[index] = radix_fixture_key(index);
+        fixture.input_values[index] = static_cast<std::uint32_t>(index);
+        fixture.expected_keys[index] = fixture.input_keys[index];
+        fixture.expected_values[index] = fixture.input_values[index];
+    }
+    for (std::size_t index = 1; index < kRadixElementCount; ++index) {
+        const std::uint32_t key = fixture.expected_keys[index];
+        const std::uint32_t value = fixture.expected_values[index];
+        std::size_t position = index;
+        while (position > 0u && fixture.expected_keys[position - 1u] > key) {
+            fixture.expected_keys[position] =
+                fixture.expected_keys[position - 1u];
+            fixture.expected_values[position] =
+                fixture.expected_values[position - 1u];
+            --position;
+        }
+        fixture.expected_keys[position] = key;
+        fixture.expected_values[position] = value;
+    }
+    return fixture;
+}
+
+constexpr RadixFixture kRadixFixture = make_radix_fixture();
 constexpr std::size_t kBoxesWorkUnitOffset = 8;
 constexpr std::size_t kBoxesShapeStartAddrsOffset = 20;
 constexpr std::size_t kBoxesParametersOffset = 64;
@@ -722,8 +748,8 @@ struct DeviceResult {
     bool static_response_guards_intact = false;
     std::array<std::uint32_t, 4> simple_particle_output = {};
     bool simple_particle_guards_intact = false;
-    std::array<std::uint32_t, 12> radix_keys = {};
-    std::array<std::uint32_t, 12> radix_values = {};
+    std::array<std::uint32_t, kRadixElementCount> radix_keys = {};
+    std::array<std::uint32_t, kRadixElementCount> radix_values = {};
     bool radix_guards_intact = false;
     std::array<std::uint32_t, 4> boxes_position = {};
     std::array<std::uint32_t, 4> boxes_old_position = {};
@@ -997,29 +1023,19 @@ DeviceResult run_device(
                 std::copy_n(values, count, words + offset);
                 words[offset + count] = kGuardAfter;
             };
-            std::array<std::uint32_t, kRadixTileWords> sentinel_tile = {};
-            sentinel_tile.fill(kRadixSentinel);
-            words[0] = byte_offset(kRadixOutKeysOffset);
-            words[1] = byte_offset(kRadixOutValuesOffset);
-            words[2] = byte_offset(kRadixInKeysOffset);
-            words[3] = byte_offset(kRadixInValuesOffset);
+            words[0] = byte_offset(kRadixKeysOffset);
+            words[1] = byte_offset(kRadixValuesOffset);
+            words[2] = byte_offset(kRadixKeysOffset);
+            words[3] = byte_offset(kRadixValuesOffset);
             words[4] = static_cast<std::uint32_t>(kRadixElementCount);
             initialize(
-                kRadixInKeysOffset,
-                kRadixInputKeys.data(),
-                kRadixInputKeys.size());
+                kRadixKeysOffset,
+                kRadixFixture.input_keys.data(),
+                kRadixFixture.input_keys.size());
             initialize(
-                kRadixInValuesOffset,
-                kRadixInputValues.data(),
-                kRadixInputValues.size());
-            initialize(
-                kRadixOutKeysOffset,
-                sentinel_tile.data(),
-                sentinel_tile.size());
-            initialize(
-                kRadixOutValuesOffset,
-                sentinel_tile.data(),
-                sentinel_tile.size());
+                kRadixValuesOffset,
+                kRadixFixture.input_values.data(),
+                kRadixFixture.input_values.size());
         } else if (shape_batches_fixture_mode) {
             const auto byte_offset = [](std::size_t offset) {
                 return static_cast<std::uint32_t>(
@@ -2101,11 +2117,11 @@ DeviceResult run_device(
                 result.simple_particle_guards_intact;
         } else if (radix_sort_fixture_mode) {
             std::copy_n(
-                words + kRadixOutKeysOffset,
+                words + kRadixKeysOffset,
                 result.radix_keys.size(),
                 result.radix_keys.begin());
             std::copy_n(
-                words + kRadixOutValuesOffset,
+                words + kRadixValuesOffset,
                 result.radix_values.size(),
                 result.radix_values.begin());
             const auto guards_match =
@@ -2114,21 +2130,11 @@ DeviceResult run_device(
                         words[offset + count] == kGuardAfter;
                 };
             result.radix_guards_intact =
-                guards_match(kRadixInKeysOffset, kRadixElementCount) &&
-                guards_match(kRadixInValuesOffset, kRadixElementCount) &&
-                guards_match(kRadixOutKeysOffset, kRadixTileWords) &&
-                guards_match(kRadixOutValuesOffset, kRadixTileWords);
+                guards_match(kRadixKeysOffset, kRadixElementCount) &&
+                guards_match(kRadixValuesOffset, kRadixElementCount);
             result.pass =
-                result.radix_keys == kExpectedRadixKeys &&
-                result.radix_values == kExpectedRadixValues &&
-                std::equal(
-                    words + kRadixInKeysOffset,
-                    words + kRadixInKeysOffset + kRadixElementCount,
-                    kRadixInputKeys.begin()) &&
-                std::equal(
-                    words + kRadixInValuesOffset,
-                    words + kRadixInValuesOffset + kRadixElementCount,
-                    kRadixInputValues.begin()) &&
+                result.radix_keys == kRadixFixture.expected_keys &&
+                result.radix_values == kRadixFixture.expected_values &&
                 result.radix_guards_intact;
         } else if (shape_batches_fixture_mode) {
             std::copy_n(
@@ -3926,6 +3932,14 @@ int main(int argc, char **argv)
         std::cerr << "failed to open output file\n";
         return 3;
     }
+    const auto write_bits = [&output](const auto &values) {
+        output << '[';
+        for (std::size_t index = 0u; index < values.size(); ++index) {
+            output << (index == 0u ? "" : ", ")
+                   << "\"" << hex32(values[index]) << "\"";
+        }
+        output << ']';
+    };
     output << "{\n"
            << "  \"schema_version\": 1,\n"
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
@@ -3978,18 +3992,14 @@ int main(int argc, char **argv)
                   "\"0x00000000\", \"0x40440000\", \"0x00000000\"],\n";
     } else if (radix_sort_fixture_mode) {
         output << "  \"kernel\": \"radixSortBlocks<32,0,false>\",\n"
-               << "  \"element_count\": 10,\n"
+               << "  \"element_count\": 64,\n"
+               << "  \"in_place\": true,\n"
                << "  \"dynamic_shared_bytes\": 4096,\n"
-               << "  \"expected_keys\": [\"0x00000000\", \"0x00000001\", "
-                  "\"0x00000001\", \"0x00000007\", \"0x00010000\", "
-                  "\"0x2aaaaaab\", \"0x55555555\", \"0x80000000\", "
-                  "\"0xdeadbeef\", \"0xfffffffe\", \"0x5555aaaa\", "
-                  "\"0x5555aaaa\"],\n"
-               << "  \"expected_values\": [\"0x00000006\", \"0x00000001\", "
-                  "\"0x00000009\", \"0x00000003\", \"0x00000004\", "
-                  "\"0x00000008\", \"0x00000007\", \"0x00000002\", "
-                  "\"0x00000005\", \"0x00000000\", \"0x5555aaaa\", "
-                  "\"0x5555aaaa\"],\n";
+               << "  \"expected_keys\": ";
+        write_bits(kRadixFixture.expected_keys);
+        output << ",\n  \"expected_values\": ";
+        write_bits(kRadixFixture.expected_values);
+        output << ",\n";
     } else if (shape_batches_fixture_mode) {
         output << "  \"kernel\": \""
                << (convexes_fixture_mode
@@ -4154,14 +4164,6 @@ int main(int argc, char **argv)
         output << "  \"spirv_words\": " << shader.size() << ",\n";
     }
     output << "  \"devices\": [\n";
-    const auto write_bits = [&output](const auto &values) {
-        output << '[';
-        for (std::size_t index = 0u; index < values.size(); ++index) {
-            output << (index == 0u ? "" : ", ")
-                   << "\"" << hex32(values[index]) << "\"";
-        }
-        output << ']';
-    };
     for (std::size_t index = 0; index < results.size(); ++index) {
         const DeviceResult &result = results[index];
         output << "    {\n"
