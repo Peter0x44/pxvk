@@ -137,6 +137,7 @@ $selfCompareEntry = "_Z47PxgCudaDeformableSelfCollisionCompareParticlesD11PxgGpu
 $jobs = @(
     @($updateEntry, "64", "0", "deformable-update", "--entry"),
     @($collisionEntry, "64", "0", "deformable-collision", "--entry"),
+    @($solverEntry, "64", "2016", "sample-cloth-attachment-solver", "--entry"),
     @($solverEntry, "128", "3168", "sample-cloth-pipe-solver", "--entry"),
     @($solverEntry, "512", "42240", "sample-cloth-solver", "--entry-shared-storage"),
     @($solverEntry, "512", "23616", "sample-cloth-damping-solver", "--entry-shared-storage"),

@@ -602,10 +602,11 @@ reuses its host buffer.
 Mirror's Edge uses block X values 64, 128, 192, and 256 and dynamic shared
 sizes 0, 260, 4096, and 7072 bytes. PhysX 2.8.0 `SampleCloth` adds solver
 launches with block X 512 and 42,240 bytes in scene 1, 15,376 bytes in scene 2,
-and 23,616 bytes in scene 3. Scene 4 uses block X 128 and 3,168 bytes. Launch
-dimensions and shared size are runtime inputs. The backend combines dynamic and
-static layouts, then selects native Workgroup memory or per-workgroup storage
-scratch from the physical Vulkan limit.
+and 23,616 bytes in scene 3. Scene 4 uses block X 128 and 3,168 bytes; scene 5
+uses block X 64 and 2,016 bytes. Launch dimensions and shared size are runtime
+inputs. The backend combines dynamic and static layouts, then selects native
+Workgroup memory or per-workgroup storage scratch from the physical Vulkan
+limit.
 
 ## Result and error behavior
 

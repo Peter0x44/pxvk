@@ -77,6 +77,12 @@ Workgroup memory, but it was absent from the runtime catalog and produced the
 same `CUDA_ERROR_NOT_SUPPORTED` followed by a PhysXCore access violation. A
 separately emitted Workgroup-memory shader now covers the observed shape.
 
+`SampleCloth` scene 5 launches three 64-thread solver blocks with 2,016 bytes
+of dynamic shared memory. The missing catalog shape caused every solver launch
+to return `CUDA_ERROR_NOT_SUPPORTED`; update and collision continued without a
+solver, producing the detached triangular cloth geometry. An exact
+Workgroup-memory shader now covers the attachment scene.
+
 The first visual scene-2 comparison exposed a runtime resource-layout defect in
 `PxgCudaDeformableSelfCollisionCompareParticles`. The shader indexes texture
 metadata in the source module's seven-reference order:

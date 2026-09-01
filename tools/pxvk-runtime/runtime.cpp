@@ -242,6 +242,7 @@ constexpr KernelSpec kKernelSpecs[] = {
     {"_Z19KernelFluidDensityD17PxgFixedSizeArrayIfES0_15DensityDebugGPUPiS_IK6float4ES_IKjES7_S7_S7_", "fluid-density.spv", 84, 192, 0, false, Profile::fluid_density},
     {"_Z29KernelDeformableUberCollisionPi", "deformable-collision.spv", 4, 64, 0, false, Profile::deformable_collision},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "deformable-solver.spv", 16, 64, 7072, false, Profile::deformable_solver},
+    {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-attachment-solver.spv", 16, 64, 2016, false, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-pipe-solver.spv", 16, 128, 3168, false, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-solver.spv", 16, 512, 42240, true, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-damping-solver.spv", 16, 512, 23616, true, Profile::deformable_solver},

@@ -58,8 +58,8 @@ then resumes it. The runtime's loader notification patches only CUDART's
 the already selected staged DLL. Other module loads are unchanged.
 
 Generated SPIR-V is deployment data because captured PhysX PTX is proprietary.
-`prepare-sample.ps1` translates the eleven entries required by `SampleCloth`
-scenes 1 through 4, builds the DLL, and stages a runnable directory without
+`prepare-sample.ps1` translates the twelve entries required by `SampleCloth`
+scenes 1 through 5, builds the DLL, and stages a runnable directory without
 modifying the original sample. The stage includes
 `run-pxvk-samplecloth.cmd` for Vulkan,
 `run-native-cuda-samplecloth.cmd` for unrestricted installed NVIDIA CUDA, and
