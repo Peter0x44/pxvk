@@ -90,6 +90,19 @@ constexpr std::size_t kSolverOutputOffset = 128;
 constexpr VkDeviceSize kSolverPayloadBytes = 256u * sizeof(std::uint32_t);
 constexpr VkDeviceSize kSolverConstantBytes = 5888u;
 constexpr VkDeviceSize kSampleClothSolverDynamicSharedBytes = 42240u;
+constexpr std::uint32_t kSharedStorageGridWorkgroups = 2u;
+constexpr VkDeviceSize kSharedStorageGridBytesPerWorkgroup = 16u;
+constexpr std::size_t kSharedStorageGridOutputOffset = 8u;
+constexpr std::size_t kSharedStorageGridScratchReadbackOffset = 16u;
+constexpr VkDeviceSize kSharedStorageGridCopyBytes = 11u * sizeof(std::uint32_t);
+constexpr std::array<std::uint32_t, 2> kExpectedSharedStorageGrid = {7u, 8u};
+
+constexpr VkDeviceSize shared_scratch_bytes(
+    VkDeviceSize bytes_per_workgroup, std::uint32_t grid_x)
+{
+    const VkDeviceSize aligned_bytes = (bytes_per_workgroup + 3u) & ~VkDeviceSize{3u};
+    return aligned_bytes * grid_x;
+}
 constexpr std::array<std::uint32_t, 4> kExpectedSolverA = {
     0x3f800000u, 0x40000000u, 0x40400000u, 0u,
 };
@@ -718,6 +731,9 @@ struct DeviceResult {
     std::array<std::uint32_t, 4> solver_position = {};
     std::array<std::uint32_t, 16> solver_output = {};
     bool solver_guards_intact = false;
+    std::array<std::uint32_t, 2> shared_storage_grid_output = {};
+    std::array<std::uint32_t, 2> shared_storage_grid_scratch = {};
+    bool shared_storage_grid_guards_intact = false;
     std::array<std::uint32_t, 4> collision_position = {};
     std::array<std::uint32_t, 4> collision_motion = {};
     std::array<std::uint32_t, 4> collision_scalars = {};
@@ -780,6 +796,7 @@ DeviceResult run_device(
     bool deformable_fixture_mode,
     bool solver_fixture_mode,
     bool sample_cloth_solver_fixture_mode,
+    bool shared_storage_grid_fixture_mode,
     bool collision_fixture_mode,
     bool constraints_fixture_mode,
     bool dynamic_response_fixture_mode,
@@ -926,20 +943,32 @@ DeviceResult run_device(
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        if (sample_cloth_solver_fixture_mode) {
+        const VkDeviceSize shared_buffer_bytes =
+            sample_cloth_solver_fixture_mode
+                ? shared_scratch_bytes(
+                      kSampleClothSolverDynamicSharedBytes, 1u)
+                : shared_storage_grid_fixture_mode
+                    ? shared_scratch_bytes(
+                          kSharedStorageGridBytesPerWorkgroup,
+                          kSharedStorageGridWorkgroups)
+                    : 0u;
+        if (shared_buffer_bytes != 0u) {
             shared_buffer = create_buffer(
                 physical_device,
                 device,
-                kSampleClothSolverDynamicSharedBytes,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                shared_buffer_bytes,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                 0,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         }
         result.device_memory_local = device_buffer.device_local;
         result.staging_coherent = staging_buffer.host_coherent;
 
-        const VkDeviceSize copy_bytes = oracle_mode
-            ? kOracleCopyBytes
+        const VkDeviceSize copy_bytes = shared_storage_grid_fixture_mode
+            ? kSharedStorageGridCopyBytes
+            : oracle_mode
+                ? kOracleCopyBytes
             : reorder_fixture_mode
                 ? kReorderFixtureCopyBytes
                 : kernel_fixture_mode
@@ -983,7 +1012,14 @@ DeviceResult run_device(
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        if (simple_particle_fixture_mode) {
+        if (shared_storage_grid_fixture_mode) {
+            words[0] = static_cast<std::uint32_t>(
+                kSharedStorageGridOutputOffset * sizeof(std::uint32_t));
+            words[kSharedStorageGridOutputOffset - 1u] = kGuardBefore;
+            words[kSharedStorageGridOutputOffset] = 0xdeadbeefu;
+            words[kSharedStorageGridOutputOffset + 1u] = 0xdeadbeefu;
+            words[kSharedStorageGridOutputOffset + 2u] = kGuardAfter;
+        } else if (simple_particle_fixture_mode) {
             const auto byte_offset = [](std::size_t offset) {
                 return static_cast<std::uint32_t>(
                     offset * sizeof(std::uint32_t));
@@ -1786,30 +1822,35 @@ DeviceResult run_device(
         }
 
         const std::uint32_t binding_count =
-            sample_cloth_solver_fixture_mode
-                ? 5u
-                : selected_texture_mode || density_fixture_mode ||
-                          force_fixture_mode || collision_fixture_mode
-                    ? 4u
+            selected_texture_mode || density_fixture_mode ||
+                    force_fixture_mode || collision_fixture_mode
+                ? 4u
+                : shared_storage_grid_fixture_mode
+                    ? 3u
                     : ptx_oracle_mode || constant_fixture_mode ||
                               deformable_fixture_mode || solver_fixture_mode
-                        ? 3u
-                        : kernel_fixture_mode || reorder_fixture_mode ||
-                                  constraints_fixture_mode ||
-                                  dynamic_response_fixture_mode ||
-                                  static_response_fixture_mode ||
-                                  simple_particle_fixture_mode ||
-                                  radix_sort_fixture_mode ||
-                                  shape_batches_fixture_mode ||
-                                  triangles_fixture_mode
-                            ? 2u
-                            : 1u;
-        std::array<VkDescriptorSetLayoutBinding, 5> bindings = {};
-        for (std::uint32_t binding_index = 0;
-             binding_index < binding_count;
-             ++binding_index) {
-            bindings[binding_index] = {
-                binding_index,
+                        ? sample_cloth_solver_fixture_mode ? 4u : 3u
+                    : kernel_fixture_mode || reorder_fixture_mode ||
+                              constraints_fixture_mode ||
+                              dynamic_response_fixture_mode ||
+                              static_response_fixture_mode ||
+                              simple_particle_fixture_mode ||
+                              radix_sort_fixture_mode ||
+                              shape_batches_fixture_mode || triangles_fixture_mode
+                        ? 2u
+                        : 1u;
+        std::array<std::uint32_t, 4> binding_numbers = {0u, 1u, 2u, 3u};
+        if (sample_cloth_solver_fixture_mode) {
+            binding_numbers[3] = 4u;
+        } else if (shared_storage_grid_fixture_mode) {
+            binding_numbers[2] = 4u;
+        }
+        std::array<VkDescriptorSetLayoutBinding, 4> bindings = {};
+        for (std::uint32_t binding_slot = 0;
+             binding_slot < binding_count;
+             ++binding_slot) {
+            bindings[binding_slot] = {
+                binding_numbers[binding_slot],
                 VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                 1,
                 VK_SHADER_STAGE_COMPUTE_BIT,
@@ -1851,75 +1892,78 @@ DeviceResult run_device(
             &descriptor_layout,
         };
         check(vkAllocateDescriptorSets(device, &set_info, &descriptor_set), "vkAllocateDescriptorSets");
-        std::array<VkDescriptorBufferInfo, 5> descriptor_buffer_infos = {};
-        std::array<VkWriteDescriptorSet, 5> descriptor_writes = {};
-        for (std::uint32_t binding_index = 0;
-             binding_index < binding_count;
-             ++binding_index) {
-            descriptor_buffer_infos[binding_index] = {
+        std::array<VkDescriptorBufferInfo, 4> descriptor_buffer_infos = {};
+        std::array<VkWriteDescriptorSet, 4> descriptor_writes = {};
+        for (std::uint32_t binding_slot = 0;
+             binding_slot < binding_count;
+             ++binding_slot) {
+            const std::uint32_t binding = binding_numbers[binding_slot];
+            descriptor_buffer_infos[binding_slot] = {
                 device_buffer.buffer,
                 0,
                 kBufferBytes,
             };
-            if (sample_cloth_solver_fixture_mode && binding_index == 4u) {
-                descriptor_buffer_infos[binding_index] = {
+            if ((sample_cloth_solver_fixture_mode ||
+                 shared_storage_grid_fixture_mode) &&
+                binding == 4u) {
+                descriptor_buffer_infos[binding_slot] = {
                     shared_buffer.buffer,
                     0,
-                    kSampleClothSolverDynamicSharedBytes,
+                    shared_buffer_bytes,
                 };
             }
-            if (collision_fixture_mode && binding_index == 2u) {
-                descriptor_buffer_infos[binding_index].offset =
+            if (collision_fixture_mode && binding == 2u) {
+                descriptor_buffer_infos[binding_slot].offset =
                     collision_constant_offset;
-                descriptor_buffer_infos[binding_index].range =
+                descriptor_buffer_infos[binding_slot].range =
                     kCollisionConstantBytes;
-            } else if (collision_fixture_mode && binding_index == 3u) {
-                descriptor_buffer_infos[binding_index].offset =
+            } else if (collision_fixture_mode && binding == 3u) {
+                descriptor_buffer_infos[binding_slot].offset =
                     collision_texture_metadata_offset;
-                descriptor_buffer_infos[binding_index].range =
+                descriptor_buffer_infos[binding_slot].range =
                     kCollisionTextureMetadataBytes;
-            } else if (solver_fixture_mode && binding_index == 2u) {
-                descriptor_buffer_infos[binding_index].offset =
+            } else if (solver_fixture_mode && binding == 2u) {
+                descriptor_buffer_infos[binding_slot].offset =
                     solver_constant_offset;
-                descriptor_buffer_infos[binding_index].range =
+                descriptor_buffer_infos[binding_slot].range =
                     kSolverConstantBytes;
-            } else if (deformable_fixture_mode && binding_index == 2u) {
-                descriptor_buffer_infos[binding_index].offset =
+            } else if (deformable_fixture_mode && binding == 2u) {
+                descriptor_buffer_infos[binding_slot].offset =
                     deformable_constant_offset;
-                descriptor_buffer_infos[binding_index].range =
+                descriptor_buffer_infos[binding_slot].range =
                     kDeformableConstantBytes;
             } else if ((density_fixture_mode || force_fixture_mode) &&
-                binding_index == 2u) {
-                descriptor_buffer_infos[binding_index].offset =
+                       binding == 2u) {
+                descriptor_buffer_infos[binding_slot].offset =
                     density_constant_offset;
-                descriptor_buffer_infos[binding_index].range =
+                descriptor_buffer_infos[binding_slot].range =
                     force_fixture_mode
                         ? kForceConstantBytes
                         : kDensityConstantBytes;
             } else if ((density_fixture_mode || force_fixture_mode) &&
-                       binding_index == 3u) {
-                descriptor_buffer_infos[binding_index].offset =
+                       binding == 3u) {
+                descriptor_buffer_infos[binding_slot].offset =
                     density_texture_metadata_offset;
-                descriptor_buffer_infos[binding_index].range =
+                descriptor_buffer_infos[binding_slot].range =
                     force_fixture_mode
                         ? kForceTextureMetadataBytes
                         : kDensityTextureMetadataBytes;
-            } else if (selected_texture_mode && binding_index == 3u) {
-                descriptor_buffer_infos[binding_index].offset =
+            } else if (selected_texture_mode && binding == 3u) {
+                descriptor_buffer_infos[binding_slot].offset =
                     texture_metadata_offset;
-                descriptor_buffer_infos[binding_index].range =
+                descriptor_buffer_infos[binding_slot].range =
                     kTextureMetadataBytes;
             }
-            descriptor_writes[binding_index] = {
+            descriptor_writes[binding_slot] = {
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 nullptr,
                 descriptor_set,
-                binding_index,
+                binding,
                 0,
                 1,
                 VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                 nullptr,
-                &descriptor_buffer_infos[binding_index],
+                &descriptor_buffer_infos[binding_slot],
                 nullptr,
             };
         }
@@ -2044,20 +2088,37 @@ DeviceResult run_device(
             nullptr);
         vkCmdDispatch(
             command_buffer,
-            convexes_fixture_mode ? 5u : shape_batches_fixture_mode ? 2u : 1u,
+            shared_storage_grid_fixture_mode
+                ? kSharedStorageGridWorkgroups
+                : convexes_fixture_mode ? 5u : shape_batches_fixture_mode ? 2u : 1u,
             1,
             1);
-        VkBufferMemoryBarrier download_barrier = {
-            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            nullptr,
-            VK_ACCESS_SHADER_WRITE_BIT,
-            VK_ACCESS_TRANSFER_READ_BIT,
-            VK_QUEUE_FAMILY_IGNORED,
-            VK_QUEUE_FAMILY_IGNORED,
-            device_buffer.buffer,
-            0,
-            copy_bytes,
-        };
+        std::array<VkBufferMemoryBarrier, 2> download_barriers = {{
+            {
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                nullptr,
+                VK_ACCESS_SHADER_WRITE_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                device_buffer.buffer,
+                0,
+                copy_bytes,
+            },
+            {
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                nullptr,
+                VK_ACCESS_SHADER_WRITE_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                shared_buffer.buffer,
+                0,
+                shared_buffer_bytes,
+            },
+        }};
+        const std::uint32_t download_barrier_count =
+            shared_storage_grid_fixture_mode ? 2u : 1u;
         vkCmdPipelineBarrier(
             command_buffer,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -2065,11 +2126,25 @@ DeviceResult run_device(
             0,
             0,
             nullptr,
-            1,
-            &download_barrier,
+            download_barrier_count,
+            download_barriers.data(),
             0,
             nullptr);
         vkCmdCopyBuffer(command_buffer, device_buffer.buffer, staging_buffer.buffer, 1, &copy);
+        if (shared_storage_grid_fixture_mode) {
+            VkBufferCopy scratch_copy = {
+                0,
+                kSharedStorageGridScratchReadbackOffset *
+                    sizeof(std::uint32_t),
+                shared_buffer_bytes,
+            };
+            vkCmdCopyBuffer(
+                command_buffer,
+                shared_buffer.buffer,
+                staging_buffer.buffer,
+                1,
+                &scratch_copy);
+        }
         check(vkEndCommandBuffer(command_buffer), "vkEndCommandBuffer");
 
         VkFenceCreateInfo fence_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, 0};
@@ -2099,7 +2174,33 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        if (simple_particle_fixture_mode) {
+        if (shared_storage_grid_fixture_mode) {
+            std::copy_n(
+                words + kSharedStorageGridOutputOffset,
+                result.shared_storage_grid_output.size(),
+                result.shared_storage_grid_output.begin());
+            const std::size_t scratch_stride_words =
+                static_cast<std::size_t>(
+                    shared_scratch_bytes(
+                        kSharedStorageGridBytesPerWorkgroup, 1u) /
+                    sizeof(std::uint32_t));
+            for (std::size_t group = 0;
+                 group < result.shared_storage_grid_scratch.size();
+                 ++group) {
+                result.shared_storage_grid_scratch[group] =
+                    words[kSharedStorageGridScratchReadbackOffset +
+                          group * scratch_stride_words];
+            }
+            result.shared_storage_grid_guards_intact =
+                words[kSharedStorageGridOutputOffset - 1u] == kGuardBefore &&
+                words[kSharedStorageGridOutputOffset + 2u] == kGuardAfter;
+            result.pass =
+                result.shared_storage_grid_output ==
+                    kExpectedSharedStorageGrid &&
+                result.shared_storage_grid_scratch ==
+                    kExpectedSharedStorageGrid &&
+                result.shared_storage_grid_guards_intact;
+        } else if (simple_particle_fixture_mode) {
             std::copy_n(
                 words + kSimpleParticleOutputOffset,
                 result.simple_particle_output.size(),
@@ -2818,8 +2919,10 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = simple_particle_fixture_mode
-                ? "fluid simple-particle fixture result mismatch"
+            result.error = shared_storage_grid_fixture_mode
+                ? "shared-storage grid fixture result mismatch"
+                : simple_particle_fixture_mode
+                    ? "fluid simple-particle fixture result mismatch"
                 : radix_sort_fixture_mode
                     ? "radix sort fixture result mismatch"
                 : shape_batches_fixture_mode
@@ -3713,6 +3816,9 @@ int main(int argc, char **argv)
     const bool sample_cloth_solver_fixture_mode =
         argc == 4 &&
         std::string(argv[2]) == "--sample-cloth-solver-fixture";
+    const bool shared_storage_grid_fixture_mode =
+        argc == 4 &&
+        std::string(argv[2]) == "--shared-storage-grid-fixture";
     const bool solver_fixture_mode =
         sample_cloth_solver_fixture_mode ||
         (argc == 4 &&
@@ -3762,6 +3868,7 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--deformable-fixture" ||
          std::string(argv[2]) == "--deformable-solver-fixture" ||
          std::string(argv[2]) == "--sample-cloth-solver-fixture" ||
+         std::string(argv[2]) == "--shared-storage-grid-fixture" ||
          std::string(argv[2]) == "--deformable-sequence-fixture" ||
          std::string(argv[2]) == "--fluid-constraints-fixture" ||
          std::string(argv[2]) == "--fluid-dynamic-response-fixture" ||
@@ -3778,7 +3885,8 @@ int main(int argc, char **argv)
          !constant_fixture_mode && !texture_fixture_mode &&
          !texture_float_fixture_mode && !density_fixture_mode &&
          !force_fixture_mode && !deformable_fixture_mode &&
-         !solver_fixture_mode && !collision_fixture_mode &&
+         !solver_fixture_mode && !shared_storage_grid_fixture_mode &&
+         !collision_fixture_mode &&
          !constraints_fixture_mode && !dynamic_response_fixture_mode &&
          !static_response_fixture_mode && !simple_particle_fixture_mode &&
          !radix_sort_fixture_mode &&
@@ -3797,6 +3905,7 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --deformable-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-solver-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --sample-cloth-solver-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --shared-storage-grid-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-collision-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-constraints-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-dynamic-response-fixture <generated.spv>\n"
@@ -3855,7 +3964,8 @@ int main(int argc, char **argv)
         constant_fixture_mode || texture_fixture_mode ||
         texture_float_fixture_mode || density_fixture_mode ||
         force_fixture_mode || deformable_fixture_mode || solver_fixture_mode ||
-        collision_fixture_mode || constraints_fixture_mode ||
+        shared_storage_grid_fixture_mode || collision_fixture_mode ||
+        constraints_fixture_mode ||
         dynamic_response_fixture_mode || static_response_fixture_mode ||
         simple_particle_fixture_mode || radix_sort_fixture_mode ||
         shape_batches_fixture_mode || triangles_fixture_mode;
@@ -3864,7 +3974,8 @@ int main(int argc, char **argv)
         !constant_fixture_mode && !texture_fixture_mode &&
         !texture_float_fixture_mode && !density_fixture_mode &&
         !force_fixture_mode && !deformable_fixture_mode &&
-        !solver_fixture_mode && !collision_fixture_mode &&
+        !solver_fixture_mode && !shared_storage_grid_fixture_mode &&
+        !collision_fixture_mode &&
         !constraints_fixture_mode && !dynamic_response_fixture_mode &&
         !static_response_fixture_mode && !simple_particle_fixture_mode &&
         !radix_sort_fixture_mode &&
@@ -3909,7 +4020,8 @@ int main(int argc, char **argv)
                     constant_fixture_mode || texture_fixture_mode ||
                     texture_float_fixture_mode || density_fixture_mode ||
                     force_fixture_mode || deformable_fixture_mode ||
-                    solver_fixture_mode || collision_fixture_mode ||
+                    solver_fixture_mode || shared_storage_grid_fixture_mode ||
+                    collision_fixture_mode ||
                     constraints_fixture_mode || dynamic_response_fixture_mode ||
                     static_response_fixture_mode ||
                     simple_particle_fixture_mode ||
@@ -3949,6 +4061,7 @@ int main(int argc, char **argv)
                   deformable_fixture_mode,
                   solver_fixture_mode,
                   sample_cloth_solver_fixture_mode,
+                  shared_storage_grid_fixture_mode,
                   collision_fixture_mode,
                   constraints_fixture_mode,
                   dynamic_response_fixture_mode,
@@ -3992,6 +4105,8 @@ int main(int argc, char **argv)
                dynamic_response_fixture_mode
                    ? "fluid_dynamic_response_fixture" :
                constraints_fixture_mode ? "fluid_constraints_fixture" :
+               shared_storage_grid_fixture_mode
+                   ? "shared_storage_grid_fixture" :
                collision_fixture_mode ? "deformable_collision_fixture" :
                sample_cloth_solver_fixture_mode
                    ? "sample_cloth_solver_fixture" :
@@ -4017,6 +4132,18 @@ int main(int argc, char **argv)
                << "  \"iteration_count\": 0,\n"
                << "  \"collision_static_shared_bytes\": 4097,\n"
                << "  \"solver_dynamic_shared_bytes\": 7072,\n";
+    } else if (shared_storage_grid_fixture_mode) {
+        output << "  \"kernel\": \"shared_storage_grid_probe\",\n"
+               << "  \"dispatch_workgroup_count_x\": "
+               << kSharedStorageGridWorkgroups << ",\n"
+               << "  \"shared_bytes_per_workgroup\": "
+               << kSharedStorageGridBytesPerWorkgroup << ",\n"
+               << "  \"shared_scratch_bytes\": "
+               << shared_scratch_bytes(
+                      kSharedStorageGridBytesPerWorkgroup,
+                      kSharedStorageGridWorkgroups)
+               << ",\n"
+               << "  \"expected_output\": [7, 8],\n";
     } else if (simple_particle_fixture_mode) {
         output << "  \"kernel\": \"KernelFluidSimpleParticle\",\n"
                << "  \"particle_count\": 1,\n"
@@ -4246,6 +4373,18 @@ int main(int argc, char **argv)
             output << ",\n"
                    << "      \"guards_intact\": "
                    << (result.sequence_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (shared_storage_grid_fixture_mode) {
+            output << "      \"output\": ["
+                   << result.shared_storage_grid_output[0] << ", "
+                   << result.shared_storage_grid_output[1] << "],\n"
+                   << "      \"scratch_slice_heads\": ["
+                   << result.shared_storage_grid_scratch[0] << ", "
+                   << result.shared_storage_grid_scratch[1] << "],\n"
+                   << "      \"guards_intact\": "
+                   << (result.shared_storage_grid_guards_intact
+                           ? "true"
+                           : "false")
                    << ",\n";
         } else if (simple_particle_fixture_mode) {
             output << "      \"output_bits\": ";

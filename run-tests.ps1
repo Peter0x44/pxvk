@@ -161,11 +161,13 @@ $generatedOracle = Join-Path $frontendBuild "oracle-explicit-rte.spv"
 $constantKernel = Join-Path $frontendBuild "constant-kernel.spv"
 $textureKernel = Join-Path $frontendBuild "texture-kernel.spv"
 $textureFloatKernel = Join-Path $frontendBuild "texture-float-kernel.spv"
+$sharedStorageGridKernel = Join-Path $frontendBuild "shared-storage-grid.spv"
 Validate-SpirvIfAvailable @(
     $generatedOracle,
     $constantKernel,
     $textureKernel,
     $textureFloatKernel
+    $sharedStorageGridKernel
 )
 
 Invoke-Checked $memorySmoke @(
@@ -187,6 +189,11 @@ Invoke-Checked $memorySmoke @(
     (Join-Path $resultDir "texture-float-kernel.json"),
     "--texture-float-fixture",
     $textureFloatKernel
+)
+Invoke-Checked $memorySmoke @(
+    (Join-Path $resultDir "shared-storage-grid.json"),
+    "--shared-storage-grid-fixture",
+    $sharedStorageGridKernel
 )
 
 if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {

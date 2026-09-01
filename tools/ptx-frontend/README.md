@@ -105,10 +105,13 @@ build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry-shared-storage `
 
 The runtime, not the frontend, selects this fallback from the actual launch
 size and Vulkan device limit. It binds a scratch storage buffer at binding 4.
-Each X workgroup receives a disjoint `ceil(shared-bytes / 4)`-word region;
-shared atomics and barriers use workgroup scope with storage-buffer memory
-semantics. The fallback therefore preserves CUDA workgroup isolation without
-encoding a particular GPU's shared-memory limit in PTX acceptance.
+For the current X-only launch contract, each workgroup receives a disjoint
+`ceil(required-shared-bytes / 4)`-word region and the caller allocates
+`align4(required-shared-bytes) * grid_x` bytes. Shared atomics and barriers use
+workgroup scope with storage-buffer memory semantics. The
+`shared_storage_grid_probe` fixture dispatches two X workgroups and verifies
+both guarded outputs and distinct scratch-slice heads on Intel and RTX.
+Non-unit Y/Z dispatch remains outside the evidenced contract.
 
 Kernel mode binds the 32-bit CUDA heap at descriptor binding 0, packed
 launch-parameter words at binding 1, and module `.const` storage at read-only

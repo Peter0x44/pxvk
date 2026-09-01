@@ -15,8 +15,9 @@ selection before the CUDA facade, proprietary fatbins, or NVAPI are involved.
 
 A cross-vendor hardware preflight is runnable now at
 `tools/vulkan-probe/preflight.ps1`. It enumerates every Vulkan physical device,
-applies the captured Mirror's Edge hardware gate, and emits hashed JSON. It does
-not claim shader or PhysX correctness.
+applies common requirements, and reports separate captured Mirror's Edge and
+`SampleCloth` scene-1 profiles. It emits hashed JSON and does not claim shader
+or PhysX correctness.
 
 ## Evidence synthesized
 
@@ -637,7 +638,7 @@ Use:
 - host-visible staging capacity sized or grown for the requested transfers;
 - read-only storage buffers for module constants, the compact texture table,
   and oversized per-workgroup shared scratch when required;
-- push constants for the exact packed parameter bytes, up to 100 bytes.
+- storage-buffer binding 1 for the exact packed parameter bytes.
 
 Implement `cuMemHostAlloc` with checked, page-aligned Windows virtual memory.
 It need not be Vulkan-mapped or physically pinned for this workload; ZLUDA's
@@ -721,10 +722,11 @@ vulkan-preflight/oracle.json
 ```
 
 Override paths with `-OutputDir` and `-BuildDir`. `capabilities.json` is the raw
-deterministic PE32 query. `preflight.json` contains the compiled Vulkan header
-version, gate values, per-device pass/fail reasons, FTZ path, dependency source,
-and capability hash. Exit status is nonzero when no enumerated device passes
-the hardware gate or when a requested execution mode fails.
+deterministic PE32 query. Schema-3 `preflight.json` contains the compiled Vulkan
+header version, common gate, per-workload profile results, FTZ path, dependency
+source, and capability hash. Exit status is nonzero when no enumerated device
+passes the captured Mirror's Edge profile or when a requested execution mode
+fails.
 
 `-RunOracle` runs the full 64-thread semantic shader on every device. It
 allocates the real 32 MiB device and staging buffers, performs

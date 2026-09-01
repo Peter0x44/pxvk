@@ -1,35 +1,63 @@
 {
-    "schema_version":  2,
+    "schema_version":  3,
     "probe_pointer_bits":  32,
     "vulkan_header_version":  "1.4.357",
     "loader_api_version":  "1.4.341",
     "dependency_source":  "CMake FetchContent with pinned commits",
     "capabilities_sha256":  "f35d24ad1404a2267e2dd5853466ef63960fb0de330b891d2de6c949c503fa7d",
     "requirements":  {
-                         "minimum_vulkan":  "1.2",
-                         "minimum_compute_queues":  1,
-                         "shader_int64":  true,
-                         "signed_zero_inf_nan_preserve_float32":  true,
-                         "rounding_mode_rte_float32":  true,
-                         "minimum_workgroup_invocations":  512,
-                         "minimum_workgroup_size_x":  512,
-                         "minimum_workgroup_count_x":  94,
-                         "minimum_compute_storage_buffers":  5,
-                         "minimum_push_constants_bytes":  100
+                         "common":  {
+                                        "minimum_vulkan":  "1.2",
+                                        "minimum_compute_queues":  1,
+                                        "signed_zero_inf_nan_preserve_float32":  true,
+                                        "rounding_mode_rte_float32":  true,
+                                        "minimum_compute_storage_buffers":  4
+                                    },
+                         "profiles":  {
+                                          "mirrors_edge_captured":  {
+                                                                        "requires_shader_int64":  true,
+                                                                        "minimum_workgroup_invocations":  256,
+                                                                        "minimum_workgroup_size_x":  256
+                                                                    },
+                                          "sample_cloth_scene_1":  {
+                                                                       "requires_shader_int64":  false,
+                                                                       "minimum_workgroup_invocations":  512,
+                                                                       "minimum_workgroup_size_x":  512,
+                                                                       "shared_backing":  "storage_buffer",
+                                                                       "dispatch_dimensions":  "x_only"
+                                                                   }
+                                      }
                      },
-    "eligible_device_count":  1,
+    "eligible_device_counts":  {
+                                   "mirrors_edge_captured":  1,
+                                   "sample_cloth_scene_1":  1
+                               },
     "devices":  [
                     {
                         "name":  "AMD Radeon(TM) 8060S Graphics",
                         "vendor_id":  "0x1002",
                         "device_id":  "0x1586",
                         "api_version":  "1.4.349",
-                        "hardware_gate_pass":  true,
+                        "common_gate_pass":  true,
                         "native_float32_ftz":  true,
                         "software_ftz_required":  false,
-                        "failures":  [
+                        "common_failures":  [
 
-                                     ]
+                                            ],
+                        "profiles":  {
+                                         "mirrors_edge_captured":  {
+                                                                       "pass":  true,
+                                                                       "failures":  [
+
+                                                                                    ]
+                                                                   },
+                                         "sample_cloth_scene_1":  {
+                                                                      "pass":  true,
+                                                                      "failures":  [
+
+                                                                                   ]
+                                                                  }
+                                     }
                     }
                 ],
     "limitations":  [

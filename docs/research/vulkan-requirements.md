@@ -7,14 +7,19 @@ The first backend does not need CUDA-generic addressing, sampled images,
 subgroup operations, atomics, buffer device addresses, or the Vulkan memory
 model extension.
 
-The hard device requirements are:
+The common hard device requirements are:
 
 - a Vulkan 1.2 x86 loader path and a compute queue;
-- `shaderInt64`;
 - f32 signed-zero/Inf/NaN preservation plus RTE control;
-- at least 512 workgroup invocations in X;
-- at least five compute-stage storage-buffer bindings;
-- at least 100 bytes of push constants.
+- at least four compute-stage storage-buffer descriptors.
+
+Workload profiles add only their executed requirements:
+
+- the captured Mirror's Edge profile requires `shaderInt64` and 256
+  workgroup invocations in X;
+- the PhysX 2.8.0 `SampleCloth` scene-1 profile requires 512 workgroup
+  invocations in X and storage-backed shared scratch, but its three executed
+  shaders do not require `shaderInt64`.
 
 The installed SDK and x86 loader reach both local GPUs through Volk. Both GPUs
 clear the integer, workgroup, memory, and rounding requirements. The important
@@ -292,23 +297,26 @@ can differ.
 
 ## Quantitative limits
 
-| Limit | Required value | Evidence | Local minimum |
-|---|---:|---|---:|
-| `maxComputeWorkGroupInvocations` | at least 512 | PhysX 2.8.0 `SampleCloth` scene 1 launches `KernelDeformableUberSolver<512>` with 512 threads | 1,024 |
-| `maxComputeWorkGroupSize[0]` | at least 512 | Captured game and sample launches are X-only | 1,024 |
-| `maxComputeWorkGroupCount[0]` | at least 94 | Largest captured game grid X | 65,536 |
-| `maxComputeSharedMemorySize` | queried, not a workload rejection threshold | Native Workgroup backing is selected when the complete launch layout fits; larger launches use per-workgroup storage-buffer scratch | 32,768 B |
-| `maxStorageBufferRange` | at least the largest selected CUDA allocation or shared-scratch region | Mirror's Edge requests 32 MiB pools; the SDK samples request 128 MiB pools; allocation size is runtime input | 1,073,741,820 B |
-| maximum memory allocation/buffer size | same as the selected backing allocation | Allocation requests are not fixed to one traced title | 4,294,901,760 B |
-| `maxPushConstantsSize` | at least 100 B | Largest packed kernel parameter block currently observed | 256 B |
-| compute-stage storage buffers | at least 5 | Heap, launch parameters, constants, textures, and optional shared scratch occupy bindings 0–4 | 200 |
+| Limit | Common requirement | Profile requirement | Evidence | Local minimum |
+|---|---:|---:|---|---:|
+| `maxComputeWorkGroupInvocations` | queried | Mirror's Edge: 256; `SampleCloth` scene 1: 512 | Largest executed block in each workload | 1,024 |
+| `maxComputeWorkGroupSize[0]` | queried | Mirror's Edge: 256; `SampleCloth` scene 1: 512 | Captured launches are X-only | 1,024 |
+| `maxComputeWorkGroupCount[0]` | queried at launch | none at startup | Largest observed grid X is 94; Vulkan 1.2 already guarantees at least 65,535 | 65,536 |
+| `maxComputeSharedMemorySize` | queried | none as a rejection threshold | Native Workgroup backing is selected when the complete launch layout fits; larger launches use per-workgroup storage-buffer scratch | 32,768 B |
+| `maxStorageBufferRange` | queried per request | selected allocation or scratch must fit | Mirror's Edge requests 32 MiB pools; SDK samples request 128 MiB pools | 1,073,741,820 B |
+| maximum memory allocation/buffer size | queried per request | selected allocation must fit | Allocation size is runtime input | 4,294,901,760 B |
+| compute-stage storage buffers | 4 | none | Heap, parameters, constants, and either textures or shared scratch; binding 4 does not require a binding-3 descriptor | 200 |
 
 The native CUDA device query returned 1,024 threads per block. Mirror's Edge
 launched at most 256 threads, while PhysX 2.8.0 `SampleCloth` scene 1 launches
-the solver with 512. Workgroup size is therefore a real sample-suite gate.
-Shared-memory size is not: the emitter has native Workgroup and storage-buffer
-backings, and the runtime selects between them from the complete static plus
-dynamic launch requirement and the physical device limit.
+the solver with 512. These are separate workload-profile gates rather than one
+global eligibility threshold. `shaderInt64` is likewise profile-specific: the
+launched Mirror's Edge triangle entry requires it, while the three emitted
+`SampleCloth` scene-1 shaders do not declare `OpCapability Int64`.
+
+Push constants are not a requirement. Generated kernels read packed launch
+parameters from storage-buffer binding 1. `maxPushConstantsSize` remains useful
+capability-report data but is not an eligibility gate.
 
 The 108-byte maximum PTX `.local` declaration maps to an aligned
 invocation-private SPIR-V Function array and is not a Vulkan device-limit gate.
@@ -321,9 +329,11 @@ The observed shared-memory maxima are per entry. They must not be summed across
 kernels. Kernel emission takes the launch's dynamic-shared byte count as an
 explicit pipeline input and combines it with aligned module/routine static
 allocations. If the layout fits the physical Workgroup-memory limit, emission
-uses one Workgroup `u32` arena. Otherwise it uses caller-sized, per-X-workgroup
-storage-buffer scratch with storage-memory barrier semantics. The queried
-Workgroup limit selects the backing; it does not reject the CUDA launch.
+uses one Workgroup `u32` arena. Otherwise it uses per-X-workgroup
+storage-buffer scratch with storage-memory barrier semantics. For the current
+X-only launch contract, the caller allocates
+`align4(required-shared-bytes) * grid_x`. A two-workgroup fixture verifies
+distinct slice heads and guarded outputs on Intel and RTX.
 
 ## PTX-to-Vulkan mapping constraints
 
@@ -344,7 +354,7 @@ Memory operations lower as follows:
 | `.const` and module globals | read-only/module-state ranges in buffer storage |
 | `.shared` and `.extern .shared` | Workgroup variables when the launch fits; otherwise per-workgroup storage-buffer scratch |
 | `.local` | Function variables, with compiler spills left to the Vulkan driver |
-| `.param` | push constants preserving the captured byte layout |
+| `.param` | packed words in storage-buffer binding 1, preserving the captured byte layout |
 | `u8` / `u16` memory | `u32` load plus shift/mask; native narrow storage is an optional optimization |
 | `u64` memory/arithmetic | `shaderInt64`, with byte layout preserved explicitly |
 
@@ -476,21 +486,24 @@ and may make required subgroup size 32 a pipeline/device gate.
 
 ## Startup gate
 
-A candidate device passes the Mirror's Edge gate only when all of these are
-true:
+A candidate device first passes the common gate when all of these are true:
 
 1. Vulkan API version is at least 1.2 and a compute queue exists.
-2. `shaderInt64`, f32 signed-zero/Inf/NaN preservation, and RTE are true.
-3. the quantitative workgroup, descriptor-binding, and push-constant limits
-   meet the table above.
+2. f32 signed-zero/Inf/NaN preservation and RTE are true.
+3. four compute-stage and descriptor-set storage-buffer descriptors are
+   available.
 4. either f32 denorm FTZ is advertised or the validated software-FTZ lowering
    is enabled.
 
-Storage range, allocation, buffer, and Workgroup-memory limits are queried
-inputs to backing selection for each caller request. They are not fixed startup
-thresholds derived from one game trace. The actual allocation or launch fails
-only when neither a native nor storage-backed representation can satisfy that
-request.
+The captured Mirror's Edge profile additionally requires `shaderInt64` and
+local size 256. The `SampleCloth` scene-1 profile instead requires local size
+512 and the X-only storage-scratch path; it does not require `shaderInt64`.
+Preflight reports both profile results independently.
+
+Dispatch count, storage range, allocation, buffer, and Workgroup-memory limits
+are queried inputs to each launch or allocation. They are not fixed startup
+thresholds derived from one trace. The actual request fails only when neither
+the native nor storage-backed representation can satisfy it.
 
 The gate must produce a concrete diagnostic naming the first missing feature or
 limit. It must not silently choose a semantically weaker floating-point mode.

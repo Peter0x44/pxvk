@@ -15,6 +15,7 @@ VULKAN_REPORTS = {
     "constant_memory": "constant-kernel.json",
     "texture_u32": "texture-kernel.json",
     "texture_f32": "texture-float-kernel.json",
+    "shared_storage_grid": "shared-storage-grid.json",
     "fluid_calc_hash": "fluid-calc-hash.json",
     "fluid_reorder": "fluid-reorder.json",
     "fluid_density": "fluid-density.json",
