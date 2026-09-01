@@ -271,6 +271,18 @@ binary search, and integrates velocity with damping and a skipped clamp.
 Native RTX and translated Intel/RTX match the integrated velocity vector and
 all guards exactly.
 
+`radixSortBlocks<32,0,false>` is the sixteenth captured entry to compile and
+execute. Its 257 instructions emit a deterministic 6,631-word module at local
+size 256 with 4 bytes of static and 4,096 bytes of dynamic shared memory. The
+lowering adds `ld.global.v4.u32` and lowers `ld.volatile.shared`/
+`st.volatile.shared` to SPIR-V accesses with the Volatile memory operand, each
+volatile store followed by a subgroup-scope `OpControlBarrier`; the fixture
+pipeline requires subgroup size 32 so the sm_52 warp-synchronous scan maps to
+one subgroup. A focused ten-element partial-tile fixture exercises the vec4
+and guarded scalar load/store paths, the `-1` padding, all 32 rank phases, and
+a duplicate-key stability check. Native RTX and translated Intel/RTX match the
+sorted keys, permuted values, untouched padding tails, and all guards exactly.
+
 `PxgCudaDeformableUpdate`, `KernelDeformableUberCollision`, and
 `KernelDeformableUberSolver<512>` are the fifth through seventh captured entries
 to compile and execute. Liveness-based reuse of non-interfering PTX register
@@ -279,8 +291,7 @@ all pass Vulkan 1.2 validation. Native RTX and translated Intel/RTX match exact
 output bits and guard ranges for all three focused fixtures. Collision uses the
 captured local size 64 and 4,097-byte static shared layout; the solver uses
 local size 64 and the captured 7,072-byte dynamic shared allocation.
-The last untranslated launched entry, `radixSortBlocks<32,0,false>`, remains
-parse/type/CFG validated rather than lowered.
+Every launched entry now compiles, validates, and executes exactly.
 
 The same three modules also execute as one ordered step. Native CUDA queues
 update, collision, and solver on the default stream without intermediate host

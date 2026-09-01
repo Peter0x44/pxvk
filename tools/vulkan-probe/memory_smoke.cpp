@@ -261,6 +261,29 @@ constexpr std::array<std::uint32_t, 4> kSimpleParticleInput = {
 constexpr std::array<std::uint32_t, 4> kExpectedSimpleParticleOutput = {
     0x3fe00000u, 0x00000000u, 0x40440000u, 0x00000000u,
 };
+constexpr std::size_t kRadixInKeysOffset = 8;
+constexpr std::size_t kRadixInValuesOffset = 20;
+constexpr std::size_t kRadixOutKeysOffset = 32;
+constexpr std::size_t kRadixOutValuesOffset = 48;
+constexpr std::size_t kRadixElementCount = 10;
+constexpr std::size_t kRadixTileWords = 12;
+constexpr std::uint32_t kRadixSentinel = 0x5555aaaau;
+constexpr VkDeviceSize kRadixPayloadBytes = 64u * sizeof(std::uint32_t);
+constexpr std::array<std::uint32_t, 10> kRadixInputKeys = {
+    0xfffffffeu, 0x00000001u, 0x80000000u, 0x00000007u, 0x00010000u,
+    0xdeadbeefu, 0x00000000u, 0x55555555u, 0x2aaaaaabu, 0x00000001u,
+};
+constexpr std::array<std::uint32_t, 10> kRadixInputValues = {
+    0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u,
+};
+constexpr std::array<std::uint32_t, 12> kExpectedRadixKeys = {
+    0x00000000u, 0x00000001u, 0x00000001u, 0x00000007u,
+    0x00010000u, 0x2aaaaaabu, 0x55555555u, 0x80000000u,
+    0xdeadbeefu, 0xfffffffeu, kRadixSentinel, kRadixSentinel,
+};
+constexpr std::array<std::uint32_t, 12> kExpectedRadixValues = {
+    6u, 1u, 9u, 3u, 4u, 8u, 7u, 2u, 5u, 0u, kRadixSentinel, kRadixSentinel,
+};
 constexpr std::size_t kBoxesWorkUnitOffset = 8;
 constexpr std::size_t kBoxesShapeStartAddrsOffset = 20;
 constexpr std::size_t kBoxesParametersOffset = 64;
@@ -699,6 +722,9 @@ struct DeviceResult {
     bool static_response_guards_intact = false;
     std::array<std::uint32_t, 4> simple_particle_output = {};
     bool simple_particle_guards_intact = false;
+    std::array<std::uint32_t, 12> radix_keys = {};
+    std::array<std::uint32_t, 12> radix_values = {};
+    bool radix_guards_intact = false;
     std::array<std::uint32_t, 4> boxes_position = {};
     std::array<std::uint32_t, 4> boxes_old_position = {};
     bool boxes_guards_intact = false;
@@ -731,6 +757,7 @@ DeviceResult run_device(
     bool dynamic_response_fixture_mode,
     bool static_response_fixture_mode,
     bool simple_particle_fixture_mode,
+    bool radix_sort_fixture_mode,
     bool shape_batches_fixture_mode,
     bool convexes_fixture_mode,
     bool triangles_fixture_mode)
@@ -804,6 +831,27 @@ DeviceResult run_device(
             }
             enabled_features.shaderInt64 = VK_TRUE;
         }
+        VkPhysicalDeviceSubgroupSizeControlFeatures subgroup_size_features = {};
+        subgroup_size_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES;
+        subgroup_size_features.subgroupSizeControl = VK_TRUE;
+        if (radix_sort_fixture_mode) {
+            VkPhysicalDeviceSubgroupSizeControlProperties
+                subgroup_size_properties = {};
+            subgroup_size_properties.sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES;
+            VkPhysicalDeviceProperties2 properties2 = {};
+            properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            properties2.pNext = &subgroup_size_properties;
+            vkGetPhysicalDeviceProperties2(physical_device, &properties2);
+            if (subgroup_size_properties.minSubgroupSize > 32u ||
+                subgroup_size_properties.maxSubgroupSize < 32u ||
+                (subgroup_size_properties.requiredSubgroupSizeStages &
+                 VK_SHADER_STAGE_COMPUTE_BIT) == 0u) {
+                throw std::runtime_error(
+                    "radix sort fixture requires compute subgroup size 32");
+            }
+        }
 
         const float priority = 1.0f;
         VkDeviceQueueCreateInfo queue_info = {
@@ -826,6 +874,9 @@ DeviceResult run_device(
             nullptr,
             triangles_fixture_mode ? &enabled_features : nullptr,
         };
+        if (radix_sort_fixture_mode) {
+            device_info.pNext = &subgroup_size_features;
+        }
         check(vkCreateDevice(physical_device, &device_info, nullptr, &device), "vkCreateDevice");
         volkLoadDevice(device);
         VkQueue queue = VK_NULL_HANDLE;
@@ -859,6 +910,8 @@ DeviceResult run_device(
                         ? kConstantFixtureCopyBytes
                         : simple_particle_fixture_mode
                             ? kSimpleParticlePayloadBytes
+                        : radix_sort_fixture_mode
+                            ? kRadixPayloadBytes
                         : shape_batches_fixture_mode
                             ? kBoxesPayloadBytes
                         : triangles_fixture_mode
@@ -932,6 +985,41 @@ DeviceResult run_device(
             words[kSimpleParticleParametersOffset + 9u] = 0x3e800000u;
             words[kSimpleParticleParametersOffset + 16u] = 0x41200000u;
             words[kSimpleParticleParametersOffset + 40u] = kGuardAfter;
+        } else if (radix_sort_fixture_mode) {
+            const auto byte_offset = [](std::size_t offset) {
+                return static_cast<std::uint32_t>(
+                    offset * sizeof(std::uint32_t));
+            };
+            const auto initialize = [&](std::size_t offset,
+                                        const std::uint32_t *values,
+                                        std::size_t count) {
+                words[offset - 1u] = kGuardBefore;
+                std::copy_n(values, count, words + offset);
+                words[offset + count] = kGuardAfter;
+            };
+            std::array<std::uint32_t, kRadixTileWords> sentinel_tile = {};
+            sentinel_tile.fill(kRadixSentinel);
+            words[0] = byte_offset(kRadixOutKeysOffset);
+            words[1] = byte_offset(kRadixOutValuesOffset);
+            words[2] = byte_offset(kRadixInKeysOffset);
+            words[3] = byte_offset(kRadixInValuesOffset);
+            words[4] = static_cast<std::uint32_t>(kRadixElementCount);
+            initialize(
+                kRadixInKeysOffset,
+                kRadixInputKeys.data(),
+                kRadixInputKeys.size());
+            initialize(
+                kRadixInValuesOffset,
+                kRadixInputValues.data(),
+                kRadixInputValues.size());
+            initialize(
+                kRadixOutKeysOffset,
+                sentinel_tile.data(),
+                sentinel_tile.size());
+            initialize(
+                kRadixOutValuesOffset,
+                sentinel_tile.data(),
+                sentinel_tile.size());
         } else if (shape_batches_fixture_mode) {
             const auto byte_offset = [](std::size_t offset) {
                 return static_cast<std::uint32_t>(
@@ -1681,6 +1769,7 @@ DeviceResult run_device(
                               dynamic_response_fixture_mode ||
                               static_response_fixture_mode ||
                               simple_particle_fixture_mode ||
+                              radix_sort_fixture_mode ||
                               shape_batches_fixture_mode || triangles_fixture_mode
                         ? 2u
                         : 1u;
@@ -1819,6 +1908,12 @@ DeviceResult run_device(
             shader.data(),
         };
         check(vkCreateShaderModule(device, &shader_info, nullptr, &shader_module), "vkCreateShaderModule");
+        VkPipelineShaderStageRequiredSubgroupSizeCreateInfo
+            required_subgroup_size = {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO,
+                nullptr,
+                32u,
+            };
         VkPipelineShaderStageCreateInfo stage_info = {
             VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             nullptr,
@@ -1828,6 +1923,9 @@ DeviceResult run_device(
             "main",
             nullptr,
         };
+        if (radix_sort_fixture_mode) {
+            stage_info.pNext = &required_subgroup_size;
+        }
         VkComputePipelineCreateInfo pipeline_info = {
             VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
             nullptr,
@@ -2001,6 +2099,37 @@ DeviceResult run_device(
                     words + kSimpleParticleParametersOffset + 40u,
                     expected_parameters.begin()) &&
                 result.simple_particle_guards_intact;
+        } else if (radix_sort_fixture_mode) {
+            std::copy_n(
+                words + kRadixOutKeysOffset,
+                result.radix_keys.size(),
+                result.radix_keys.begin());
+            std::copy_n(
+                words + kRadixOutValuesOffset,
+                result.radix_values.size(),
+                result.radix_values.begin());
+            const auto guards_match =
+                [&](std::size_t offset, std::size_t count) {
+                    return words[offset - 1u] == kGuardBefore &&
+                        words[offset + count] == kGuardAfter;
+                };
+            result.radix_guards_intact =
+                guards_match(kRadixInKeysOffset, kRadixElementCount) &&
+                guards_match(kRadixInValuesOffset, kRadixElementCount) &&
+                guards_match(kRadixOutKeysOffset, kRadixTileWords) &&
+                guards_match(kRadixOutValuesOffset, kRadixTileWords);
+            result.pass =
+                result.radix_keys == kExpectedRadixKeys &&
+                result.radix_values == kExpectedRadixValues &&
+                std::equal(
+                    words + kRadixInKeysOffset,
+                    words + kRadixInKeysOffset + kRadixElementCount,
+                    kRadixInputKeys.begin()) &&
+                std::equal(
+                    words + kRadixInValuesOffset,
+                    words + kRadixInValuesOffset + kRadixElementCount,
+                    kRadixInputValues.begin()) &&
+                result.radix_guards_intact;
         } else if (shape_batches_fixture_mode) {
             std::copy_n(
                 words + kBoxesPositionOffset,
@@ -2663,6 +2792,8 @@ DeviceResult run_device(
         if (!result.pass) {
             result.error = simple_particle_fixture_mode
                 ? "fluid simple-particle fixture result mismatch"
+                : radix_sort_fixture_mode
+                    ? "radix sort fixture result mismatch"
                 : shape_batches_fixture_mode
                     ? "fluid shape-batch fixture result mismatch"
                     : triangles_fixture_mode
@@ -3560,6 +3691,9 @@ int main(int argc, char **argv)
     const bool simple_particle_fixture_mode =
         argc == 4 &&
         std::string(argv[2]) == "--fluid-simple-particle-fixture";
+    const bool radix_sort_fixture_mode =
+        argc == 4 &&
+        std::string(argv[2]) == "--radix-sort-fixture";
     const bool boxes_fixture_mode =
         argc == 4 &&
         std::string(argv[2]) == "--fluid-boxes-fixture";
@@ -3593,6 +3727,7 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--fluid-dynamic-response-fixture" ||
          std::string(argv[2]) == "--fluid-static-response-fixture" ||
          std::string(argv[2]) == "--fluid-simple-particle-fixture" ||
+         std::string(argv[2]) == "--radix-sort-fixture" ||
          std::string(argv[2]) == "--fluid-boxes-fixture" ||
          std::string(argv[2]) == "--fluid-capsules-fixture" ||
          std::string(argv[2]) == "--fluid-convexes-fixture" ||
@@ -3606,6 +3741,7 @@ int main(int argc, char **argv)
          !solver_fixture_mode && !collision_fixture_mode &&
          !constraints_fixture_mode && !dynamic_response_fixture_mode &&
          !static_response_fixture_mode && !simple_particle_fixture_mode &&
+         !radix_sort_fixture_mode &&
          !shape_batches_fixture_mode && !triangles_fixture_mode &&
          !sequence_fixture_mode) ||
         incomplete_named_mode) {
@@ -3625,6 +3761,7 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --fluid-dynamic-response-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-static-response-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-simple-particle-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --radix-sort-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-boxes-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-capsules-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-convexes-fixture <generated.spv>\n"
@@ -3679,8 +3816,8 @@ int main(int argc, char **argv)
         force_fixture_mode || deformable_fixture_mode || solver_fixture_mode ||
         collision_fixture_mode || constraints_fixture_mode ||
         dynamic_response_fixture_mode || static_response_fixture_mode ||
-        simple_particle_fixture_mode || shape_batches_fixture_mode ||
-        triangles_fixture_mode;
+        simple_particle_fixture_mode || radix_sort_fixture_mode ||
+        shape_batches_fixture_mode || triangles_fixture_mode;
     const bool require_memory_result =
         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
         !constant_fixture_mode && !texture_fixture_mode &&
@@ -3689,6 +3826,7 @@ int main(int argc, char **argv)
         !solver_fixture_mode && !collision_fixture_mode &&
         !constraints_fixture_mode && !dynamic_response_fixture_mode &&
         !static_response_fixture_mode && !simple_particle_fixture_mode &&
+        !radix_sort_fixture_mode &&
         !shape_batches_fixture_mode && !triangles_fixture_mode;
     std::vector<std::uint32_t> shader;
     std::array<std::vector<std::uint32_t>, 3> sequence_shaders;
@@ -3734,6 +3872,7 @@ int main(int argc, char **argv)
                     constraints_fixture_mode || dynamic_response_fixture_mode ||
                     static_response_fixture_mode ||
                     simple_particle_fixture_mode ||
+                    radix_sort_fixture_mode ||
                     shape_batches_fixture_mode || triangles_fixture_mode
                 ? argv[3]
                 : argv[2];
@@ -3773,6 +3912,7 @@ int main(int argc, char **argv)
                   dynamic_response_fixture_mode,
                   static_response_fixture_mode,
                   simple_particle_fixture_mode,
+                  radix_sort_fixture_mode,
                   shape_batches_fixture_mode,
                   convexes_fixture_mode,
                   triangles_fixture_mode);
@@ -3795,6 +3935,7 @@ int main(int argc, char **argv)
                convexes_fixture_mode ? "fluid_convexes_fixture" :
                boxes_fixture_mode ? "fluid_boxes_fixture" :
                simple_particle_fixture_mode ? "fluid_simple_particle_fixture" :
+               radix_sort_fixture_mode ? "radix_sort_fixture" :
                triangles_fixture_mode ? "fluid_triangles_fixture" :
                static_response_fixture_mode
                    ? "fluid_static_response_fixture" :
@@ -3835,6 +3976,20 @@ int main(int argc, char **argv)
                   "\"0x40400000\", \"0x11223344\"],\n"
                << "  \"expected_output_bits\": [\"0x3fe00000\", "
                   "\"0x00000000\", \"0x40440000\", \"0x00000000\"],\n";
+    } else if (radix_sort_fixture_mode) {
+        output << "  \"kernel\": \"radixSortBlocks<32,0,false>\",\n"
+               << "  \"element_count\": 10,\n"
+               << "  \"dynamic_shared_bytes\": 4096,\n"
+               << "  \"expected_keys\": [\"0x00000000\", \"0x00000001\", "
+                  "\"0x00000001\", \"0x00000007\", \"0x00010000\", "
+                  "\"0x2aaaaaab\", \"0x55555555\", \"0x80000000\", "
+                  "\"0xdeadbeef\", \"0xfffffffe\", \"0x5555aaaa\", "
+                  "\"0x5555aaaa\"],\n"
+               << "  \"expected_values\": [\"0x00000006\", \"0x00000001\", "
+                  "\"0x00000009\", \"0x00000003\", \"0x00000004\", "
+                  "\"0x00000008\", \"0x00000007\", \"0x00000002\", "
+                  "\"0x00000005\", \"0x00000000\", \"0x5555aaaa\", "
+                  "\"0x5555aaaa\"],\n";
     } else if (shape_batches_fixture_mode) {
         output << "  \"kernel\": \""
                << (convexes_fixture_mode
@@ -4046,6 +4201,15 @@ int main(int argc, char **argv)
             output << ",\n"
                    << "      \"guards_intact\": "
                    << (result.simple_particle_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (radix_sort_fixture_mode) {
+            output << "      \"output_keys\": ";
+            write_bits(result.radix_keys);
+            output << ",\n      \"output_values\": ";
+            write_bits(result.radix_values);
+            output << ",\n"
+                   << "      \"guards_intact\": "
+                   << (result.radix_guards_intact ? "true" : "false")
                    << ",\n";
         } else if (shape_batches_fixture_mode) {
             output << "      \"output_position_bits\": ";

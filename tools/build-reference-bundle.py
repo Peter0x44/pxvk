@@ -27,6 +27,7 @@ VULKAN_REPORTS = {
     "fluid_capsules": "fluid-capsules.json",
     "fluid_convexes": "fluid-convexes.json",
     "fluid_triangles": "fluid-triangles.json",
+    "radix_sort": "radix-sort.json",
     "deformable_update": "deformable-update.json",
     "deformable_solver": "deformable-solver.json",
     "deformable_collision": "deformable-collision.json",
@@ -111,6 +112,11 @@ def parse_args() -> argparse.Namespace:
         "--cuda-fluid-triangles",
         type=Path,
         help="generated cuda-fluid-triangles-fixture result",
+    )
+    parser.add_argument(
+        "--cuda-radix-sort",
+        type=Path,
+        help="generated cuda-radix-sort-fixture result",
     )
     parser.add_argument(
         "--cuda-deformable",
@@ -202,6 +208,11 @@ def main() -> int:
         if args.cuda_fluid_triangles
         else base.get("cuda", {}).get("fluid_triangles") if base else None
     )
+    cuda_radix_sort = (
+        load_json(args.cuda_radix_sort.resolve())
+        if args.cuda_radix_sort
+        else base.get("cuda", {}).get("radix_sort") if base else None
+    )
     cuda_deformable = (
         load_json(args.cuda_deformable.resolve())
         if args.cuda_deformable
@@ -233,6 +244,7 @@ def main() -> int:
         or cuda_fluid_capsules is None
         or cuda_fluid_convexes is None
         or cuda_fluid_triangles is None
+        or cuda_radix_sort is None
         or cuda_deformable is None
         or cuda_deformable_solver is None
         or cuda_deformable_collision is None
@@ -243,10 +255,10 @@ def main() -> int:
             "--cuda-fluid-constraints, --cuda-fluid-dynamic-response, "
             "--cuda-fluid-static-response, --cuda-fluid-simple-particle, "
             "--cuda-fluid-boxes, --cuda-fluid-capsules, --cuda-fluid-convexes, "
-            "--cuda-fluid-triangles, --cuda-deformable, "
+            "--cuda-fluid-triangles, --cuda-radix-sort, --cuda-deformable, "
             "--cuda-deformable-solver, --cuda-deformable-collision, and "
             "--cuda-deformable-sequence; otherwise supply --base containing "
-            "all fourteen"
+            "all fifteen"
         )
 
     profile = base.get("profile", args.profile) if base else args.profile
@@ -264,6 +276,7 @@ def main() -> int:
             "fluid_capsules": cuda_fluid_capsules,
             "fluid_convexes": cuda_fluid_convexes,
             "fluid_triangles": cuda_fluid_triangles,
+            "radix_sort": cuda_radix_sort,
             "deformable_update": cuda_deformable,
             "deformable_solver": cuda_deformable_solver,
             "deformable_collision": cuda_deformable_collision,

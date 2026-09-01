@@ -15,11 +15,11 @@ modules. Direct SPIR-V lowering covers the project oracle,
 `PxgCudaFluidCollisionCapsuleShapesBatch`,
 `PxgCudaFluidCollisionConvexShapesBatch`,
 `PxgCudaFluidCollisionTrianglesBatch`, `KernelFluidSimpleParticle`,
-`PxgCudaDeformableUpdate`,
+`radixSortBlocks<32,0,false>`, `PxgCudaDeformableUpdate`,
 `KernelDeformableUberCollision`, and `KernelDeformableUberSolver<512>`. Exact
 native/Vulkan differential fixtures cover the oracle, all twelve translated
-fluid kernels, all three translated deformable kernels, and the ordered
-deformable update/collision/solver step.
+fluid kernels, the translated radix sort kernel, all three translated
+deformable kernels, and the ordered deformable update/collision/solver step.
 
 See [`docs/charter.md`](docs/charter.md) for scope and
 [`docs/research/README.md`](docs/research/README.md) for the evidence index.
@@ -76,8 +76,8 @@ module directory:
 The suite resolves modules by their PTX entry names rather than trace-specific
 module numbers. It compiles, validates, and executes calc-hash, reorder,
 density, force, fluid collision constraints, dynamic response, static response,
-boxes, capsules, convexes, triangles, simple particle, the three focused
-deformable kernels, and the ordered deformable step.
+boxes, capsules, convexes, triangles, simple particle, radix sort blocks, the
+three focused deformable kernels, and the ordered deformable step.
 Any failed device, shader validation, guard range, or exact result returns a
 nonzero process exit code.
 

@@ -210,6 +210,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $capsulesEntry = "_Z40PxgCudaFluidCollisionCapsuleShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
     $convexesEntry = "_Z39PxgCudaFluidCollisionConvexShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
     $trianglesEntry = "_Z36PxgCudaFluidCollisionTrianglesBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK29PxgFluidCollisionWorkUnitMeshEPi"
+    $radixSortEntry = "_Z15radixSortBlocksILj32ELj0ELb0EEvP5uint4S1_S1_S1_j"
 
     $calcHashPtx = Resolve-PtxForEntry $CapturedPtxDir $calcHashEntry
     $reorderPtx = Resolve-PtxForEntry $CapturedPtxDir $reorderEntry
@@ -226,6 +227,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $capsulesPtx = Resolve-PtxForEntry $CapturedPtxDir $capsulesEntry
     $convexesPtx = Resolve-PtxForEntry $CapturedPtxDir $convexesEntry
     $trianglesPtx = Resolve-PtxForEntry $CapturedPtxDir $trianglesEntry
+    $radixSortPtx = Resolve-PtxForEntry $CapturedPtxDir $radixSortEntry
 
     Write-Host "Compiling local captured PhysX kernels and running available fixtures..."
     $fluidHashReorderManifest = Join-Path $resultDir "fluid-hash-reorder-manifest.json"
@@ -239,6 +241,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $fluidCapsulesManifest = Join-Path $resultDir "fluid-capsules-manifest.json"
     $fluidConvexesManifest = Join-Path $resultDir "fluid-convexes-manifest.json"
     $fluidTrianglesManifest = Join-Path $resultDir "fluid-triangles-manifest.json"
+    $radixSortManifest = Join-Path $resultDir "radix-sort-manifest.json"
     $deformableUpdateManifest = Join-Path $resultDir "deformable-update-manifest.json"
     $deformableSolverManifest = Join-Path $resultDir "deformable-solver-manifest.json"
     $deformableCollisionManifest = Join-Path $resultDir "deformable-collision-manifest.json"
@@ -254,6 +257,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $capsulesSpirv = Join-Path $resultDir "fluid-capsules.spv"
     $convexesSpirv = Join-Path $resultDir "fluid-convexes.spv"
     $trianglesSpirv = Join-Path $resultDir "fluid-triangles.spv"
+    $radixSortSpirv = Join-Path $resultDir "radix-sort.spv"
     $deformableUpdateSpirv = Join-Path $resultDir "deformable-update.spv"
     $deformableSolverSpirv = Join-Path $resultDir "deformable-solver.spv"
     $deformableCollisionSpirv = Join-Path $resultDir "deformable-collision.spv"
@@ -272,6 +276,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     Invoke-Checked $frontend @($capsulesPtx, $fluidCapsulesManifest)
     Invoke-Checked $frontend @($convexesPtx, $fluidConvexesManifest)
     Invoke-Checked $frontend @($trianglesPtx, $fluidTrianglesManifest)
+    Invoke-Checked $frontend @($radixSortPtx, $radixSortManifest)
     Invoke-Checked $frontend @($deformableUpdatePtx, $deformableUpdateManifest)
     Invoke-Checked $frontend @($deformableSolverPtx, $deformableSolverManifest)
     Invoke-Checked $frontend @($deformableCollisionPtx, $deformableCollisionManifest)
@@ -320,6 +325,10 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         $fluidTrianglesManifest, $trianglesSpirv
     )
     Invoke-Checked $emitter @(
+        "--entry", $radixSortEntry, "256", "4096",
+        $radixSortManifest, $radixSortSpirv
+    )
+    Invoke-Checked $emitter @(
         "--entry", $deformableUpdateEntry, "64", "0",
         $deformableUpdateManifest, $deformableUpdateSpirv
     )
@@ -344,6 +353,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         $capsulesSpirv,
         $convexesSpirv,
         $trianglesSpirv,
+        $radixSortSpirv,
         $deformableUpdateSpirv,
         $deformableSolverSpirv,
         $deformableCollisionSpirv
@@ -408,6 +418,11 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         (Join-Path $resultDir "fluid-triangles.json"),
         "--fluid-triangles-fixture",
         $trianglesSpirv
+    )
+    Invoke-Checked $memorySmoke @(
+        (Join-Path $resultDir "radix-sort.json"),
+        "--radix-sort-fixture",
+        $radixSortSpirv
     )
     Invoke-Checked $memorySmoke @(
         (Join-Path $resultDir "deformable-update.json"),

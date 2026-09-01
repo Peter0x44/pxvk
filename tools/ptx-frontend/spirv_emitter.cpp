@@ -461,7 +461,15 @@ public:
         return instruction(SpvOpLoad, ValueType::u32, {pointer.id});
     }
 
-    void store_shared(Value word_index, Value value)
+    void subgroup_barrier()
+    {
+        const Value scope = constant(ValueType::u32, 3u);
+        const Value semantics = constant(ValueType::u32, 0x108u);
+        function_instruction(
+            SpvOpControlBarrier, {scope.id, scope.id, semantics.id});
+    }
+
+    void store_shared(Value word_index, Value value, bool volatile_access = false)
     {
         const Value index = coerce(word_index, ValueType::u32);
         const Value stored = coerce(value, ValueType::u32);
@@ -469,7 +477,13 @@ public:
             SpvOpAccessChain,
             type_ptr_workgroup_u32_,
             {shared_, index.id});
-        function_instruction(SpvOpStore, {pointer.id, stored.id});
+        if (volatile_access) {
+            function_instruction(
+                SpvOpStore,
+                {pointer.id, stored.id, SpvMemoryAccessVolatileMask});
+        } else {
+            function_instruction(SpvOpStore, {pointer.id, stored.id});
+        }
     }
     void atomic_exchange_shared(Value word_index, Value value)
     {
@@ -487,13 +501,19 @@ public:
             {pointer.id, scope.id, semantics.id, stored.id});
     }
 
-    Value load_shared(Value word_index)
+    Value load_shared(Value word_index, bool volatile_access = false)
     {
         const Value index = coerce(word_index, ValueType::u32);
         const Value pointer = instruction_with_type(
             SpvOpAccessChain,
             type_ptr_workgroup_u32_,
             {shared_, index.id});
+        if (volatile_access) {
+            return instruction(
+                SpvOpLoad,
+                ValueType::u32,
+                {pointer.id, SpvMemoryAccessVolatileMask});
+        }
         return instruction(SpvOpLoad, ValueType::u32, {pointer.id});
     }
     void store_local(std::uint32_t local, Value word_index, Value value)
@@ -2281,6 +2301,7 @@ private:
             return;
         }
         if (variant == "ld.global.v4.u16" ||
+            variant == "ld.global.v4.u32" ||
             variant == "ld.global.v4.f32") {
             const Value base_address = address_operand(operands.at(1));
             const std::vector<std::string> destinations =
@@ -2304,7 +2325,9 @@ private:
                     destinations[component],
                     variant == "ld.global.v4.u16"
                         ? extract_subword(word, address, 16u, false)
-                        : module_.coerce(word, ValueType::f32));
+                        : has_modifier(instruction, "f32")
+                            ? module_.coerce(word, ValueType::f32)
+                            : word);
             }
             return;
         }
@@ -2347,7 +2370,9 @@ private:
                              ValueType::u32, component * 4u).id});
                 }
                 const Value word =
-                    module_.load_shared(word_index(address));
+                    module_.load_shared(
+                        word_index(address),
+                        has_modifier(instruction, "volatile"));
                 define_register(
                     destinations[component],
                     has_modifier(instruction, "f32")
@@ -2365,7 +2390,9 @@ private:
         if (base == "ld" && has_modifier(instruction, "shared")) {
             const Value address = address_operand(operands.at(1));
             const Value loaded =
-                module_.load_shared(word_index(address));
+                module_.load_shared(
+                    word_index(address),
+                    has_modifier(instruction, "volatile"));
             const Value value =
                 has_modifier(instruction, "u8")
                     ? extract_subword(loaded, address, 8u, false)
@@ -2468,7 +2495,17 @@ private:
                              ValueType::u32,
                              static_cast<std::uint32_t>(component)).id});
                 }
-                module_.store_shared(index, read_register(sources[component]));
+                module_.store_shared(
+                    index,
+                    read_register(sources[component]),
+                    has_modifier(instruction, "volatile"));
+            }
+            if (has_modifier(instruction, "volatile")) {
+                // Warp-synchronous sm_52 code assumes lanes observe each
+                // other's shared stores without a block barrier. Vulkan gives
+                // no such guarantee, so close each volatile store with a
+                // subgroup barrier (execution + workgroup memory).
+                module_.subgroup_barrier();
             }
             return;
         }

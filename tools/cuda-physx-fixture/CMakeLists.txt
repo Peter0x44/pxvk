@@ -99,6 +99,12 @@ target_compile_features(cuda-fluid-triangles-fixture PRIVATE c_std_11)
 target_compile_definitions(
     cuda-fluid-triangles-fixture PRIVATE _WIN32_WINNT=0x0601)
 
+add_executable(cuda-radix-sort-fixture radix_sort.c)
+target_include_directories(
+    cuda-radix-sort-fixture PRIVATE "${CUDA_DRIVER_INCLUDE_DIR}")
+target_compile_features(cuda-radix-sort-fixture PRIVATE c_std_11)
+target_compile_definitions(cuda-radix-sort-fixture PRIVATE _WIN32_WINNT=0x0601)
+
 add_executable(cuda-deformable-sequence-fixture sequence.c)
 target_include_directories(
     cuda-deformable-sequence-fixture PRIVATE "${CUDA_DRIVER_INCLUDE_DIR}")
@@ -120,6 +126,7 @@ if(MSVC)
             cuda-fluid-capsules-fixture
             cuda-fluid-convexes-fixture
             cuda-fluid-triangles-fixture
+            cuda-radix-sort-fixture
             cuda-deformable-sequence-fixture)
         target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
         target_compile_options(${target} PRIVATE /W4)
@@ -138,6 +145,7 @@ else()
             cuda-fluid-capsules-fixture
             cuda-fluid-convexes-fixture
             cuda-fluid-triangles-fixture
+            cuda-radix-sort-fixture
             cuda-deformable-sequence-fixture)
         target_compile_options(${target} PRIVATE -Wall -Wextra)
         if(MINGW)
