@@ -160,6 +160,21 @@ retain the added forms. The focused active-constraint fixture consumes the
 constraints output layout and matches native CUDA exactly on Intel and NVIDIA
 Vulkan adapters.
 
+`PxgCudaFluidCollisionTrianglesBatch` adds finite 64-bit integer register,
+shared-memory, arithmetic, comparison, select, conversion, and count-leading-zero
+lowering. Its 1,022 instructions lower to a deterministic 68,441-word module
+with local size 64 and 4,912 bytes of static shared memory. The selected entry
+requires Vulkan `shaderInt64`; the focused zero-triangle fixture matches native
+CUDA on Intel and NVIDIA Vulkan adapters but does not cover triangle contact.
+
+`PxgCudaFluidCollisionStaticResponseBatch` adds two-component shared `u32`
+loads. Its 330 instructions lower to a deterministic 22,632-word module with
+local size 128 and 304 bytes of static shared memory. The focused active-contact
+fixture covers normalization, averaging, restitution, output compaction, and
+particle/source pairing and matches native CUDA exactly on Intel and NVIDIA
+Vulkan adapters. Alternate flags, tangential damping, distance clamping, and
+plane projection remain uncovered.
+
 Validate and execute the module:
 
 ```powershell
@@ -273,7 +288,7 @@ The frontend does not yet provide:
 - general type inference beyond declared register banks and the 147 finite
   opcode contracts;
 - reachability or dead-code elimination;
-- SPIR-V emission beyond the project oracle and the nine launched entries
+- SPIR-V emission beyond the project oracle and the eleven launched entries
   marked **Exact fixture** in
   [`../../docs/research/kernel-status.md`](../../docs/research/kernel-status.md);
 - shader caching;

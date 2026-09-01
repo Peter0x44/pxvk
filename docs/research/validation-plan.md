@@ -8,12 +8,13 @@ numerical correctness.
 
 The project has a committed native NVIDIA semantic oracle for f32,
 `bar.sync 0`, invocation-private local memory, and signed-coordinate `u32`/`f32`
-linear textures. Repeatable native RTX fixtures for all seven translated fluid
+linear textures. Repeatable native RTX fixtures for all eight translated fluid
 kernels and all three captured deformable kernels pass bit-for-bit through
 Vulkan on Intel and RTX, including guard ranges. An ordered three-kernel
 deformable step also passes with one shared heap and explicit compute barriers.
 It is trace-shaped but synthetic: zero shapes and zero solver iterations.
-Captured in-game state remains a later integration gate.
+The focused fluid fixtures also cover only named synthetic branches, not broad
+input distributions. Captured in-game state remains a later integration gate.
 
 This document defines pass/fail evidence. It does not select the permanent test
 framework, runtime language, shader compiler, or architecture.
@@ -228,15 +229,25 @@ zero-triangle work unit preserves position, old position, and state words with
 intact guards on native RTX and translated Intel/RTX. It covers the empty-mesh
 branch, not a non-empty triangle contact.
 
+`PxgCudaFluidCollisionStaticResponseBatch` is the eleventh captured entry to
+compile and execute. Its 330 instructions emit a deterministic 22,632-word
+module at local size 128 with 304 bytes of static shared memory. A focused
+active-contact record exercises contact normalization, position averaging,
+restitution response, output compaction, and particle/source pairing. Native
+RTX and translated Intel/RTX match all output bits and guards. Alternate
+contact flags, tangential damping, distance clamping, and plane projection
+remain uncovered.
+
 `PxgCudaDeformableUpdate`, `KernelDeformableUberCollision`, and
 `KernelDeformableUberSolver<512>` are the fifth through seventh captured entries
 to compile and execute. Liveness-based reuse of non-interfering PTX register
 slots produces deterministic 9,792-, 175,407-, and 80,354-word SPIR-V modules;
 all pass Vulkan 1.2 validation. Native RTX and translated Intel/RTX match exact
 output bits and guard ranges for all three focused fixtures. Collision uses the
-captured local size 64 and 4,097-byte static shared layout; solver uses local
-size 64 and the captured 7,072-byte dynamic shared allocation. The other six
-launched entries remain parse/type/CFG validated rather than lowered.
+captured local size 64 and 4,097-byte static shared layout; the solver uses
+local size 64 and the captured 7,072-byte dynamic shared allocation.
+The other five launched entries remain parse/type/CFG validated
+rather than lowered.
 
 The same three modules also execute as one ordered step. Native CUDA queues
 update, collision, and solver on the default stream without intermediate host

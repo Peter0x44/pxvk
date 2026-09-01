@@ -537,6 +537,63 @@
       "guards_intact": true,
       "pass": true
     },
+    "fluid_static_response": {
+      "schema_version": 1,
+      "device": "NVIDIA GeForce RTX 3070 Laptop GPU",
+      "kernel": "PxgCudaFluidCollisionStaticResponseBatch",
+      "particle_count": 1,
+      "input_constraint_flags": "0x00000001",
+      "collision_radius_bits": "0x3f800000",
+      "restitution_bits": "0x3f000000",
+      "input_normal_bits": [
+        "0x3f800000",
+        "0x00000000",
+        "0x00000000",
+        "0xdeadbeef"
+      ],
+      "input_accumulated_position_bits": [
+        "0x40e00000",
+        "0x41000000",
+        "0x41100000",
+        "0xcafebabe"
+      ],
+      "input_particle_velocity_bits": [
+        "0xc0000000",
+        "0x40400000",
+        "0x00000000",
+        "0xbaadf00d"
+      ],
+      "output_normal_bits": [
+        "0x3f800000",
+        "0x00000000",
+        "0x00000000",
+        "0xbaadf00d"
+      ],
+      "output_position_bits": [
+        "0x40e00000",
+        "0x41000000",
+        "0x41100000",
+        "0x00000000"
+      ],
+      "output_velocity_bits": [
+        "0x3f800000",
+        "0x40400000",
+        "0x00000000",
+        "0x00000000"
+      ],
+      "output_response_bits": [
+        "0x3f800000",
+        "0x00000000",
+        "0x00000000",
+        "0x00000000"
+      ],
+      "output_particle_pair": [
+        "0x00000000",
+        "0x12345678"
+      ],
+      "guards_intact": true,
+      "pass": true
+    },
     "fluid_triangles": {
       "schema_version": 1,
       "device": "NVIDIA GeForce RTX 3070 Laptop GPU",
@@ -3399,6 +3456,121 @@
           "output_weight_bits": "0x3f800000",
           "output_destination_id": "0x12345678",
           "output_constraint_flags": "0x00000000",
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        }
+      ]
+    },
+    "fluid_static_response": {
+      "schema_version": 1,
+      "pointer_bits": 32,
+      "test": "fluid_static_response_fixture",
+      "buffer_bytes": 33554432,
+      "kernel": "PxgCudaFluidCollisionStaticResponseBatch",
+      "particle_count": 1,
+      "input_constraint_flags": "0x00000001",
+      "collision_radius_bits": "0x3f800000",
+      "restitution_bits": "0x3f000000",
+      "static_shared_bytes": 304,
+      "expected_position_bits": [
+        "0x40e00000",
+        "0x41000000",
+        "0x41100000",
+        "0x00000000"
+      ],
+      "expected_velocity_bits": [
+        "0x3f800000",
+        "0x40400000",
+        "0x00000000",
+        "0x00000000"
+      ],
+      "expected_response_bits": [
+        "0x3f800000",
+        "0x00000000",
+        "0x00000000",
+        "0x00000000"
+      ],
+      "spirv_words": 22632,
+      "devices": [
+        {
+          "index": 0,
+          "name": "Intel(R) UHD Graphics",
+          "vendor_id": "0x00008086",
+          "device_id": "0x00009a60",
+          "api_version": "1.4.323",
+          "driver_version_raw": 1661869,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "output_normal_bits": [
+            "0x3f800000",
+            "0x00000000",
+            "0x00000000",
+            "0xbaadf00d"
+          ],
+          "output_position_bits": [
+            "0x40e00000",
+            "0x41000000",
+            "0x41100000",
+            "0x00000000"
+          ],
+          "output_velocity_bits": [
+            "0x3f800000",
+            "0x40400000",
+            "0x00000000",
+            "0x00000000"
+          ],
+          "output_response_bits": [
+            "0x3f800000",
+            "0x00000000",
+            "0x00000000",
+            "0x00000000"
+          ],
+          "output_particle_pair": [
+            "0x00000000",
+            "0x12345678"
+          ],
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        },
+        {
+          "index": 1,
+          "name": "NVIDIA GeForce RTX 3070 Laptop GPU",
+          "vendor_id": "0x000010de",
+          "device_id": "0x000024dd",
+          "api_version": "1.4.341",
+          "driver_version_raw": 2559967232,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "output_normal_bits": [
+            "0x3f800000",
+            "0x00000000",
+            "0x00000000",
+            "0xbaadf00d"
+          ],
+          "output_position_bits": [
+            "0x40e00000",
+            "0x41000000",
+            "0x41100000",
+            "0x00000000"
+          ],
+          "output_velocity_bits": [
+            "0x3f800000",
+            "0x40400000",
+            "0x00000000",
+            "0x00000000"
+          ],
+          "output_response_bits": [
+            "0x3f800000",
+            "0x00000000",
+            "0x00000000",
+            "0x00000000"
+          ],
+          "output_particle_pair": [
+            "0x00000000",
+            "0x12345678"
+          ],
           "guards_intact": true,
           "pass": true,
           "error": ""

@@ -33,6 +33,7 @@
     st.shared.v4.u32 [collision_probe_shared], {%r1, %r2, %r2, %r1};
     bar.sync 0;
     ld.shared.v4.u32 {%r4, %r5, %r6, %r7}, [collision_probe_shared];
+    ld.shared.v2.u32 {%r8, %r9}, [collision_probe_shared+8];
     mov.u64 %rd1, 1;
     shl.b64 %rd2, %rd1, %r2;
     or.b64 %rd3, %rd1, %rd2;
@@ -49,6 +50,8 @@
     cvt.u32.u64 %r9, %rd8;
     min.u32 %r9, %r8, %r9;
     setp.eq.b16 %p1, %rs1, %rs2;
+    and.b16 %rs7, %rs4, 2;
+    setp.eq.s16 %p1, %rs7, 0;
     setp.ge.ftz.f32 %p2, %f1, %f2;
     setp.le.ftz.f32 %p3, %f1, %f2;
     setp.gtu.ftz.f32 %p4, %f1, %f2;

@@ -369,6 +369,28 @@ and
 `fe47f95a513774bc49f316283b15b6f1e6077cd7e4a19944c2bd66ff15f5f36d`.
 This fixture does not yet cover the non-empty triangle-contact path.
 
+`PxgCudaFluidCollisionStaticResponseBatch` is the eleventh captured entry to
+compile and execute. It contains 330 instructions in 47 basic blocks with 69
+CFG edges, a 20-byte packed parameter block, 304 bytes of static shared memory,
+and local size 128. Finite lowering adds two-component shared `u32` loads; the
+redistributable collision-type probe retains that form plus the entry's 16-bit
+mask and comparison forms. The deterministic 22,632-word module passes Vulkan
+1.2 validation; SHA-256 is
+`5dadeecbde444d20956e9d7a6ab8fcb3f8ab650890033f66fd1a2d00fbe7f37e`.
+
+The focused active-contact fixture uses unit X normal, accumulated position
+`[7,8,9]`, count one, zero body velocity, particle velocity `[-2,3,0]`,
+collision radius `1.0f`, and restitution `0.5f`. Native CUDA and PTX-derived
+Intel/RTX Vulkan normalize the contact, average and compact position `[7,8,9]`,
+resolve and compact velocity `[1,3,0]`, emit unit X response and the
+particle/source pair, and preserve every guard. Native and Vulkan report
+SHA-256 values are
+`1009b3ab0d85b6133d5053826852e3a213cb0c57111676689465b7e955e3f709`
+and
+`1381934743e92a95ecf61a98274df4d314f2481609b33679fd2e4834528ff937`.
+Alternate contact flags, tangential damping, position-distance clamping, and
+plane projection remain untested.
+
 The first deformable-family entry, `PxgCudaDeformableUpdate`, contains the
 finite unsigned `setp.lt.u32` comparison and bitwise `selp.b32` select variants.
 Both lower directly to SPIR-V unsigned comparison and `OpSelect`; the committed
@@ -504,8 +526,8 @@ Reproduce the complete portable path from the repository root:
 
 The directory must contain the extracted modules named in
 `kernel-status.md`. The script parses, emits, validates when `spirv-val.exe` is
-available, and executes all nine translated entries plus the ordered deformable
-step. Proprietary PTX and generated derivatives remain local.
+available, and executes all eleven translated entries plus the ordered
+deformable step. Proprietary PTX and generated derivatives remain local.
 
 The emitted modules declare float32 `RoundingModeRTE` and
 `SignedZeroInfNanPreserve`. All three probed target GPUs advertise those

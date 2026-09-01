@@ -2328,6 +2328,7 @@ private:
             return;
         }
         if (variant == "ld.shared.v2.f32" ||
+            variant == "ld.shared.v2.u32" ||
             variant == "ld.shared.v4.f32" ||
             variant == "ld.shared.v4.u32") {
             const Value base_address = address_operand(operands.at(1));

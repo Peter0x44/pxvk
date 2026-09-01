@@ -14,11 +14,11 @@ standalone JSON report; `tools/build-reference-bundle.py` stores it at
 
 The original native report had SHA-256
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Nine native runner reports are stored in the deterministic reference bundle:
+Ten native runner reports are stored in the deterministic reference bundle:
 the semantic oracle, four-kernel fluid pipeline, focused fluid constraints,
-dynamic response, and triangles, all three focused deformable workloads, and
-the ordered deformable step. The bundle has SHA-256
-`bb98605c68bd748d9179117d3cfedc6472eaf34956b9f78aee5c4af55ed990ac`.
+dynamic response, static response, and triangles, all three focused deformable
+workloads, and the ordered deformable step. The bundle has SHA-256
+`1159964774799ef7c5bec4f4d56641ba6ef25769876ac03ad43858068a0b3e5f`.
 
 ## Environment
 
@@ -84,6 +84,26 @@ the copied destination ID, and cleared constraint flags. All guards remain
 intact; three native reports are byte-identical. The native report SHA-256 is
 `aadb855952a6fc76c9ac148841aa50e3366511eb9d08f8b7ac15269ed6e113f0`;
 the report is supplied as `--cuda-fluid-dynamic-response`.
+
+The focused static-response report uses the extracted static-response module:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-fluid-static-response-fixture.exe `
+  .\local-ptx\fatbin_0004.ptx `
+  .\native-fluid-static-response.json
+```
+
+It launches `PxgCudaFluidCollisionStaticResponseBatch` for one active contact
+with unit X normal, accumulated position `[7,8,9]`, count one, zero body
+velocity, particle velocity `[-2,3,0]`, collision radius `1.0f`, and restitution
+`0.5f`. The kernel normalizes the contact, averages and compacts position
+`[7,8,9]`, resolves and compacts velocity `[1,3,0]`, writes unit X response and
+the particle/source pair, and preserves every guard. The native report SHA-256
+is
+`1009b3ab0d85b6133d5053826852e3a213cb0c57111676689465b7e955e3f709`;
+the report is supplied as `--cuda-fluid-static-response`. This fixture does not
+cover alternate contact flags, tangential damping, position-distance clamping,
+or plane projection.
 
 The focused triangle-collision report uses the extracted triangle module:
 

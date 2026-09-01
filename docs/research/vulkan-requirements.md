@@ -160,6 +160,14 @@ response branch. Native RTX and translated Intel/RTX match the cleared
 accumulators, averaged position, resolved velocity, response vector, unit
 weight, copied ID, cleared flags, and guards bit-for-bit.
 
+The captured 22,632-word `PxgCudaFluidCollisionStaticResponseBatch` module uses
+bindings 0/1, local size 128, and 304 bytes of static shared memory. Its active
+contact fixture exercises shared `v2.u32`, 16-bit masks/comparisons, normal
+normalization, restitution, output compaction, and particle/source pairing.
+Native RTX and translated Intel/RTX match every output bit and guard. Alternate
+contact flags, tangential damping, distance clamping, and plane projection
+remain uncovered.
+
 The captured 68,441-word `PxgCudaFluidCollisionTrianglesBatch` module uses
 bindings 0/1, local size 64, and 4,912 bytes of static shared memory. It enables
 core `shaderInt64` for the entry's 64-bit triangle candidate mask; other

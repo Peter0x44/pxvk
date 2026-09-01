@@ -34,7 +34,7 @@ The `Module` column uses the stable semantic numbering from the corpus report.
 | `0005` | `fatbin_0002.ptx` | `PxgCudaFluidCollisionConstraintsBatch` | 20 B | 1,840 B | 0 | Exact fixture | Focused one-particle no-contact fixture |
 | `0007` | `fatbin_0003.ptx` | `PxgCudaFluidCollisionDynamicResponseBatch` | 20 B | 304 B | 0 | Exact fixture | Focused one-particle active-constraint response |
 | `0008` | `fatbin_0016.ptx` | `PxgCudaDeformableUpdate` | 12 B | 0 | 0 | Exact fixture | Focused fixture and ordered deformable step |
-| `0009` | `fatbin_0004.ptx` | `PxgCudaFluidCollisionStaticResponseBatch` | 20 B | 304 B | 0 | Not translated | — |
+| `0009` | `fatbin_0004.ptx` | `PxgCudaFluidCollisionStaticResponseBatch` | 20 B | 304 B | 0 | Exact fixture | Focused one-particle active static response |
 | `0010` | `fatbin_0012.ptx` | `KernelFluidDensity` | 84 B | 0 | 0 | Exact fixture | Focused fixture and four-kernel fluid fixture |
 | `0011` | `fatbin_0015.ptx` | `KernelDeformableUberCollision` | 4 B | 4,097 B | 0 | Exact fixture | Focused fixture and ordered deformable step |
 | `0012` | `fatbin_0017.ptx` | `KernelDeformableUberSolver<512>` | 16 B | 0 | 7,072 B | Exact fixture | Focused fixture and ordered deformable step |
@@ -44,8 +44,8 @@ The `Module` column uses the stable semantic numbering from the corpus report.
 | `0015` | `fatbin_0007.ptx` | `PxgCudaFluidCollisionBoxShapesBatch` | 20 B | 6,752 B | 0 | Not translated | — |
 | `0016` | `fatbin_0013.ptx` | `KernelFluidForce` | 100 B | 0 | 0 | Exact fixture | Focused fixture and four-kernel fluid fixture |
 
-Ten of sixteen launched entries have exact native/Vulkan fixtures. Six remain.
-Module `0006` contains only collision constants. Module `0017` contains five
+Eleven of sixteen launched entries have exact native/Vulkan fixtures. Five
+remain. Module `0006` contains only collision constants. Module `0017` contains
 resolved deformable self-collision entries, but none launched in the captured
 routes, so they are outside this ledger and the initial compatibility target.
 
