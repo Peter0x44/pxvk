@@ -410,6 +410,25 @@ and
 `fddd4e5d911c6d1d499eb03cccc8ef42cd003105c3d92b1c12b06fdfabe0e8b6`.
 No box-contact geometry is covered.
 
+`PxgCudaFluidCollisionCapsuleShapesBatch` is the thirteenth captured entry to
+compile and execute. It contains 1,312 instructions in 159 basic blocks with
+248 CFG edges, a 20-byte packed parameter block, 2,816 bytes of static shared
+memory, and local size 64. Its finite instruction surface was already covered
+by the translated collision entries. The deterministic 103,800-word module
+passes Vulkan 1.2 validation; SHA-256 is
+`fa57a13142c49fcbea4279acd9860aab2aa275a82dca702b658d30133594b3b0`.
+
+The focused fixture uses the minimum trace-observed two-work-unit grid with one
+particle and zero capsules. It crosses five shared-memory barriers, copies both
+80-byte shape-start records and both parameter blocks, loads position and old
+position, and takes the empty-shape exit. Native CUDA and PTX-derived Intel/RTX
+Vulkan preserve both vectors and every guard bit-for-bit. Native and Vulkan
+report SHA-256 values are
+`e52b66988554fecd599f8ae48daf1726ee97a6c36228ea51f27890e98478d4a4`
+and
+`1642ce984d610bc860bdba6d3c1167d596fce99b10ba60ac61c25c773a5b1a2a`.
+No capsule-contact geometry is covered.
+
 The first deformable-family entry, `PxgCudaDeformableUpdate`, contains the
 finite unsigned `setp.lt.u32` comparison and bitwise `selp.b32` select variants.
 Both lower directly to SPIR-V unsigned comparison and `OpSelect`; the committed
@@ -545,7 +564,7 @@ Reproduce the complete portable path from the repository root:
 
 The directory must contain the extracted modules named in
 `kernel-status.md`. The script parses, emits, validates when `spirv-val.exe` is
-available, and executes all twelve translated entries plus the ordered
+available, and executes all thirteen translated entries plus the ordered
 deformable step. Proprietary PTX and generated derivatives remain local.
 
 The emitted modules declare float32 `RoundingModeRTE` and

@@ -628,6 +628,40 @@
       "guards_intact": true,
       "pass": true
     },
+    "fluid_capsules": {
+      "schema_version": 1,
+      "device": "NVIDIA GeForce RTX 3070 Laptop GPU",
+      "kernel": "PxgCudaFluidCollisionCapsuleShapesBatch",
+      "work_unit_count": 2,
+      "particle_count": 1,
+      "capsule_count": 0,
+      "input_position_bits": [
+        "0x3fc00000",
+        "0xc0100000",
+        "0x40700000",
+        "0x11223344"
+      ],
+      "input_old_position_bits": [
+        "0x3f800000",
+        "0xc0000000",
+        "0x40400000",
+        "0x55667788"
+      ],
+      "output_position_bits": [
+        "0x3fc00000",
+        "0xc0100000",
+        "0x40700000",
+        "0x11223344"
+      ],
+      "output_old_position_bits": [
+        "0x3f800000",
+        "0xc0000000",
+        "0x40400000",
+        "0x55667788"
+      ],
+      "guards_intact": true,
+      "pass": true
+    },
     "fluid_triangles": {
       "schema_version": 1,
       "device": "NVIDIA GeForce RTX 3070 Laptop GPU",
@@ -3634,6 +3668,82 @@
         "0x55667788"
       ],
       "spirv_words": 61420,
+      "devices": [
+        {
+          "index": 0,
+          "name": "Intel(R) UHD Graphics",
+          "vendor_id": "0x00008086",
+          "device_id": "0x00009a60",
+          "api_version": "1.4.323",
+          "driver_version_raw": 1661869,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "output_position_bits": [
+            "0x3fc00000",
+            "0xc0100000",
+            "0x40700000",
+            "0x11223344"
+          ],
+          "output_old_position_bits": [
+            "0x3f800000",
+            "0xc0000000",
+            "0x40400000",
+            "0x55667788"
+          ],
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        },
+        {
+          "index": 1,
+          "name": "NVIDIA GeForce RTX 3070 Laptop GPU",
+          "vendor_id": "0x000010de",
+          "device_id": "0x000024dd",
+          "api_version": "1.4.341",
+          "driver_version_raw": 2559967232,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "output_position_bits": [
+            "0x3fc00000",
+            "0xc0100000",
+            "0x40700000",
+            "0x11223344"
+          ],
+          "output_old_position_bits": [
+            "0x3f800000",
+            "0xc0000000",
+            "0x40400000",
+            "0x55667788"
+          ],
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        }
+      ]
+    },
+    "fluid_capsules": {
+      "schema_version": 1,
+      "pointer_bits": 32,
+      "test": "fluid_capsules_fixture",
+      "buffer_bytes": 33554432,
+      "kernel": "PxgCudaFluidCollisionCapsuleShapesBatch",
+      "work_unit_count": 2,
+      "particle_count": 1,
+      "capsule_count": 0,
+      "static_shared_bytes": 2816,
+      "expected_position_bits": [
+        "0x3fc00000",
+        "0xc0100000",
+        "0x40700000",
+        "0x11223344"
+      ],
+      "expected_old_position_bits": [
+        "0x3f800000",
+        "0xc0000000",
+        "0x40400000",
+        "0x55667788"
+      ],
+      "spirv_words": 103800,
       "devices": [
         {
           "index": 0,

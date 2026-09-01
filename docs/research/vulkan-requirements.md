@@ -175,6 +175,14 @@ and verifies both 80-byte shape-start records, parameter copies, particle loads,
 and the empty-shape exit. Native RTX and translated Intel/RTX preserve position,
 old position, and all guards exactly. Box-contact geometry remains uncovered.
 
+The captured 103,800-word `PxgCudaFluidCollisionCapsuleShapesBatch` module uses
+bindings 0/1, the minimum trace-observed two-work-unit dispatch, local size 64,
+and 2,816 bytes of static shared memory. Its zero-capsule fixture crosses five
+barriers and verifies both 80-byte shape-start records, parameter copies,
+particle loads, and the empty-shape exit. Native RTX and translated Intel/RTX
+preserve position, old position, and all guards exactly. Capsule-contact
+geometry remains uncovered.
+
 The captured 68,441-word `PxgCudaFluidCollisionTrianglesBatch` module uses
 bindings 0/1, local size 64, and 4,912 bytes of static shared memory. It enables
 core `shaderInt64` for the entry's 64-bit triangle candidate mask; other

@@ -14,11 +14,12 @@ standalone JSON report; `tools/build-reference-bundle.py` stores it at
 
 The original native report had SHA-256
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Eleven native runner reports are stored in the deterministic reference bundle:
+Twelve native runner reports are stored in the deterministic reference bundle:
 the semantic oracle, four-kernel fluid pipeline, focused fluid constraints,
-dynamic response, static response, boxes, and triangles, all three focused
-deformable workloads, and the ordered deformable step. The bundle has SHA-256
-`82345746e422a1d47ea187b045b7207f26813b0bb69393f5ea1175feadb5ca4b`.
+dynamic response, static response, boxes, capsules, and triangles, all three
+focused deformable workloads, and the ordered deformable step. The bundle has
+SHA-256
+`293c096bde73d53769234fe8dc5a6858e36366fb45c0bd4ae175f1d31d6151ce`.
 
 ## Environment
 
@@ -139,6 +140,24 @@ SHA-256 is
 `2ff6c3f8215d59d39cfc0ef9b6041615aad883b755be724cf08a82faca93d121`;
 the report is supplied as `--cuda-fluid-boxes`. This fixture does not cover a
 box-contact record.
+
+The focused capsule-collision report uses the extracted capsule module:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-fluid-capsules-fixture.exe `
+  .\local-ptx\fatbin_0006.ptx `
+  .\native-fluid-capsules.json
+```
+
+It launches `PxgCudaFluidCollisionCapsuleShapesBatch` with the minimum
+trace-observed two-work-unit grid, one particle, and zero capsules. Both
+workgroups cross five shared-memory barriers and copy their 80-byte shape-start
+records and parameter blocks; the active workgroup also loads position and old
+position before the empty-shape exit. Both vectors and every guard remain
+intact. The native report SHA-256 is
+`e52b66988554fecd599f8ae48daf1726ee97a6c36228ea51f27890e98478d4a4`;
+the report is supplied as `--cuda-fluid-capsules`. This fixture does not cover a
+capsule-contact record.
 
 The focused deformable report uses the extracted PhysX module on the native
 NVIDIA reference system:

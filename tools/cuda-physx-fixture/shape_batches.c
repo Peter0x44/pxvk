@@ -9,9 +9,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef PXVK_CAPSULE_FIXTURE
+#define KERNEL_NAME                                                            \
+  "_Z40PxgCudaFluidCollisionCapsuleShapesBatchD11PxgGpuArrayIK32PxgFluidCol" \
+  "lisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
+#define KERNEL_LABEL "PxgCudaFluidCollisionCapsuleShapesBatch"
+#define SHAPE_COUNT_LABEL "capsule_count"
+#define SHAPE_LABEL "capsule"
+#define FIXTURE_NAME "cuda-fluid-capsules-fixture"
+#else
 #define KERNEL_NAME                                                            \
   "_Z36PxgCudaFluidCollisionBoxShapesBatchD11PxgGpuArrayIK32PxgFluidCollisio" \
   "nShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
+#define KERNEL_LABEL "PxgCudaFluidCollisionBoxShapesBatch"
+#define SHAPE_COUNT_LABEL "box_count"
+#define SHAPE_LABEL "box"
+#define FIXTURE_NAME "cuda-fluid-boxes-fixture"
+#endif
 #define GUARD_BEFORE 0x13579bdfu
 #define GUARD_AFTER 0x2468ace0u
 #define HEAP_WORDS 160u
@@ -217,8 +231,7 @@ int main(int argc, char **argv) {
   size_t record;
 
   if (argc != 3) {
-    fprintf(stderr,
-            "usage: cuda-fluid-boxes-fixture <boxes.ptx> <output.json>\n");
+    fprintf(stderr, "usage: " FIXTURE_NAME " <shapes.ptx> <output.json>\n");
     return 2;
   }
   if (!load_cuda(&api))
@@ -300,10 +313,10 @@ int main(int argc, char **argv) {
           "{\n"
           "  \"schema_version\": 1,\n"
           "  \"device\": \"%s\",\n"
-          "  \"kernel\": \"PxgCudaFluidCollisionBoxShapesBatch\",\n"
+          "  \"kernel\": \"" KERNEL_LABEL "\",\n"
           "  \"work_unit_count\": 2,\n"
           "  \"particle_count\": 1,\n"
-          "  \"box_count\": 0,\n"
+          "  \"" SHAPE_COUNT_LABEL "\": 0,\n"
           "  \"input_position_bits\": ",
           device_name);
   write_words(output, input_position, 4u);
@@ -321,7 +334,8 @@ int main(int argc, char **argv) {
           guards_intact ? "true" : "false", pass ? "true" : "false");
   fclose(output);
   output = NULL;
-  printf("%s  %s: zero-box position=[0x%08x,0x%08x,0x%08x,0x%08x]\n",
+  printf("%s  %s: zero-" SHAPE_LABEL
+         " position=[0x%08x,0x%08x,0x%08x,0x%08x]\n",
          pass ? "PASS" : "FAIL", device_name, heap[POSITION_OFFSET],
          heap[POSITION_OFFSET + 1u], heap[POSITION_OFFSET + 2u],
          heap[POSITION_OFFSET + 3u]);
