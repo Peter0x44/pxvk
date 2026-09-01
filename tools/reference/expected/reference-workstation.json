@@ -1244,6 +1244,41 @@
       "guards_intact": true,
       "pass": true
     },
+    "sample_cloth_solver": {
+      "schema_version": 1,
+      "device": "NVIDIA GeForce RTX 3070 Laptop GPU",
+      "kernel": "KernelDeformableUberSolver<512>",
+      "particle_count": 1,
+      "iteration_count": 0,
+      "local_size_x": 512,
+      "dynamic_shared_bytes": 42240,
+      "output_bits": [
+        "0x3f800000",
+        "0x40000000",
+        "0x40400000",
+        "0x00000400",
+        "0x41f00000",
+        "0x41f80000",
+        "0x42000000",
+        "0xabcdef01",
+        "0xc1100000",
+        "0xc1100000",
+        "0xc1100000",
+        "0x00000000",
+        "0x41a00000",
+        "0x41a80000",
+        "0x41b00000",
+        "0x00000000"
+      ],
+      "position_bits": [
+        "0xc1100000",
+        "0xc1100000",
+        "0xc1100000",
+        "0x00000000"
+      ],
+      "guards_intact": true,
+      "pass": true
+    },
     "deformable_collision": {
       "schema_version": 1,
       "device": "NVIDIA GeForce RTX 3070 Laptop GPU",
@@ -5022,8 +5057,99 @@
       "kernel": "KernelDeformableUberSolver<512>",
       "particle_count": 1,
       "iteration_count": 0,
+      "local_size_x": 64,
       "dynamic_shared_bytes": 7072,
+      "shared_backing": "workgroup",
       "spirv_words": 80354,
+      "devices": [
+        {
+          "index": 0,
+          "name": "Intel(R) UHD Graphics",
+          "vendor_id": "0x00008086",
+          "device_id": "0x00009a60",
+          "api_version": "1.4.323",
+          "driver_version_raw": 1661869,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "output_bits": [
+            "0x3f800000",
+            "0x40000000",
+            "0x40400000",
+            "0x00000400",
+            "0x41f00000",
+            "0x41f80000",
+            "0x42000000",
+            "0xabcdef01",
+            "0xc1100000",
+            "0xc1100000",
+            "0xc1100000",
+            "0x00000000",
+            "0x41a00000",
+            "0x41a80000",
+            "0x41b00000",
+            "0x00000000"
+          ],
+          "position_bits": [
+            "0xc1100000",
+            "0xc1100000",
+            "0xc1100000",
+            "0x00000000"
+          ],
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        },
+        {
+          "index": 1,
+          "name": "NVIDIA GeForce RTX 3070 Laptop GPU",
+          "vendor_id": "0x000010de",
+          "device_id": "0x000024dd",
+          "api_version": "1.4.341",
+          "driver_version_raw": 2559967232,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "output_bits": [
+            "0x3f800000",
+            "0x40000000",
+            "0x40400000",
+            "0x00000400",
+            "0x41f00000",
+            "0x41f80000",
+            "0x42000000",
+            "0xabcdef01",
+            "0xc1100000",
+            "0xc1100000",
+            "0xc1100000",
+            "0x00000000",
+            "0x41a00000",
+            "0x41a80000",
+            "0x41b00000",
+            "0x00000000"
+          ],
+          "position_bits": [
+            "0xc1100000",
+            "0xc1100000",
+            "0xc1100000",
+            "0x00000000"
+          ],
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        }
+      ]
+    },
+    "sample_cloth_solver": {
+      "schema_version": 1,
+      "pointer_bits": 32,
+      "test": "sample_cloth_solver_fixture",
+      "buffer_bytes": 33554432,
+      "kernel": "KernelDeformableUberSolver<512>",
+      "particle_count": 1,
+      "iteration_count": 0,
+      "local_size_x": 512,
+      "dynamic_shared_bytes": 42240,
+      "shared_backing": "storage_buffer",
+      "spirv_words": 81162,
       "devices": [
         {
           "index": 0,

@@ -30,6 +30,7 @@ VULKAN_REPORTS = {
     "radix_sort": "radix-sort.json",
     "deformable_update": "deformable-update.json",
     "deformable_solver": "deformable-solver.json",
+    "sample_cloth_solver": "sample-cloth-solver.json",
     "deformable_collision": "deformable-collision.json",
     "deformable_sequence": "deformable-sequence.json",
 }
@@ -129,6 +130,11 @@ def parse_args() -> argparse.Namespace:
         help="generated cuda-deformable-solver-fixture result",
     )
     parser.add_argument(
+        "--cuda-sample-cloth-solver",
+        type=Path,
+        help="generated SampleCloth-shaped cuda-deformable-solver-fixture result",
+    )
+    parser.add_argument(
         "--cuda-deformable-collision",
         type=Path,
         help="generated cuda-deformable-collision-fixture result",
@@ -223,6 +229,11 @@ def main() -> int:
         if args.cuda_deformable_solver
         else base.get("cuda", {}).get("deformable_solver") if base else None
     )
+    cuda_sample_cloth_solver = (
+        load_json(args.cuda_sample_cloth_solver.resolve())
+        if args.cuda_sample_cloth_solver
+        else base.get("cuda", {}).get("sample_cloth_solver") if base else None
+    )
     cuda_deformable_collision = (
         load_json(args.cuda_deformable_collision.resolve())
         if args.cuda_deformable_collision
@@ -247,6 +258,7 @@ def main() -> int:
         or cuda_radix_sort is None
         or cuda_deformable is None
         or cuda_deformable_solver is None
+        or cuda_sample_cloth_solver is None
         or cuda_deformable_collision is None
         or cuda_deformable_sequence is None
     ):
@@ -256,9 +268,9 @@ def main() -> int:
             "--cuda-fluid-static-response, --cuda-fluid-simple-particle, "
             "--cuda-fluid-boxes, --cuda-fluid-capsules, --cuda-fluid-convexes, "
             "--cuda-fluid-triangles, --cuda-radix-sort, --cuda-deformable, "
-            "--cuda-deformable-solver, --cuda-deformable-collision, and "
-            "--cuda-deformable-sequence; otherwise supply --base containing "
-            "all fifteen"
+            "--cuda-deformable-solver, --cuda-sample-cloth-solver, "
+            "--cuda-deformable-collision, and --cuda-deformable-sequence; "
+            "otherwise supply --base containing all sixteen"
         )
 
     profile = base.get("profile", args.profile) if base else args.profile
@@ -279,6 +291,7 @@ def main() -> int:
             "radix_sort": cuda_radix_sort,
             "deformable_update": cuda_deformable,
             "deformable_solver": cuda_deformable_solver,
+            "sample_cloth_solver": cuda_sample_cloth_solver,
             "deformable_collision": cuda_deformable_collision,
             "deformable_sequence": cuda_deformable_sequence,
         },

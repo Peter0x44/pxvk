@@ -260,6 +260,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $radixSortSpirv = Join-Path $resultDir "radix-sort.spv"
     $deformableUpdateSpirv = Join-Path $resultDir "deformable-update.spv"
     $deformableSolverSpirv = Join-Path $resultDir "deformable-solver.spv"
+    $sampleClothSolverSpirv = Join-Path $resultDir "sample-cloth-solver.spv"
     $deformableCollisionSpirv = Join-Path $resultDir "deformable-collision.spv"
 
     Invoke-Checked $frontend @($calcHashPtx, $fluidHashReorderManifest)
@@ -337,6 +338,10 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         $deformableSolverManifest, $deformableSolverSpirv
     )
     Invoke-Checked $emitter @(
+        "--entry-shared-storage", $deformableSolverEntry, "512", "42240",
+        $deformableSolverManifest, $sampleClothSolverSpirv
+    )
+    Invoke-Checked $emitter @(
         "--entry", $deformableCollisionEntry, "64", "0",
         $deformableCollisionManifest, $deformableCollisionSpirv
     )
@@ -356,6 +361,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         $radixSortSpirv,
         $deformableUpdateSpirv,
         $deformableSolverSpirv,
+        $sampleClothSolverSpirv,
         $deformableCollisionSpirv
     )
 
@@ -433,6 +439,11 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         (Join-Path $resultDir "deformable-solver.json"),
         "--deformable-solver-fixture",
         $deformableSolverSpirv
+    )
+    Invoke-Checked $memorySmoke @(
+        (Join-Path $resultDir "sample-cloth-solver.json"),
+        "--sample-cloth-solver-fixture",
+        $sampleClothSolverSpirv
     )
     Invoke-Checked $memorySmoke @(
         (Join-Path $resultDir "deformable-collision.json"),

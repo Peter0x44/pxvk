@@ -297,6 +297,15 @@ Every launched entry now compiles, validates, and executes its named synthetic
 fixture exactly; the branch and workload gaps remain explicit in
 [`kernel-status.md`](kernel-status.md#in-game-readiness-audit).
 
+The matching PhysX 2.8.0 SDK adds a narrow secondary launch-shape proxy without
+adding a kernel family. `SampleCloth` scene 1 launches the same three deformable
+entries. Its solver uses local size 512 and 42,240 bytes of dynamic shared
+memory. A second solver fixture emits shared storage at descriptor binding 4,
+executes that launch shape on Intel and RTX despite Intel's 32,768-byte native
+workgroup-memory limit, and matches the native RTX output bits and guards
+exactly. The device limit selects the backing strategy; it does not reject PTX
+or redefine the supported PhysX workload.
+
 The same three modules also execute as one ordered step. Native CUDA queues
 update, collision, and solver on the default stream without intermediate host
 synchronization. Vulkan dispatches the same shaders against one heap with
@@ -492,6 +501,11 @@ ordering, Vulkan dispatch barriers, static/dynamic shared launch shapes, and
 inter-kernel state flow. A captured-state deformable replay and the complete
 nine-kernel fluid spine remain required before claiming full workload-family
 correctness.
+
+The `SampleCloth` proxy is deliberately separate from captured-state replay.
+It validates a real SDK launch shape and the oversized-shared fallback, while
+captured replay remains the oracle for Mirror's Edge heap state, iteration
+counts, and collision geometry.
 
 ## Mirror's Edge integration smoke
 

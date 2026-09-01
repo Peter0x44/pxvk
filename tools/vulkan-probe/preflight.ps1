@@ -118,12 +118,10 @@ $requirements = [ordered]@{
     shader_int64 = $true
     signed_zero_inf_nan_preserve_float32 = $true
     rounding_mode_rte_float32 = $true
-    minimum_workgroup_invocations = 256
-    minimum_workgroup_size_x = 256
+    minimum_workgroup_invocations = 512
+    minimum_workgroup_size_x = 512
     minimum_workgroup_count_x = 94
-    minimum_shared_memory_bytes = 10756
-    minimum_storage_buffer_range_bytes = 33554432
-    minimum_memory_allocation_bytes = 33554432
+    minimum_compute_storage_buffers = 5
     minimum_push_constants_bytes = 100
 }
 
@@ -154,25 +152,22 @@ foreach ($device in $capabilities.devices) {
         [void]$failures.Add("f32 RTE is false")
     }
     if ([uint64]$device.limits.max_compute_work_group_invocations -lt $requirements.minimum_workgroup_invocations) {
-        [void]$failures.Add("max workgroup invocations is below 256")
+        [void]$failures.Add("max workgroup invocations is below 512")
     }
     if ([uint64]$device.limits.max_compute_work_group_size[0] -lt $requirements.minimum_workgroup_size_x) {
-        [void]$failures.Add("max workgroup size X is below 256")
+        [void]$failures.Add("max workgroup size X is below 512")
     }
     if ([uint64]$device.limits.max_compute_work_group_count[0] -lt $requirements.minimum_workgroup_count_x) {
         [void]$failures.Add("max workgroup count X is below 94")
     }
-    if ([uint64]$device.limits.max_compute_shared_memory_size -lt $requirements.minimum_shared_memory_bytes) {
-        [void]$failures.Add("shared memory is below 10756 bytes")
-    }
-    if ([uint64]$device.limits.max_storage_buffer_range -lt $requirements.minimum_storage_buffer_range_bytes) {
-        [void]$failures.Add("storage buffer range is below 32 MiB")
-    }
-    if ([double]$device.limits.max_memory_allocation_size -lt $requirements.minimum_memory_allocation_bytes) {
-        [void]$failures.Add("maximum allocation is below 32 MiB")
-    }
     if ([uint64]$device.limits.max_push_constants_size -lt $requirements.minimum_push_constants_bytes) {
         [void]$failures.Add("push constants are below 100 bytes")
+    }
+    if ([uint64]$device.limits.max_per_stage_storage_buffers -lt $requirements.minimum_compute_storage_buffers) {
+        [void]$failures.Add("compute-stage storage buffers are below 5")
+    }
+    if ([uint64]$device.limits.max_descriptor_set_storage_buffers -lt $requirements.minimum_compute_storage_buffers) {
+        [void]$failures.Add("descriptor-set storage buffers are below 5")
     }
 
     $nativeFtz = [bool]$device.float_controls.denorm_flush_to_zero_float32
@@ -200,7 +195,7 @@ $report = [ordered]@{
     eligible_device_count = $eligibleCount
     devices = $deviceReports
     limitations = @(
-        "Hardware preflight does not allocate the 32 MiB device/staging buffers.",
+        "Hardware preflight does not prove arbitrary caller-sized allocations; optional execution probes exercise a 32 MiB fixture.",
         "Hardware preflight does not execute SPIR-V or validate software FTZ.",
         "AMD game integration still requires the deferred non-NVIDIA NVAPI gate."
     )

@@ -93,6 +93,22 @@ build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry `
   module-manifest.json `
   generated-kernel.spv
 ```
+When a launch exceeds the target device's native workgroup-memory limit, emit
+the same entry with storage-backed shared memory:
+
+```powershell
+build/ptx-frontend/Release/ptx-spirv-emitter.exe --entry-shared-storage `
+  <entry-name> <local-size-x> <dynamic-shared-bytes> `
+  module-manifest.json `
+  generated-kernel.spv
+```
+
+The runtime, not the frontend, selects this fallback from the actual launch
+size and Vulkan device limit. It binds a scratch storage buffer at binding 4.
+Each X workgroup receives a disjoint `ceil(shared-bytes / 4)`-word region;
+shared atomics and barriers use workgroup scope with storage-buffer memory
+semantics. The fallback therefore preserves CUDA workgroup isolation without
+encoding a particular GPU's shared-memory limit in PTX acceptance.
 
 Kernel mode binds the 32-bit CUDA heap at descriptor binding 0, packed
 launch-parameter words at binding 1, and module `.const` storage at read-only
@@ -105,9 +121,10 @@ one-/four-component references. It checks coordinates explicitly, preserves
 in-range `f32` bits, and returns positive-zero components out of bounds.
 
 PTX byte addresses remain `u32` byte offsets within their memory space. The
-dynamic-shared byte count is explicit pipeline input; the emitter combines it
-with module/routine static shared layouts to size the Workgroup arena. Named
-`.shared` symbols resolve to aligned byte offsets in that arena. Named `.local`
+dynamic-shared byte count is explicit pipeline input. Native mode combines it
+with module/routine static shared layouts to size the Workgroup arena; storage
+fallback mode uses the same byte layout within binding 4. Named `.shared`
+symbols resolve to aligned byte offsets in either backing. Named `.local`
 symbols resolve to aligned byte offsets in a per-invocation Function array.
 Named `.const` symbols resolve to aligned byte offsets in binding 2.
 

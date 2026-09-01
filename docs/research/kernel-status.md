@@ -51,6 +51,12 @@ contains resolved deformable self-collision entries, but none launched in the
 captured routes, so they are outside this ledger and the initial compatibility
 target.
 
+PhysX 2.8.0 `SampleCloth` scene 1 is a secondary proxy for the same three
+deformable entries, not an expansion of this ledger. Its solver launch uses
+local size 512 and 42,240 bytes of dynamic shared memory. The storage-backed
+shared-memory fixture matches native CUDA exactly on Intel and RTX, so the
+sample launch is accepted even where it exceeds native Vulkan Workgroup memory.
+
 ## In-game readiness audit
 
 The exact-fixture ledger answers whether each selected entry can translate and

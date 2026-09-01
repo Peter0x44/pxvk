@@ -12,9 +12,8 @@ The hard device requirements are:
 - a Vulkan 1.2 x86 loader path and a compute queue;
 - `shaderInt64`;
 - f32 signed-zero/Inf/NaN preservation plus RTE control;
-- at least 256 workgroup invocations in X;
-- at least 10,756 bytes of workgroup memory;
-- a storage-buffer range and allocation of at least 32 MiB;
+- at least 512 workgroup invocations in X;
+- at least five compute-stage storage-buffer bindings;
 - at least 100 bytes of push constants.
 
 The installed SDK and x86 loader reach both local GPUs through Volk. Both GPUs
@@ -295,21 +294,21 @@ can differ.
 
 | Limit | Required value | Evidence | Local minimum |
 |---|---:|---|---:|
-| `maxComputeWorkGroupInvocations` | at least 256 | Largest captured launch; 512 is preferred headroom for a launched entry's `.maxntid` | 1,024 |
-| `maxComputeWorkGroupSize[0]` | at least 256 | All captured launches and built-ins are X-only | 1,024 |
-| `maxComputeWorkGroupCount[0]` | at least 94 | Largest captured grid X | 65,536 |
-| `maxComputeSharedMemorySize` | at least 10,756 B | Maximum static plus observed dynamic memory for one launched entry | 32,768 B |
-| `maxStorageBufferRange` | at least 33,554,432 B | The workload creates one 32 MiB CUDA device pool | 1,073,741,820 B |
-| maximum memory allocation/buffer size | at least 33,554,432 B | Same device-pool requirement | 4,294,901,760 B |
-| `maxPushConstantsSize` | at least 100 B | Largest packed kernel parameter block | 256 B |
-| compute-stage storage buffers | at least 1 | Candidate lowering uses one byte-addressed device heap | 200 |
+| `maxComputeWorkGroupInvocations` | at least 512 | PhysX 2.8.0 `SampleCloth` scene 1 launches `KernelDeformableUberSolver<512>` with 512 threads | 1,024 |
+| `maxComputeWorkGroupSize[0]` | at least 512 | Captured game and sample launches are X-only | 1,024 |
+| `maxComputeWorkGroupCount[0]` | at least 94 | Largest captured game grid X | 65,536 |
+| `maxComputeSharedMemorySize` | queried, not a workload rejection threshold | Native Workgroup backing is selected when the complete launch layout fits; larger launches use per-workgroup storage-buffer scratch | 32,768 B |
+| `maxStorageBufferRange` | at least the largest selected CUDA allocation or shared-scratch region | Mirror's Edge requests 32 MiB pools; the SDK samples request 128 MiB pools; allocation size is runtime input | 1,073,741,820 B |
+| maximum memory allocation/buffer size | same as the selected backing allocation | Allocation requests are not fixed to one traced title | 4,294,901,760 B |
+| `maxPushConstantsSize` | at least 100 B | Largest packed kernel parameter block currently observed | 256 B |
+| compute-stage storage buffers | at least 5 | Heap, launch parameters, constants, textures, and optional shared scratch occupy bindings 0–4 | 200 |
 
-The native CUDA device query returned 1,024 threads per block, while the
-largest captured launch is 256 and the largest launched-entry `.maxntid` is
-512. The Vulkan hard gate follows executed work, not the emulated CUDA
-attribute or a declaration's maximum. A device below 512 must reject an
-unobserved launch above its real limit; supporting such a launch would first
-promote the 512 value into the hard gate.
+The native CUDA device query returned 1,024 threads per block. Mirror's Edge
+launched at most 256 threads, while PhysX 2.8.0 `SampleCloth` scene 1 launches
+the solver with 512. Workgroup size is therefore a real sample-suite gate.
+Shared-memory size is not: the emitter has native Workgroup and storage-buffer
+backings, and the runtime selects between them from the complete static plus
+dynamic launch requirement and the physical device limit.
 
 The 108-byte maximum PTX `.local` declaration maps to an aligned
 invocation-private SPIR-V Function array and is not a Vulkan device-limit gate.
@@ -319,20 +318,23 @@ address gate when the 32 MiB descriptor is bound at offset zero and CUDA
 addresses remain shader-side byte offsets.
 
 The observed shared-memory maxima are per entry. They must not be summed across
-kernels. Kernel emission takes the captured dynamic-shared byte count as
-explicit pipeline input, combines it with aligned module/routine static
-allocations, and sizes one Workgroup `u32` arena for that entry. This is the
-validated per-pipeline representation; no runtime-sized Workgroup array or
-additional shader synchronization is required.
+kernels. Kernel emission takes the launch's dynamic-shared byte count as an
+explicit pipeline input and combines it with aligned module/routine static
+allocations. If the layout fits the physical Workgroup-memory limit, emission
+uses one Workgroup `u32` arena. Otherwise it uses caller-sized, per-X-workgroup
+storage-buffer scratch with storage-memory barrier semantics. The queried
+Workgroup limit selects the backing; it does not reject the CUDA launch.
 
 ## PTX-to-Vulkan mapping constraints
 
 ### Address and memory model
 
-The minimum candidate representation is a 32 MiB storage buffer matching the
-CUDA device pool. A PTX device address is a `u32` byte offset from that buffer's
-base. This preserves 32-bit wrap and comparison behavior and avoids host
-pointer width, SPIR-V physical pointers, and buffer device address.
+Each CUDA allocation is represented by caller-sized buffer storage and a live
+`u32` device-address range. PTX device addresses remain byte offsets resolved
+against that range. This preserves 32-bit arithmetic and comparison behavior
+without fixing the allocator to either the game's 32 MiB pools or the SDK
+samples' 128 MiB pools, and avoids host pointer width, SPIR-V physical pointers,
+and buffer device address.
 
 Memory operations lower as follows:
 
@@ -340,7 +342,7 @@ Memory operations lower as follows:
 |---|---|
 | `.global` | storage-buffer load/store at a checked/aligned byte offset |
 | `.const` and module globals | read-only/module-state ranges in buffer storage |
-| `.shared` and `.extern .shared` | Workgroup variables |
+| `.shared` and `.extern .shared` | Workgroup variables when the launch fits; otherwise per-workgroup storage-buffer scratch |
 | `.local` | Function variables, with compiler spills left to the Vulkan driver |
 | `.param` | push constants preserving the captured byte layout |
 | `u8` / `u16` memory | `u32` load plus shift/mask; native narrow storage is an optional optimization |
@@ -479,12 +481,16 @@ true:
 
 1. Vulkan API version is at least 1.2 and a compute queue exists.
 2. `shaderInt64`, f32 signed-zero/Inf/NaN preservation, and RTE are true.
-3. the quantitative workgroup, shared-memory, storage-range, allocation, and
-   push-constant limits meet the table above.
+3. the quantitative workgroup, descriptor-binding, and push-constant limits
+   meet the table above.
 4. either f32 denorm FTZ is advertised or the validated software-FTZ lowering
    is enabled.
-5. one 32 MiB device buffer plus required staging/module state can be allocated
-   from compatible memory types.
+
+Storage range, allocation, buffer, and Workgroup-memory limits are queried
+inputs to backing selection for each caller request. They are not fixed startup
+thresholds derived from one game trace. The actual allocation or launch fails
+only when neither a native nor storage-backed representation can satisfy that
+request.
 
 The gate must produce a concrete diagnostic naming the first missing feature or
 limit. It must not silently choose a semantically weaker floating-point mode.
@@ -509,6 +515,9 @@ Translated real-kernel acceptance now has:
 - exact native/Vulkan deformable-update, collision, and solver fixtures,
   including static/dynamic shared memory and repeated barriers;
 - an ordered three-kernel deformable step over one shared heap.
+- the PhysX 2.8.0 `SampleCloth` scene-1 solver launch shape: local size 512 and
+  42,240 bytes of dynamic shared memory, executed through per-workgroup storage
+  scratch and matched bit-for-bit with native CUDA on Intel and RTX;
 
 Captured in-game deformable state, real collision shapes, and iterative
 constraint response remain workload-family integration gates.

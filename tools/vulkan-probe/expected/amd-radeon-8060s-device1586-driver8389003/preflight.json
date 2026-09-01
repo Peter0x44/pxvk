@@ -11,12 +11,10 @@
                          "shader_int64":  true,
                          "signed_zero_inf_nan_preserve_float32":  true,
                          "rounding_mode_rte_float32":  true,
-                         "minimum_workgroup_invocations":  256,
-                         "minimum_workgroup_size_x":  256,
+                         "minimum_workgroup_invocations":  512,
+                         "minimum_workgroup_size_x":  512,
                          "minimum_workgroup_count_x":  94,
-                         "minimum_shared_memory_bytes":  10756,
-                         "minimum_storage_buffer_range_bytes":  33554432,
-                         "minimum_memory_allocation_bytes":  33554432,
+                         "minimum_compute_storage_buffers":  5,
                          "minimum_push_constants_bytes":  100
                      },
     "eligible_device_count":  1,
@@ -35,7 +33,7 @@
                     }
                 ],
     "limitations":  [
-                        "Hardware preflight does not allocate the 32 MiB device/staging buffers.",
+                        "Hardware preflight does not prove arbitrary caller-sized allocations; optional execution probes exercise a 32 MiB fixture.",
                         "Hardware preflight does not execute SPIR-V or validate software FTZ.",
                         "AMD game integration still requires the deferred non-NVIDIA NVAPI gate."
                     ]

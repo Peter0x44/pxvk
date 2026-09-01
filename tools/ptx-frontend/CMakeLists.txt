@@ -91,6 +91,15 @@ add_test(
 set_tests_properties(
     ptx-barrier-cfg-emitter PROPERTIES DEPENDS ptx-barrier-cfg-frontend)
 add_test(
+    NAME ptx-shared-storage-emitter
+    COMMAND ptx-spirv-emitter
+        --entry-shared-storage barrier_cfg_probe 8 42240
+        "${CMAKE_CURRENT_BINARY_DIR}/barrier-cfg-probe-manifest.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/barrier-cfg-storage.spv"
+)
+set_tests_properties(
+    ptx-shared-storage-emitter PROPERTIES DEPENDS ptx-barrier-cfg-frontend)
+add_test(
     NAME ptx-force-math-frontend
     COMMAND ptx-frontend
         "${CMAKE_CURRENT_SOURCE_DIR}/force_math_probe.ptx"

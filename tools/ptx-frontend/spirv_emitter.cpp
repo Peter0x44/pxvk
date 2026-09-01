@@ -48,7 +48,14 @@ public:
         std::uint32_t shared_bytes,
         std::uint32_t constant_bytes,
         bool texture_metadata,
-        bool int64)
+        bool int64,
+        bool shared_storage_buffer = false)
+        : shared_words_(
+              std::max(
+                  1u,
+                  shared_bytes / 4u +
+                      (shared_bytes % 4u == 0u ? 0u : 1u))),
+          shared_storage_buffer_(shared_storage_buffer)
     {
         if (int64) {
             emit(capabilities_, SpvOpCapability, {SpvCapabilityInt64});
@@ -99,18 +106,29 @@ public:
         type_ptr_input_u32_ = allocate_id();
         emit(declarations_, SpvOpTypePointer,
              {type_ptr_input_u32_, SpvStorageClassInput, type_u32_});
-        const std::uint32_t shared_words =
-            shared_bytes / 4u + (shared_bytes % 4u == 0u ? 0u : 1u);
-        const std::uint32_t shared_length =
-            constant(ValueType::u32, std::max(1u, shared_words)).id;
-        type_shared_array_ = allocate_id();
-        emit(declarations_, SpvOpTypeArray, {type_shared_array_, type_u32_, shared_length});
-        type_ptr_workgroup_array_ = allocate_id();
-        emit(declarations_, SpvOpTypePointer,
-             {type_ptr_workgroup_array_, SpvStorageClassWorkgroup, type_shared_array_});
-        type_ptr_workgroup_u32_ = allocate_id();
-        emit(declarations_, SpvOpTypePointer,
-             {type_ptr_workgroup_u32_, SpvStorageClassWorkgroup, type_u32_});
+        if (!shared_storage_buffer_) {
+            const std::uint32_t shared_length =
+                constant(ValueType::u32, shared_words_).id;
+            type_shared_array_ = allocate_id();
+            emit(
+                declarations_,
+                SpvOpTypeArray,
+                {type_shared_array_, type_u32_, shared_length});
+            type_ptr_workgroup_array_ = allocate_id();
+            emit(
+                declarations_,
+                SpvOpTypePointer,
+                {type_ptr_workgroup_array_,
+                 SpvStorageClassWorkgroup,
+                 type_shared_array_});
+            type_ptr_workgroup_u32_ = allocate_id();
+            emit(
+                declarations_,
+                SpvOpTypePointer,
+                {type_ptr_workgroup_u32_,
+                 SpvStorageClassWorkgroup,
+                 type_u32_});
+        }
 
         buffer_ = allocate_id();
         emit(declarations_, SpvOpVariable,
@@ -151,8 +169,29 @@ public:
              {local_id_, SpvDecorationBuiltIn, SpvBuiltInLocalInvocationId});
 
         shared_ = allocate_id();
-        emit(declarations_, SpvOpVariable,
-             {type_ptr_workgroup_array_, shared_, SpvStorageClassWorkgroup});
+        if (shared_storage_buffer_) {
+            emit(
+                declarations_,
+                SpvOpVariable,
+                {type_ptr_storage_buffer_,
+                 shared_,
+                 SpvStorageClassStorageBuffer});
+            emit(
+                annotations_,
+                SpvOpDecorate,
+                {shared_, SpvDecorationDescriptorSet, 0u});
+            emit(
+                annotations_,
+                SpvOpDecorate,
+                {shared_, SpvDecorationBinding, 4u});
+        } else {
+            emit(
+                declarations_,
+                SpvOpVariable,
+                {type_ptr_workgroup_array_,
+                 shared_,
+                 SpvStorageClassWorkgroup});
+        }
     }
 
     std::uint32_t allocate_id()
@@ -461,22 +500,75 @@ public:
         return instruction(SpvOpLoad, ValueType::u32, {pointer.id});
     }
 
+    std::uint32_t shared_memory_semantics() const
+    {
+        constexpr std::uint32_t acquire_release = 0x8u;
+        constexpr std::uint32_t uniform_memory = 0x40u;
+        constexpr std::uint32_t workgroup_memory = 0x100u;
+        return acquire_release |
+            (shared_storage_buffer_ ? uniform_memory : workgroup_memory);
+    }
+
     void subgroup_barrier()
     {
         const Value scope = constant(ValueType::u32, 3u);
-        const Value semantics = constant(ValueType::u32, 0x108u);
+        const Value semantics =
+            constant(ValueType::u32, shared_memory_semantics());
         function_instruction(
             SpvOpControlBarrier, {scope.id, scope.id, semantics.id});
     }
 
-    void store_shared(Value word_index, Value value, bool volatile_access = false)
+    void workgroup_barrier()
     {
-        const Value index = coerce(word_index, ValueType::u32);
-        const Value stored = coerce(value, ValueType::u32);
-        const Value pointer = instruction_with_type(
+        const Value scope = constant(ValueType::u32, 2u);
+        const Value semantics =
+            constant(ValueType::u32, shared_memory_semantics());
+        function_instruction(
+            SpvOpControlBarrier, {scope.id, scope.id, semantics.id});
+    }
+    void initialize_shared_storage_base()
+    {
+        if (!shared_storage_buffer_) {
+            return;
+        }
+        if (shared_base_ != 0u) {
+            throw std::runtime_error(
+                "shared storage base initialized more than once");
+        }
+        const Value group = workgroup_invocation_x();
+        const Value stride = constant(ValueType::u32, shared_words_);
+        shared_base_ =
+            instruction(
+                SpvOpIMul, ValueType::u32, {group.id, stride.id}).id;
+    }
+
+
+    Value shared_pointer(Value word_index)
+    {
+        Value index = coerce(word_index, ValueType::u32);
+        if (shared_storage_buffer_) {
+            if (shared_base_ == 0u) {
+                throw std::runtime_error(
+                    "shared storage access before base initialization");
+            }
+            index = instruction(
+                SpvOpIAdd, ValueType::u32, {shared_base_, index.id});
+            const Value zero = constant(ValueType::u32, 0u);
+            return instruction_with_type(
+                SpvOpAccessChain,
+                type_ptr_storage_u32_,
+                {shared_, zero.id, index.id});
+        }
+        return instruction_with_type(
             SpvOpAccessChain,
             type_ptr_workgroup_u32_,
             {shared_, index.id});
+    }
+
+    void store_shared(Value word_index, Value value, bool volatile_access = false)
+    {
+        const Value stored = coerce(value, ValueType::u32);
+        const Value pointer = shared_pointer(word_index);
         if (volatile_access) {
             function_instruction(
                 SpvOpStore,
@@ -485,16 +577,14 @@ public:
             function_instruction(SpvOpStore, {pointer.id, stored.id});
         }
     }
+
     void atomic_exchange_shared(Value word_index, Value value)
     {
-        const Value index = coerce(word_index, ValueType::u32);
         const Value stored = coerce(value, ValueType::u32);
-        const Value pointer = instruction_with_type(
-            SpvOpAccessChain,
-            type_ptr_workgroup_u32_,
-            {shared_, index.id});
+        const Value pointer = shared_pointer(word_index);
         const Value scope = constant(ValueType::u32, 2u);
-        const Value semantics = constant(ValueType::u32, 0x108u);
+        const Value semantics =
+            constant(ValueType::u32, shared_memory_semantics());
         instruction(
             SpvOpAtomicExchange,
             ValueType::u32,
@@ -503,11 +593,7 @@ public:
 
     Value load_shared(Value word_index, bool volatile_access = false)
     {
-        const Value index = coerce(word_index, ValueType::u32);
-        const Value pointer = instruction_with_type(
-            SpvOpAccessChain,
-            type_ptr_workgroup_u32_,
-            {shared_, index.id});
+        const Value pointer = shared_pointer(word_index);
         if (volatile_access) {
             return instruction(
                 SpvOpLoad,
@@ -723,6 +809,9 @@ private:
     std::uint32_t shared_ = 0u;
     std::uint32_t parameter_buffer_ = 0u;
     std::uint32_t workgroup_id_ = 0u;
+    std::uint32_t shared_words_ = 1u;
+    std::uint32_t shared_base_ = 0u;
+    bool shared_storage_buffer_ = false;
     std::map<std::pair<ValueType, std::uint32_t>, std::uint32_t> constants_;
     std::vector<std::uint32_t> capabilities_;
     std::vector<std::uint32_t> imports_;
@@ -1264,10 +1353,7 @@ private:
             return;
         }
         if (base == "bar" && variant == "bar.sync") {
-            const Value workgroup = module_.constant(ValueType::u32, 2u);
-            const Value semantics = module_.constant(ValueType::u32, 0x108u);
-            module_.function_instruction(
-                SpvOpControlBarrier, {workgroup.id, workgroup.id, semantics.id});
+            module_.workgroup_barrier();
             return;
         }
         if (base == "tex" &&
@@ -1364,6 +1450,7 @@ public:
             return;
         }
         const std::uint32_t pc = module_.function_variable(ValueType::u32);
+        module_.initialize_shared_storage_base();
         const Json &blocks = entry_.at("cfg").at("blocks");
         const std::uint32_t exit_pc = static_cast<std::uint32_t>(blocks.size());
         module_.store_variable(
@@ -1497,6 +1584,7 @@ private:
             module_.function_variable(ValueType::boolean);
         const std::uint32_t finished =
             module_.function_variable(ValueType::boolean);
+        module_.initialize_shared_storage_base();
         module_.store_variable(
             pc, module_.constant(ValueType::u32, 0u), ValueType::u32);
         module_.store_variable(
@@ -1613,11 +1701,7 @@ private:
             SpvOpBranchConditional,
             {done.id, barrier_merge, barrier_label});
         module_.function_instruction(SpvOpLabel, {barrier_label});
-        const Value workgroup = module_.constant(ValueType::u32, 2u);
-        const Value semantics = module_.constant(ValueType::u32, 0x108u);
-        module_.function_instruction(
-            SpvOpControlBarrier,
-            {workgroup.id, workgroup.id, semantics.id});
+        module_.workgroup_barrier();
         module_.function_instruction(SpvOpBranch, {barrier_merge});
         module_.function_instruction(SpvOpLabel, {barrier_merge});
         module_.function_instruction(
@@ -2832,11 +2916,7 @@ private:
             return;
         }
         if (variant == "bar.sync") {
-            const Value workgroup = module_.constant(ValueType::u32, 2u);
-            const Value semantics = module_.constant(ValueType::u32, 0x108u);
-            module_.function_instruction(
-                SpvOpControlBarrier,
-                {workgroup.id, workgroup.id, semantics.id});
+            module_.workgroup_barrier();
             return;
         }
         if (base == "div") {
@@ -3071,7 +3151,8 @@ std::vector<std::uint32_t> emit_kernel_entry(
     const Json &manifest,
     const std::string &entry_name,
     std::uint32_t local_size,
-    std::uint32_t dynamic_shared_bytes)
+    std::uint32_t dynamic_shared_bytes,
+    bool shared_storage_buffer)
 {
     if (manifest.at("schema_version").get<std::uint32_t>() != 5u) {
         throw std::runtime_error("kernel emitter requires typed manifest schema 5");
@@ -3087,7 +3168,8 @@ std::vector<std::uint32_t> emit_kernel_entry(
         required_shared_bytes(manifest, entry, dynamic_shared_bytes),
         module_constant_bytes(manifest),
         entry_uses_textures(entry),
-        entry_uses_int64(entry));
+        entry_uses_int64(entry),
+        shared_storage_buffer);
     const std::uint32_t function = module.allocate_id();
     KernelEntryLowerer(
         module,
@@ -3121,11 +3203,18 @@ void write_spirv(const char *path, const std::vector<std::uint32_t> &words)
 
 int main(int argc, char **argv)
 {
-    const bool kernel_mode = argc == 7 && std::string(argv[1]) == "--entry";
+    const bool native_shared_mode =
+        argc == 7 && std::string(argv[1]) == "--entry";
+    const bool storage_shared_mode =
+        argc == 7 && std::string(argv[1]) == "--entry-shared-storage";
+    const bool kernel_mode = native_shared_mode || storage_shared_mode;
     if (argc != 3 && !kernel_mode) {
         std::cerr << "usage: ptx-spirv-emitter <typed-manifest.json> <output.spv>\n"
                   << "       ptx-spirv-emitter --entry <name> <local-size> "
-                     "<dynamic-shared-bytes> <typed-manifest.json> <output.spv>\n";
+                     "<dynamic-shared-bytes> <typed-manifest.json> <output.spv>\n"
+                  << "       ptx-spirv-emitter --entry-shared-storage <name> "
+                     "<local-size> <dynamic-shared-bytes> "
+                     "<typed-manifest.json> <output.spv>\n";
         return 2;
     }
     try {
@@ -3136,7 +3225,8 @@ int main(int argc, char **argv)
                   read_json(input_path),
                   argv[2],
                   static_cast<std::uint32_t>(std::stoul(argv[3])),
-                  static_cast<std::uint32_t>(std::stoul(argv[4])))
+                  static_cast<std::uint32_t>(std::stoul(argv[4])),
+                  storage_shared_mode)
             : emit_oracle(read_json(input_path));
         write_spirv(output_path, words);
         std::cout << "Emitted " << words.size() << " SPIR-V words from "

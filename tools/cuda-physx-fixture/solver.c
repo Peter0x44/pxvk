@@ -12,7 +12,10 @@
 #define SOLVER_KERNEL_NAME "_Z26KernelDeformableUberSolverILj512EEvjbPhPi"
 #define SOLVER_CONSTANT_NAME "solverGpuData"
 #define SOLVER_CONSTANT_BYTES 5888u
-#define SOLVER_DYNAMIC_SHARED_BYTES 7072u
+#define SOLVER_DEFAULT_DYNAMIC_SHARED_BYTES 7072u
+#define SOLVER_SAMPLE_CLOTH_DYNAMIC_SHARED_BYTES 42240u
+#define SOLVER_DEFAULT_BLOCK_X 64u
+#define SOLVER_SAMPLE_CLOTH_BLOCK_X 512u
 #define HEAP_WORDS 256u
 #define A_OFFSET 32u
 #define B_OFFSET 48u
@@ -227,19 +230,38 @@ int main(int argc, char **argv)
     uint8_t write_velocity = 0;
     uint32_t error_pointer = 0;
     char device_name[256] = {0};
+    const char *ptx_path = NULL;
+    const char *output_path = NULL;
+    unsigned int block_x = SOLVER_DEFAULT_BLOCK_X;
+    unsigned int dynamic_shared_bytes =
+        SOLVER_DEFAULT_DYNAMIC_SHARED_BYTES;
     FILE *output = NULL;
     bool guards_intact = false;
     bool pass = false;
     int exit_code = 1;
 
-    if (argc != 3) {
-        fprintf(stderr, "usage: cuda-deformable-solver-fixture <solver.ptx> <output.json>\n");
+    if (argc == 3) {
+        ptx_path = argv[1];
+        output_path = argv[2];
+    } else if (
+        argc == 4 &&
+        strcmp(argv[1], "--sample-cloth-shape") == 0) {
+        block_x = SOLVER_SAMPLE_CLOTH_BLOCK_X;
+        dynamic_shared_bytes =
+            SOLVER_SAMPLE_CLOTH_DYNAMIC_SHARED_BYTES;
+        ptx_path = argv[2];
+        output_path = argv[3];
+    } else {
+        fprintf(
+            stderr,
+            "usage: cuda-deformable-solver-fixture "
+            "[--sample-cloth-shape] <solver.ptx> <output.json>\n");
         return 2;
     }
     if (!load_cuda(&api)) {
         return 1;
     }
-    ptx = read_text_file(argv[1]);
+    ptx = read_text_file(ptx_path);
     if (ptx == NULL) {
         goto cleanup;
     }
@@ -298,8 +320,8 @@ int main(int argc, char **argv)
         };
         CUDA_TRY(&api, api.cuLaunchKernel(function,
                                           1, 1, 1,
-                                          64, 1, 1,
-                                          SOLVER_DYNAMIC_SHARED_BYTES,
+                                          block_x, 1, 1,
+                                          dynamic_shared_bytes,
                                           NULL,
                                           parameters,
                                           NULL));
@@ -326,9 +348,9 @@ int main(int argc, char **argv)
                   EXPECTED_OUTPUT,
                   sizeof(EXPECTED_OUTPUT)) == 0;
 
-    output = fopen(argv[2], "wb");
+    output = fopen(output_path, "wb");
     if (output == NULL) {
-        fprintf(stderr, "failed to open output file: %s\n", argv[2]);
+        fprintf(stderr, "failed to open output file: %s\n", output_path);
         goto cleanup;
     }
     fprintf(output,
@@ -338,9 +360,12 @@ int main(int argc, char **argv)
             "  \"kernel\": \"KernelDeformableUberSolver<512>\",\n"
             "  \"particle_count\": 1,\n"
             "  \"iteration_count\": 0,\n"
-            "  \"dynamic_shared_bytes\": 7072,\n"
+            "  \"local_size_x\": %u,\n"
+            "  \"dynamic_shared_bytes\": %u,\n"
             "  \"output_bits\": [",
-            device_name);
+            device_name,
+            block_x,
+            dynamic_shared_bytes);
     {
         size_t index;
         for (index = 0; index < 16u; ++index) {

@@ -19,7 +19,10 @@ modules. Direct SPIR-V lowering covers the project oracle,
 `KernelDeformableUberCollision`, and `KernelDeformableUberSolver<512>`. Exact
 native/Vulkan differential fixtures cover the oracle, all twelve translated
 fluid kernels, the translated radix sort kernel, all three translated
-deformable kernels, and the ordered deformable update/collision/solver step.
+deformable kernels, the ordered deformable update/collision/solver step, and
+the PhysX 2.8.0 `SampleCloth` scene-1 solver launch shape. Oversized CUDA shared
+memory uses per-workgroup storage-buffer scratch instead of rejecting a valid
+launch against one Vulkan device's native Workgroup-memory limit.
 
 See [`docs/charter.md`](docs/charter.md) for scope and
 [`docs/research/README.md`](docs/research/README.md) for the evidence index.
@@ -65,9 +68,9 @@ python .\extract-physx-ptx.py `
 
 The extractor needs no CUDA toolkit. It emits stable `fatbin_####.ptx` files
 plus a source/module hash manifest. Keep that output local. Add the twelve
-trace-shaped fluid fixtures, the focused deformable fixtures, and the ordered
-three-kernel deformable step by passing either this directory or a ZLUDA trace
-module directory:
+trace-shaped fluid fixtures, the focused deformable fixtures, the ordered
+three-kernel deformable step, and the `SampleCloth` solver proxy by passing
+either this directory or a ZLUDA trace module directory:
 
 ```powershell
 .\run-tests.ps1 -CapturedPtxDir .\local-ptx
@@ -77,7 +80,9 @@ The suite resolves modules by their PTX entry names rather than trace-specific
 module numbers. It compiles, validates, and executes calc-hash, reorder,
 density, force, fluid collision constraints, dynamic response, static response,
 boxes, capsules, convexes, triangles, simple particle, radix sort blocks, the
-three focused deformable kernels, and the ordered deformable step.
+three focused deformable kernels, the ordered deformable step, and the
+`SampleCloth` local-size-512/42,240-byte solver shape through storage-backed
+shared memory.
 Any failed device, shader validation, guard range, or exact result returns a
 nonzero process exit code.
 
@@ -85,8 +90,8 @@ nonzero process exit code.
 
 Each runner still writes a focused JSON report for failure diagnosis. The
 committed reference is one deterministic bundle:
-`tools/reference/expected/reference-workstation.json`. It contains thirteen
-native CUDA reports and all twenty-one Vulkan reports under stable keys.
+`tools/reference/expected/reference-workstation.json`. It contains sixteen
+native CUDA reports and all twenty-four Vulkan reports under stable keys.
 
 Compare a complete local run against it:
 
@@ -97,7 +102,7 @@ Compare a complete local run against it:
 
 After classifying a deliberate result change, the same command with
 `-AcceptReferenceBundle` replaces only the Vulkan section. To assemble a new
-bundle or replace native CUDA evidence, generate all thirteen native runner JSON
+bundle or replace native CUDA evidence, generate all sixteen native runner JSON
 files and run:
 
 ```powershell
@@ -108,12 +113,15 @@ python .\tools\build-reference-bundle.py `
   --cuda-fluid-constraints .\native-fluid-constraints.json `
   --cuda-fluid-dynamic-response .\native-fluid-dynamic-response.json `
   --cuda-fluid-static-response .\native-fluid-static-response.json `
+  --cuda-fluid-simple-particle .\native-fluid-simple-particle.json `
   --cuda-fluid-boxes .\native-fluid-boxes.json `
   --cuda-fluid-capsules .\native-fluid-capsules.json `
   --cuda-fluid-convexes .\native-fluid-convexes.json `
   --cuda-fluid-triangles .\native-fluid-triangles.json `
+  --cuda-radix-sort .\native-radix-sort.json `
   --cuda-deformable .\native-deformable.json `
   --cuda-deformable-solver .\native-deformable-solver.json `
+  --cuda-sample-cloth-solver .\native-sample-cloth-solver.json `
   --cuda-deformable-collision .\native-deformable-collision.json `
   --cuda-deformable-sequence .\native-deformable-sequence.json `
   --output .\tools\reference\expected\reference-workstation.json

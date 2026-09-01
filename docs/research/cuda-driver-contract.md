@@ -8,6 +8,11 @@ API tables and on a narrow NVAPI hardware-detection path. This document defines
 the observed x86 ABI and behavior; queried-only CUDA functionality is not
 promoted into implementation scope.
 
+The matching PhysX 2.8.0 SDK samples are secondary integration evidence. They
+do not promote arbitrary CUDA, but they do prevent title-specific observations
+from becoming runtime invariants where the same PhysX runtime demonstrably uses
+another valid path.
+
 Normalized evidence is preserved locally as
 `tmp/evidence/cuda-driver-contract-analysis.json`, SHA-256
 `ce60bf0516aab22e79b69cdf0276bd842069a1103a39ef3f8741551bd0df4a5d`.
@@ -369,6 +374,21 @@ NVAPI hardware gate
   -> dark heap release
 ```
 
+### PhysX SDK proxy differences
+
+The official PhysX 2.8.0 `SampleCloth` and `SampleParticleFluid` binaries use
+the public `cuCtxCreate_v2` path and request 128 MiB pinned-host and device
+pools. These are not different CUDA semantics: public and Dark context creation
+must construct the same internal context state, and allocation sizes remain
+caller-supplied runtime values. The 32 MiB Mirror's Edge pools are fixture
+evidence, not allocator constants.
+
+`SampleCloth` scene 1 loads the same 17-module PhysX 2.8.0 corpus and launches
+the same three deformable entry names as the game. It is therefore the first
+SDK façade proxy. `SampleParticleFluid` and `SampleCloth` scene 2 launch
+additional entries and remain later qualification cases rather than reasons to
+implement unrelated CUDA features.
+
 No public stream, event, module-unload, array, surface, graphics-resource, or
 peer/IPC lifecycle occurred. Modules remain valid until context teardown.
 
@@ -579,9 +599,12 @@ declarations; see `mirrors-edge-ptx-corpus.md`. `cuLaunchKernel` must copy or
 consume the argument bytes according to CUDA launch semantics before the caller
 reuses its host buffer.
 
-Observed block X values are 64, 128, 192, and 256. Observed dynamic shared
-memory is 0, 260, 4096, or 7072 bytes. A successful implementation must combine
-that with each entry's static shared allocation.
+Mirror's Edge uses block X values 64, 128, 192, and 256 and dynamic shared
+sizes 0, 260, 4096, and 7072 bytes. PhysX 2.8.0 `SampleCloth` scene 1 adds a
+valid block-X 512, dynamic-shared 42,240-byte launch of the same solver entry.
+Launch dimensions and shared size are runtime inputs. The backend combines
+dynamic and static layouts, then selects native Workgroup memory or
+per-workgroup storage scratch from the physical Vulkan limit.
 
 ## Result and error behavior
 

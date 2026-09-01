@@ -89,6 +89,7 @@ constexpr std::size_t kSolverPackedOffset = 112;
 constexpr std::size_t kSolverOutputOffset = 128;
 constexpr VkDeviceSize kSolverPayloadBytes = 256u * sizeof(std::uint32_t);
 constexpr VkDeviceSize kSolverConstantBytes = 5888u;
+constexpr VkDeviceSize kSampleClothSolverDynamicSharedBytes = 42240u;
 constexpr std::array<std::uint32_t, 4> kExpectedSolverA = {
     0x3f800000u, 0x40000000u, 0x40400000u, 0u,
 };
@@ -778,6 +779,7 @@ DeviceResult run_device(
     bool force_fixture_mode,
     bool deformable_fixture_mode,
     bool solver_fixture_mode,
+    bool sample_cloth_solver_fixture_mode,
     bool collision_fixture_mode,
     bool constraints_fixture_mode,
     bool dynamic_response_fixture_mode,
@@ -817,6 +819,7 @@ DeviceResult run_device(
     VkDevice device = VK_NULL_HANDLE;
     BufferAllocation device_buffer;
     BufferAllocation staging_buffer;
+    BufferAllocation shared_buffer;
     void *mapped = nullptr;
     VkDescriptorSetLayout descriptor_layout = VK_NULL_HANDLE;
     VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
@@ -923,6 +926,15 @@ DeviceResult run_device(
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (sample_cloth_solver_fixture_mode) {
+            shared_buffer = create_buffer(
+                physical_device,
+                device,
+                kSampleClothSolverDynamicSharedBytes,
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                0,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        }
         result.device_memory_local = device_buffer.device_local;
         result.staging_coherent = staging_buffer.host_coherent;
 
@@ -1774,22 +1786,25 @@ DeviceResult run_device(
         }
 
         const std::uint32_t binding_count =
-            selected_texture_mode || density_fixture_mode ||
-                    force_fixture_mode || collision_fixture_mode
-                ? 4u
-                : ptx_oracle_mode || constant_fixture_mode ||
-                          deformable_fixture_mode || solver_fixture_mode
-                    ? 3u
-                    : kernel_fixture_mode || reorder_fixture_mode ||
-                              constraints_fixture_mode ||
-                              dynamic_response_fixture_mode ||
-                              static_response_fixture_mode ||
-                              simple_particle_fixture_mode ||
-                              radix_sort_fixture_mode ||
-                              shape_batches_fixture_mode || triangles_fixture_mode
-                        ? 2u
-                        : 1u;
-        std::array<VkDescriptorSetLayoutBinding, 4> bindings = {};
+            sample_cloth_solver_fixture_mode
+                ? 5u
+                : selected_texture_mode || density_fixture_mode ||
+                          force_fixture_mode || collision_fixture_mode
+                    ? 4u
+                    : ptx_oracle_mode || constant_fixture_mode ||
+                              deformable_fixture_mode || solver_fixture_mode
+                        ? 3u
+                        : kernel_fixture_mode || reorder_fixture_mode ||
+                                  constraints_fixture_mode ||
+                                  dynamic_response_fixture_mode ||
+                                  static_response_fixture_mode ||
+                                  simple_particle_fixture_mode ||
+                                  radix_sort_fixture_mode ||
+                                  shape_batches_fixture_mode ||
+                                  triangles_fixture_mode
+                            ? 2u
+                            : 1u;
+        std::array<VkDescriptorSetLayoutBinding, 5> bindings = {};
         for (std::uint32_t binding_index = 0;
              binding_index < binding_count;
              ++binding_index) {
@@ -1836,8 +1851,8 @@ DeviceResult run_device(
             &descriptor_layout,
         };
         check(vkAllocateDescriptorSets(device, &set_info, &descriptor_set), "vkAllocateDescriptorSets");
-        std::array<VkDescriptorBufferInfo, 4> descriptor_buffer_infos = {};
-        std::array<VkWriteDescriptorSet, 4> descriptor_writes = {};
+        std::array<VkDescriptorBufferInfo, 5> descriptor_buffer_infos = {};
+        std::array<VkWriteDescriptorSet, 5> descriptor_writes = {};
         for (std::uint32_t binding_index = 0;
              binding_index < binding_count;
              ++binding_index) {
@@ -1846,6 +1861,13 @@ DeviceResult run_device(
                 0,
                 kBufferBytes,
             };
+            if (sample_cloth_solver_fixture_mode && binding_index == 4u) {
+                descriptor_buffer_infos[binding_index] = {
+                    shared_buffer.buffer,
+                    0,
+                    kSampleClothSolverDynamicSharedBytes,
+                };
+            }
             if (collision_fixture_mode && binding_index == 2u) {
                 descriptor_buffer_infos[binding_index].offset =
                     collision_constant_offset;
@@ -2863,6 +2885,12 @@ DeviceResult run_device(
         if (descriptor_layout != VK_NULL_HANDLE) {
             vkDestroyDescriptorSetLayout(device, descriptor_layout, nullptr);
         }
+        if (shared_buffer.buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device, shared_buffer.buffer, nullptr);
+        }
+        if (shared_buffer.memory != VK_NULL_HANDLE) {
+            vkFreeMemory(device, shared_buffer.memory, nullptr);
+        }
         if (staging_buffer.buffer != VK_NULL_HANDLE) {
             vkDestroyBuffer(device, staging_buffer.buffer, nullptr);
         }
@@ -3682,8 +3710,13 @@ int main(int argc, char **argv)
         argc == 4 && std::string(argv[2]) == "--force-fixture";
     const bool deformable_fixture_mode =
         argc == 4 && std::string(argv[2]) == "--deformable-fixture";
+    const bool sample_cloth_solver_fixture_mode =
+        argc == 4 &&
+        std::string(argv[2]) == "--sample-cloth-solver-fixture";
     const bool solver_fixture_mode =
-        argc == 4 && std::string(argv[2]) == "--deformable-solver-fixture";
+        sample_cloth_solver_fixture_mode ||
+        (argc == 4 &&
+         std::string(argv[2]) == "--deformable-solver-fixture");
     const bool collision_fixture_mode =
         argc == 4 && std::string(argv[2]) == "--deformable-collision-fixture";
     const bool constraints_fixture_mode =
@@ -3728,6 +3761,7 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--force-fixture" ||
          std::string(argv[2]) == "--deformable-fixture" ||
          std::string(argv[2]) == "--deformable-solver-fixture" ||
+         std::string(argv[2]) == "--sample-cloth-solver-fixture" ||
          std::string(argv[2]) == "--deformable-sequence-fixture" ||
          std::string(argv[2]) == "--fluid-constraints-fixture" ||
          std::string(argv[2]) == "--fluid-dynamic-response-fixture" ||
@@ -3762,6 +3796,7 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --force-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-solver-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --sample-cloth-solver-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-collision-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-constraints-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --fluid-dynamic-response-fixture <generated.spv>\n"
@@ -3913,6 +3948,7 @@ int main(int argc, char **argv)
                   force_fixture_mode,
                   deformable_fixture_mode,
                   solver_fixture_mode,
+                  sample_cloth_solver_fixture_mode,
                   collision_fixture_mode,
                   constraints_fixture_mode,
                   dynamic_response_fixture_mode,
@@ -3957,6 +3993,8 @@ int main(int argc, char **argv)
                    ? "fluid_dynamic_response_fixture" :
                constraints_fixture_mode ? "fluid_constraints_fixture" :
                collision_fixture_mode ? "deformable_collision_fixture" :
+               sample_cloth_solver_fixture_mode
+                   ? "sample_cloth_solver_fixture" :
                solver_fixture_mode ? "deformable_solver_fixture" :
                deformable_fixture_mode ? "deformable_update_fixture" :
                force_fixture_mode ? "force_kernel_fixture" :
@@ -4088,7 +4126,19 @@ int main(int argc, char **argv)
         output << "  \"kernel\": \"KernelDeformableUberSolver<512>\",\n"
                << "  \"particle_count\": 1,\n"
                << "  \"iteration_count\": 0,\n"
-               << "  \"dynamic_shared_bytes\": 7072,\n";
+               << "  \"local_size_x\": "
+               << (sample_cloth_solver_fixture_mode ? 512u : 64u)
+               << ",\n"
+               << "  \"dynamic_shared_bytes\": "
+               << (sample_cloth_solver_fixture_mode
+                       ? kSampleClothSolverDynamicSharedBytes
+                       : 7072u)
+               << ",\n"
+               << "  \"shared_backing\": \""
+               << (sample_cloth_solver_fixture_mode
+                       ? "storage_buffer"
+                       : "workgroup")
+               << "\",\n";
     } else if (deformable_fixture_mode) {
         output << "  \"kernel\": \"PxgCudaDeformableUpdate\",\n"
                << "  \"instance_count\": 1,\n"

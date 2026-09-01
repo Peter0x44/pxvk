@@ -24,7 +24,7 @@ not claim shader or PhysX correctness.
 |---|---|
 | `mirrors-edge-native-trace.md` | Three routes exercise fluid, deformable, and visibly broken-glass workloads through one x86 context and default stream |
 | `mirrors-edge-ptx-corpus.md` | Required frontend is finite: PTX 4.1, 17 modules, 16 launched entries, 120 launched variants, 32-bit addresses |
-| `cuda-driver-contract.md` | Host contract is 35 active exports, six Dark tables, stable handles, two 32 MiB pools, packed launches, and ordered default-stream work |
+| `cuda-driver-contract.md` | Host contract is 35 active exports, six Dark tables, stable handles, caller-sized pools (32 MiB in Mirror's Edge; 128 MiB in official samples), packed launches, and ordered default-stream work |
 | `zluda-runtime.md` | A separate 64-bit server is unnecessary; local u32 virtual pointers and typed handles work for PhysX 2.8 |
 | `zluda-ptx.md` | Typed parsing, entry selection, normalization, and narrow semantic helpers cover the corpus; HIP/LLVM machinery is not reusable architecture |
 | `native-oracle-probes.md` | FTZ, fusion, conversion, NaN, barrier, and integer-texture behavior have exact NVIDIA outputs |
@@ -628,15 +628,15 @@ hardware preflight and standalone Vulkan oracle runner do not.
 ### CUDA virtual memory
 
 Keep CUDA-visible addresses as nonzero `u32` virtual addresses into allocation
-records. Reserve zero for null. For the captured public allocation, translate
-an address to a byte offset in one 32 MiB Vulkan storage buffer after validating
-that it belongs to the live range.
+records. Reserve zero for null. Translate an address to a byte offset in its
+owning caller-sized Vulkan storage allocation after validating the live range.
 
 Use:
 
-- one device-local 32 MiB buffer with storage and transfer usage;
-- one persistent host-visible staging buffer;
-- read-only storage buffers for module constants and the compact texture table;
+- caller-sized device-local buffers with storage and transfer usage;
+- host-visible staging capacity sized or grown for the requested transfers;
+- read-only storage buffers for module constants, the compact texture table,
+  and oversized per-workgroup shared scratch when required;
 - push constants for the exact packed parameter bytes, up to 100 bytes.
 
 Implement `cuMemHostAlloc` with checked, page-aligned Windows virtual memory.

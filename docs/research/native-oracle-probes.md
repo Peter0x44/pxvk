@@ -14,12 +14,11 @@ standalone JSON report; `tools/build-reference-bundle.py` stores it at
 
 The original native report had SHA-256
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Thirteen native runner reports are stored in the deterministic reference
-bundle: the semantic oracle, four-kernel fluid pipeline, focused fluid
-constraints, dynamic response, static response, boxes, capsules, convexes, and
-triangles, all three focused deformable workloads, and the ordered deformable
-step. The bundle has SHA-256
-`c0a93382ed6a9529cc1735d78f193555efd5da8f1aecafbbb74096fc35253046`.
+Sixteen native runner reports are stored in the deterministic reference bundle:
+the semantic oracle, four-kernel fluid pipeline, eight focused fluid workloads,
+radix sort, four focused deformable launches including the `SampleCloth`
+solver shape, and the ordered deformable step. The bundle has SHA-256
+`6bb9feb5a80db4e1d3fa3c4808782d174ee3ffcbcb192eeb3cb36b8c50930a92`.
 
 ## Environment
 
@@ -209,6 +208,12 @@ updates the particle/delta state, and writes the exact 64-byte solver record.
 Every live range is guarded. The native report SHA-256 is
 `83d4b38dd4112716e63311a06b7d040e9275c44654fd1bae6dbdefb33009c040`;
 the report is supplied as `--cuda-deformable-solver`.
+
+The same runner accepts `--sample-cloth-shape` to use the official PhysX 2.8.0
+`SampleCloth` scene-1 launch dimensions: local size 512 and 42,240 bytes of
+dynamic shared memory. Three native runs were byte-identical with SHA-256
+`d4d89f0834d38783ecdabc97af0bdeeb575fe80afc07cf479672c048bf861e2c`;
+the report is supplied as `--cuda-sample-cloth-solver`.
 
 The collision fixture uses the extracted collision module:
 
