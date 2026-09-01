@@ -242,6 +242,7 @@ constexpr KernelSpec kKernelSpecs[] = {
     {"_Z29KernelDeformableUberCollisionPi", "deformable-collision.spv", 4, 64, 0, false, Profile::deformable_collision},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "deformable-solver.spv", 16, 64, 7072, false, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-solver.spv", 16, 512, 42240, true, Profile::deformable_solver},
+    {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-damping-solver.spv", 16, 512, 23616, true, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-self-collision-solver.spv", 16, 512, 15376, true, Profile::deformable_solver},
     {"_Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj", "fluid-calc-hash.spv", 52, 64, 0, false, Profile::none},
     {"_Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej", "fluid-reorder.spv", 76, 64, 260, false, Profile::none},

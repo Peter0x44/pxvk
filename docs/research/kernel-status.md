@@ -62,6 +62,14 @@ sample launch is accepted even where it exceeds native Vulkan Workgroup memory.
 128 MiB host/device heap reuse, radix sorting, four self-collision dispatches,
 and the 15,376-byte storage-backed solver launch.
 
+`SampleCloth` scene 3 creates three hardware cloths and launches the same
+512-thread solver with a third dynamic-shared shape: 23,616 bytes and a
+three-block grid. The runtime originally recognized only the 42,240-byte
+scene-1 and 15,376-byte scene-2 shapes. It returned
+`CUDA_ERROR_NOT_SUPPORTED` for the scene-3 solver launch; PhysXCore then faulted
+instead of recovering from that internal launch failure. A separately emitted
+storage-backed solver shader now covers the observed 23,616-byte shape.
+
 ## In-game readiness audit
 
 The exact-fixture ledger answers whether each selected entry can translate and

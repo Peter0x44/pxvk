@@ -137,6 +137,7 @@ $jobs = @(
     @($updateEntry, "64", "0", "deformable-update", "--entry"),
     @($collisionEntry, "64", "0", "deformable-collision", "--entry"),
     @($solverEntry, "512", "42240", "sample-cloth-solver", "--entry-shared-storage"),
+    @($solverEntry, "512", "23616", "sample-cloth-damping-solver", "--entry-shared-storage"),
     @($selfHashEntry, "128", "0", "self-collision-hash", "--entry"),
     @($radixEntry, "256", "4096", "radix-sort", "--entry"),
     @($selfReorderEntry, "128", "0", "self-collision-reorder", "--entry"),

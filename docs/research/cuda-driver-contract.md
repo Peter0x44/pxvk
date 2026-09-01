@@ -600,11 +600,11 @@ consume the argument bytes according to CUDA launch semantics before the caller
 reuses its host buffer.
 
 Mirror's Edge uses block X values 64, 128, 192, and 256 and dynamic shared
-sizes 0, 260, 4096, and 7072 bytes. PhysX 2.8.0 `SampleCloth` scene 1 adds a
-valid block-X 512, dynamic-shared 42,240-byte launch of the same solver entry.
-Launch dimensions and shared size are runtime inputs. The backend combines
-dynamic and static layouts, then selects native Workgroup memory or
-per-workgroup storage scratch from the physical Vulkan limit.
+sizes 0, 260, 4096, and 7072 bytes. PhysX 2.8.0 `SampleCloth` adds block-X 512
+solver launches with 42,240 bytes in scene 1, 15,376 bytes in scene 2, and
+23,616 bytes in scene 3. Launch dimensions and shared size are runtime inputs.
+The backend combines dynamic and static layouts, then selects native Workgroup
+memory or per-workgroup storage scratch from the physical Vulkan limit.
 
 ## Result and error behavior
 
