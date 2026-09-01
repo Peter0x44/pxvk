@@ -608,6 +608,13 @@ inputs. The backend combines dynamic and static layouts, then selects native
 Workgroup memory or per-workgroup storage scratch from the physical Vulkan
 limit.
 
+Scene 6 uses the alternate tearing solver pipeline: 1,024-thread init,
+particle, and pack kernels plus 512-thread packet kernels. Packet dynamic
+shared memory changed from 33,056 to 33,088 bytes and from 2,624 to 2,640 bytes
+as the solver topology changed. These are runtime values, not a finite launch
+catalog; storage-backed shared memory specializes its per-workgroup stride when
+the Vulkan pipeline is created.
+
 ## Result and error behavior
 
 Every observed public CUDA call returned `CUDA_SUCCESS`.

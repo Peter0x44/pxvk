@@ -15,6 +15,8 @@
     ld.param.u32 %r1, [solver_types_probe_param_0];
     ld.param.s8 %r2, [solver_types_probe_param_1];
     ld.global.v4.u16 {%rs1, %rs2, %rs3, %rs4}, [%r1];
+    ld.global.v2.u16 {%rs1, %rs2}, [%r1];
+    cvt.u32.u16 %r6, %rs1;
     mov.u16 %rs5, 65535;
     cvt.s32.s16 %r3, %rs5;
     cvt.u16.u32 %rs6, %r2;

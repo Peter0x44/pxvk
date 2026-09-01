@@ -49,13 +49,15 @@ public:
         std::uint32_t constant_bytes,
         bool texture_metadata,
         bool int64,
-        bool shared_storage_buffer = false)
+        bool shared_storage_buffer = false,
+        bool dynamic_shared_stride = false)
         : shared_words_(
               std::max(
                   1u,
                   shared_bytes / 4u +
                       (shared_bytes % 4u == 0u ? 0u : 1u))),
-          shared_storage_buffer_(shared_storage_buffer)
+          shared_storage_buffer_(shared_storage_buffer),
+          dynamic_shared_stride_(dynamic_shared_stride)
     {
         if (int64) {
             emit(capabilities_, SpvOpCapability, {SpvCapabilityInt64});
@@ -536,7 +538,20 @@ public:
                 "shared storage base initialized more than once");
         }
         const Value group = workgroup_invocation_x();
-        const Value stride = constant(ValueType::u32, shared_words_);
+        Value stride{ValueType::u32, 0u};
+        if (dynamic_shared_stride_) {
+            stride.id = allocate_id();
+            emit(
+                declarations_,
+                SpvOpSpecConstant,
+                {type_u32_, stride.id, 1u});
+            emit(
+                annotations_,
+                SpvOpDecorate,
+                {stride.id, SpvDecorationSpecId, 0u});
+        } else {
+            stride = constant(ValueType::u32, shared_words_);
+        }
         shared_base_ =
             instruction(
                 SpvOpIMul, ValueType::u32, {group.id, stride.id}).id;
@@ -812,6 +827,7 @@ private:
     std::uint32_t shared_words_ = 1u;
     std::uint32_t shared_base_ = 0u;
     bool shared_storage_buffer_ = false;
+    bool dynamic_shared_stride_ = false;
     std::map<std::pair<ValueType, std::uint32_t>, std::uint32_t> constants_;
     std::vector<std::uint32_t> capabilities_;
     std::vector<std::uint32_t> imports_;
@@ -2384,14 +2400,15 @@ private:
                 load_parameter(operands.at(1), instruction));
             return;
         }
-        if (variant == "ld.global.v4.u16" ||
+        if (variant == "ld.global.v2.u16" ||
+            variant == "ld.global.v4.u16" ||
             variant == "ld.global.v4.u32" ||
             variant == "ld.global.v4.f32") {
             const Value base_address = address_operand(operands.at(1));
             const std::vector<std::string> destinations =
                 register_operand_list(operands.at(0));
             const std::uint32_t stride =
-                variant == "ld.global.v4.u16" ? 2u : 4u;
+                has_modifier(instruction, "u16") ? 2u : 4u;
             for (std::uint32_t component = 0u;
                  component < destinations.size();
                  ++component) {
@@ -2407,7 +2424,7 @@ private:
                 const Value word = module_.load_buffer(word_index(address));
                 define_register(
                     destinations[component],
-                    variant == "ld.global.v4.u16"
+                    has_modifier(instruction, "u16")
                         ? extract_subword(word, address, 16u, false)
                         : has_modifier(instruction, "f32")
                             ? module_.coerce(word, ValueType::f32)
@@ -2622,6 +2639,12 @@ private:
                 operands.at(0),
                 sign_extend(
                     scalar_operand(operands.at(1), ValueType::u32), 16u));
+            return;
+        }
+        if (variant == "cvt.u32.u16") {
+            define(
+                operands.at(0),
+                scalar_operand(operands.at(1), ValueType::u32));
             return;
         }
         if (variant == "cvt.u16.u32") {
@@ -3153,7 +3176,8 @@ std::vector<std::uint32_t> emit_kernel_entry(
     const std::string &entry_name,
     std::uint32_t local_size,
     std::uint32_t dynamic_shared_bytes,
-    bool shared_storage_buffer)
+    bool shared_storage_buffer,
+    bool dynamic_shared_stride)
 {
     if (manifest.at("schema_version").get<std::uint32_t>() != 5u) {
         throw std::runtime_error("kernel emitter requires typed manifest schema 5");
@@ -3170,7 +3194,8 @@ std::vector<std::uint32_t> emit_kernel_entry(
         module_constant_bytes(manifest),
         entry_uses_textures(entry),
         entry_uses_int64(entry),
-        shared_storage_buffer);
+        shared_storage_buffer,
+        dynamic_shared_stride);
     const std::uint32_t function = module.allocate_id();
     KernelEntryLowerer(
         module,
@@ -3206,8 +3231,12 @@ int main(int argc, char **argv)
 {
     const bool native_shared_mode =
         argc == 7 && std::string(argv[1]) == "--entry";
-    const bool storage_shared_mode =
+    const bool fixed_storage_shared_mode =
         argc == 7 && std::string(argv[1]) == "--entry-shared-storage";
+    const bool dynamic_storage_shared_mode =
+        argc == 7 && std::string(argv[1]) == "--entry-shared-storage-dynamic";
+    const bool storage_shared_mode =
+        fixed_storage_shared_mode || dynamic_storage_shared_mode;
     const bool kernel_mode = native_shared_mode || storage_shared_mode;
     if (argc != 3 && !kernel_mode) {
         std::cerr << "usage: ptx-spirv-emitter <typed-manifest.json> <output.spv>\n"
@@ -3215,6 +3244,9 @@ int main(int argc, char **argv)
                      "<dynamic-shared-bytes> <typed-manifest.json> <output.spv>\n"
                   << "       ptx-spirv-emitter --entry-shared-storage <name> "
                      "<local-size> <dynamic-shared-bytes> "
+                     "<typed-manifest.json> <output.spv>\n"
+                  << "       ptx-spirv-emitter --entry-shared-storage-dynamic "
+                     "<name> <local-size> <dynamic-shared-bytes> "
                      "<typed-manifest.json> <output.spv>\n";
         return 2;
     }
@@ -3227,7 +3259,8 @@ int main(int argc, char **argv)
                   argv[2],
                   static_cast<std::uint32_t>(std::stoul(argv[3])),
                   static_cast<std::uint32_t>(std::stoul(argv[4])),
-                  storage_shared_mode)
+                  storage_shared_mode,
+                  dynamic_storage_shared_mode)
             : emit_oracle(read_json(input_path));
         write_spirv(output_path, words);
         std::cout << "Emitted " << words.size() << " SPIR-V words from "

@@ -21,6 +21,7 @@ struct DispatchInfo {
     std::uint32_t grid_z = 1;
     std::uint32_t shared_bytes_per_group = 0;
     bool storage_backed_shared = false;
+    bool dynamic_shared_stride = false;
 };
 
 class VulkanBackend {

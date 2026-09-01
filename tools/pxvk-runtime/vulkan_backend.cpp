@@ -323,6 +323,19 @@ struct VulkanBackend::Impl {
         pipeline_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         pipeline_info.stage.module = output.shader;
         pipeline_info.stage.pName = "main";
+        const std::uint32_t shared_words =
+            std::max(1u, (info.shared_bytes_per_group + 3u) / 4u);
+        VkSpecializationMapEntry shared_stride_entry{};
+        shared_stride_entry.constantID = 0u;
+        shared_stride_entry.offset = 0u;
+        shared_stride_entry.size = sizeof(shared_words);
+        VkSpecializationInfo shared_stride_info{};
+        shared_stride_info.mapEntryCount = 1u;
+        shared_stride_info.pMapEntries = &shared_stride_entry;
+        shared_stride_info.dataSize = sizeof(shared_words);
+        shared_stride_info.pData = &shared_words;
+        if (info.dynamic_shared_stride)
+            pipeline_info.stage.pSpecializationInfo = &shared_stride_info;
         pipeline_info.layout = output.layout;
         if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr,
                                      &output.pipeline) != VK_SUCCESS) {
@@ -663,11 +676,18 @@ bool VulkanBackend::dispatch(const DispatchInfo &info, std::string &error)
         return false;
     }
     try {
-        auto found = impl_->pipelines.find(info.shader_path);
+        std::string pipeline_key = info.shader_path;
+        if (info.dynamic_shared_stride) {
+            const std::uint32_t shared_words =
+                std::max(1u, (info.shared_bytes_per_group + 3u) / 4u);
+            pipeline_key += "#" + std::to_string(shared_words);
+        }
+        auto found = impl_->pipelines.find(pipeline_key);
         if (found == impl_->pipelines.end()) {
             Impl::Pipeline pipeline;
             if (!impl_->create_pipeline(info, pipeline, error)) return false;
-            found = impl_->pipelines.emplace(info.shader_path, std::move(pipeline)).first;
+            found = impl_->pipelines.emplace(
+                std::move(pipeline_key), std::move(pipeline)).first;
         }
         Impl::Pipeline &pipeline = found->second;
         std::vector<std::uint32_t> expected = {0u, 1u};

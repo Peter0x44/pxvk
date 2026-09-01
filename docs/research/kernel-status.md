@@ -83,6 +83,15 @@ to return `CUDA_ERROR_NOT_SUPPORTED`; update and collision continued without a
 solver, producing the detached triangular cloth geometry. An exact
 Workgroup-memory shader now covers the attachment scene.
 
+`SampleCloth` scene 6 switches from the uber solver to the topology-capable
+init, packet, particle, and pack pipeline. The packet solver uses 512-thread
+blocks and changes its dynamic shared-memory request as topology changes:
+33,056 to 33,088 bytes for the large packets and 2,624 to 2,640 bytes for the
+small packets in the observed run. Storage-backed packet shaders therefore use
+a Vulkan specialization constant for the per-workgroup stride; the runtime
+caches a pipeline per observed stride instead of enumerating each byte count.
+The workload also required vector `u16` loads and `cvt.u32.u16` lowering.
+
 The first visual scene-2 comparison exposed a runtime resource-layout defect in
 `PxgCudaDeformableSelfCollisionCompareParticles`. The shader indexes texture
 metadata in the source module's seven-reference order:

@@ -129,6 +129,10 @@ $frameLimiter = Resolve-BuiltFile $runtimeBuild "pxvk-frame-limit.dll"
 $updateEntry = "_Z24PxgCudaDeformableUpdateDPKhjPi"
 $collisionEntry = "_Z29KernelDeformableUberCollisionPi"
 $solverEntry = "_Z26KernelDeformableUberSolverILj512EEvjbPhPi"
+$solverInitEntry = "_Z26KernelDeformableInitSolverjPi"
+$solverPacketsEntry = "_Z28KernelDeformableSolvePacketsILj512EEvPK31PxgDeformableSolverBlockControlbPi"
+$solverParticlesEntry = "_Z30KernelDeformableSolveParticlesjbPi"
+$solverPackEntry = "_Z26KernelDeformableSolverPackjPhPi"
 $selfHashEntry = "_Z41PxgCudaDeformableSelfCollisionCreateHashD11PxgGpuArrayIjES0_S_IK12PxcVectorPadES_IKjEfPi"
 $radixEntry = "_Z15radixSortBlocksILj32ELj0ELb0EEvP5uint4S1_S1_S1_j"
 $selfReorderEntry = "_Z44PxgCudaDeformableSelfCollisionReorderInputsD11PxgGpuArrayIfES_I12PxcVectorPadES2_S2_S_IKjES4_S_IKfES_IKS1_ES8_S8_Pi"
@@ -141,6 +145,11 @@ $jobs = @(
     @($solverEntry, "128", "3168", "sample-cloth-pipe-solver", "--entry"),
     @($solverEntry, "512", "42240", "sample-cloth-solver", "--entry-shared-storage"),
     @($solverEntry, "512", "23616", "sample-cloth-damping-solver", "--entry-shared-storage"),
+    @($solverInitEntry, "1024", "0", "sample-cloth-tearing-init-solver", "--entry"),
+    @($solverPacketsEntry, "512", "33056", "sample-cloth-tearing-packets-large", "--entry-shared-storage-dynamic"),
+    @($solverPacketsEntry, "512", "2624", "sample-cloth-tearing-packets-small", "--entry"),
+    @($solverParticlesEntry, "1024", "0", "sample-cloth-tearing-solve-particles", "--entry"),
+    @($solverPackEntry, "1024", "0", "sample-cloth-tearing-solver-pack", "--entry"),
     @($selfHashEntry, "128", "0", "self-collision-hash", "--entry"),
     @($radixEntry, "256", "4096", "radix-sort", "--entry"),
     @($selfReorderEntry, "128", "0", "self-collision-reorder", "--entry"),

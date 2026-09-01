@@ -116,6 +116,16 @@ set_tests_properties(
     ptx-shared-storage-grid-emitter
     PROPERTIES DEPENDS ptx-shared-storage-grid-frontend)
 add_test(
+    NAME ptx-dynamic-shared-storage-emitter
+    COMMAND ptx-spirv-emitter
+        --entry-shared-storage-dynamic shared_storage_grid_probe 8 16
+        "${CMAKE_CURRENT_BINARY_DIR}/shared-storage-grid-manifest.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/shared-storage-grid-dynamic.spv"
+)
+set_tests_properties(
+    ptx-dynamic-shared-storage-emitter
+    PROPERTIES DEPENDS ptx-shared-storage-grid-frontend)
+add_test(
     NAME ptx-force-math-frontend
     COMMAND ptx-frontend
         "${CMAKE_CURRENT_SOURCE_DIR}/force_math_probe.ptx"

@@ -224,6 +224,7 @@ struct KernelSpec {
     std::uint32_t shared_bytes;
     bool storage_shared;
     Profile profile;
+    bool dynamic_shared_stride = false;
 };
 
 constexpr KernelSpec kKernelSpecs[] = {
@@ -247,6 +248,11 @@ constexpr KernelSpec kKernelSpecs[] = {
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-solver.spv", 16, 512, 42240, true, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-damping-solver.spv", 16, 512, 23616, true, Profile::deformable_solver},
     {"_Z26KernelDeformableUberSolverILj512EEvjbPhPi", "sample-cloth-self-collision-solver.spv", 16, 512, 15376, true, Profile::deformable_solver},
+    {"_Z26KernelDeformableInitSolverjPi", "sample-cloth-tearing-init-solver.spv", 8, 1024, 0, false, Profile::deformable_solver},
+    {"_Z28KernelDeformableSolvePacketsILj512EEvPK31PxgDeformableSolverBlockControlbPi", "sample-cloth-tearing-packets-large.spv", 12, 512, 33056, true, Profile::deformable_solver, true},
+    {"_Z28KernelDeformableSolvePacketsILj512EEvPK31PxgDeformableSolverBlockControlbPi", "sample-cloth-tearing-packets-small.spv", 12, 512, 2624, false, Profile::deformable_solver},
+    {"_Z30KernelDeformableSolveParticlesjbPi", "sample-cloth-tearing-solve-particles.spv", 12, 1024, 0, false, Profile::deformable_solver},
+    {"_Z26KernelDeformableSolverPackjPhPi", "sample-cloth-tearing-solver-pack.spv", 12, 1024, 0, false, Profile::deformable_solver},
     {"_Z26KernelFluidCalcHashPackedD17PxgFixedSizeArrayIjES0_S_IK12PxcVectorPadE11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj", "fluid-calc-hash.spv", 52, 64, 0, false, Profile::none},
     {"_Z42KernelReorderPosVelAndFindCellStartPackedD17PxgFixedSizeArrayI12PxcVectorPadES1_S_IjES2_S_IKS0_ES4_S_IKjES6_11PxgGpuArrayIS5_Ej", "fluid-reorder.spv", 76, 64, 260, false, Profile::none},
     {"_Z26KernelFluidSimpleParticleD17PxgFixedSizeArrayI12PxcVectorPadES_IKS0_E11PxgGpuArrayIKjES6_S_IK18PxgFluidParametersEj", "fluid-simple-particle.spv", 44, 256, 0, false, Profile::none},
@@ -270,6 +276,10 @@ const KernelSpec *lookup_kernel_launch(const char *name, std::uint32_t block_x,
     if (name == nullptr) return nullptr;
     for (const KernelSpec &spec : kKernelSpecs) {
         if (spec.block_x == block_x && spec.shared_bytes == shared_bytes &&
+            std::strcmp(spec.name, name) == 0) return &spec;
+    }
+    for (const KernelSpec &spec : kKernelSpecs) {
+        if (spec.dynamic_shared_stride && spec.block_x == block_x &&
             std::strcmp(spec.name, name) == 0) return &spec;
     }
     return nullptr;
@@ -1482,6 +1492,7 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuLaunchKernel(
     dispatch.grid_z = grid_z;
     dispatch.shared_bytes_per_group = shared_bytes;
     dispatch.storage_backed_shared = spec->storage_shared;
+    dispatch.dynamic_shared_stride = spec->dynamic_shared_stride;
     std::string error;
     if (!value.backend.dispatch(dispatch, error))
         return backend_failure(value, "launch", error);
