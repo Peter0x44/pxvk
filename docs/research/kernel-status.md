@@ -68,8 +68,9 @@ validate the self-collision result.
 three-block grid. The runtime originally recognized only the 42,240-byte
 scene-1 and 15,376-byte scene-2 shapes. It returned
 `CUDA_ERROR_NOT_SUPPORTED` for the scene-3 solver launch; PhysXCore then faulted
-instead of recovering from that internal launch failure. A separately emitted
-storage-backed solver shader now covers the observed 23,616-byte shape.
+instead of recovering from that internal launch failure. The common
+storage-backed solver now specializes its per-workgroup stride at pipeline
+creation, so one shader covers every observed 512-thread shape.
 
 `SampleCloth` scene 4 uses the same solver with a 128-thread block, 3,168 bytes
 of dynamic shared memory, and a two-block grid. This shape fits native Vulkan
@@ -91,6 +92,21 @@ small packets in the observed run. Storage-backed packet shaders therefore use
 a Vulkan specialization constant for the per-workgroup stride; the runtime
 caches a pipeline per observed stride instead of enumerating each byte count.
 The workload also required vector `u16` loads and `cvt.u32.u16` lowering.
+
+`SampleCloth` scene 7 exercises the pressure-cloth path. Its update and
+collision launches match scene 1, but its 512-thread solver requests 46,448
+bytes of dynamic shared memory. The previous finite catalog returned
+`CUDA_ERROR_NOT_SUPPORTED`, followed by the same PhysXCore access violation at
+`0x6c6b8bbc`. The dynamically specialized common solver accepts this runtime
+stride without a scene-specific shader.
+
+`SampleCloth` scene 9 creates one curtain and three pressure-cloth meshes. Its
+64-thread uber-solver first requests 17,424 bytes of shared memory, then 17,440
+bytes as the mesh state changes. The fixed launch catalog rejected the initial
+shape and PhysXCore faulted; an exact-only shader survived startup but failed at
+the second size. The storage-backed solver now specializes its per-workgroup
+stride at pipeline creation. Both the NVIDIA and Intel Vulkan devices sustained
+the remap scene without unsupported launches or backend failures.
 
 The first visual scene-2 comparison exposed a runtime resource-layout defect in
 `PxgCudaDeformableSelfCollisionCompareParticles`. The shader indexes texture

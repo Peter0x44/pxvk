@@ -142,9 +142,9 @@ $jobs = @(
     @($updateEntry, "64", "0", "deformable-update", "--entry"),
     @($collisionEntry, "64", "0", "deformable-collision", "--entry"),
     @($solverEntry, "64", "2016", "sample-cloth-attachment-solver", "--entry"),
+    @($solverEntry, "64", "17424", "sample-cloth-remap-solver", "--entry-shared-storage-dynamic"),
     @($solverEntry, "128", "3168", "sample-cloth-pipe-solver", "--entry"),
-    @($solverEntry, "512", "42240", "sample-cloth-solver", "--entry-shared-storage"),
-    @($solverEntry, "512", "23616", "sample-cloth-damping-solver", "--entry-shared-storage"),
+    @($solverEntry, "512", "42240", "sample-cloth-solver", "--entry-shared-storage-dynamic"),
     @($solverInitEntry, "1024", "0", "sample-cloth-tearing-init-solver", "--entry"),
     @($solverPacketsEntry, "512", "33056", "sample-cloth-tearing-packets-large", "--entry-shared-storage-dynamic"),
     @($solverPacketsEntry, "512", "2624", "sample-cloth-tearing-packets-small", "--entry"),
@@ -154,8 +154,7 @@ $jobs = @(
     @($radixEntry, "256", "4096", "radix-sort", "--entry"),
     @($selfReorderEntry, "128", "0", "self-collision-reorder", "--entry"),
     @($selfCellStartEntry, "128", "0", "self-collision-cell-start", "--entry"),
-    @($selfCompareEntry, "128", "0", "self-collision-compare", "--entry"),
-    @($solverEntry, "512", "15376", "sample-cloth-self-collision-solver", "--entry-shared-storage")
+    @($selfCompareEntry, "128", "0", "self-collision-compare", "--entry")
 )
 foreach ($job in $jobs) {
     $ptx = Resolve-PtxForEntry $captured $job[0]

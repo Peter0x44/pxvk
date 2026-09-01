@@ -615,6 +615,15 @@ as the solver topology changed. These are runtime values, not a finite launch
 catalog; storage-backed shared memory specializes its per-workgroup stride when
 the Vulkan pipeline is created.
 
+Scene 7 returns to the 512-thread uber solver and requests 46,448 bytes for its
+pressure cloth. The common storage-backed solver shader specializes the
+per-workgroup stride for this and the 42,240-, 23,616-, and 15,376-byte
+requests; these values are not separate shader variants.
+
+Scene 9 uses the 64-thread uber solver with shared-memory requests that changed
+from 17,424 to 17,440 bytes during the observed remap-mesh run. The
+storage-backed shader specializes the stride for these runtime values.
+
 ## Result and error behavior
 
 Every observed public CUDA call returned `CUDA_SUCCESS`.

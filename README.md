@@ -38,7 +38,7 @@ translated kernel set.
 
 Given a local PhysX 2.8 `SampleCloth` directory and extracted PTX, one command
 builds the x86 runtime and frontend, runs the runtime contract smoke test,
-translates the seventeen shaders required by scenes 1 through 6, and creates an
+translates the sixteen shaders required by scenes 1 through 9, and creates an
 runnable stage:
 
 ```powershell
