@@ -145,6 +145,13 @@ The redistributable `collision_types_probe.ptx` retains the added instruction
 forms; local captured execution is available through
 `run-tests.ps1 -CapturedPtxDir`.
 
+`PxgCudaFluidCollisionConstraintsBatch` adds two- and four-component shared
+float loads and four-component shared integer loads. Its 725 instructions lower
+to a deterministic 59,442-word module with local size 128 and 1,840 bytes of
+static shared memory. `collision_types_probe.ptx` retains each shared-vector
+form. The focused one-particle fixture exercises the trace-ordered no-contact
+path and matches native CUDA exactly on Intel and NVIDIA Vulkan adapters.
+
 Validate and execute the module:
 
 ```powershell
@@ -258,9 +265,9 @@ The frontend does not yet provide:
 - general type inference beyond declared register banks and the 147 finite
   opcode contracts;
 - reachability or dead-code elimination;
-- SPIR-V emission beyond the project oracle and the selected finite
-  `KernelFluidCalcHashPacked`, `KernelReorderPosVelAndFindCellStartPacked`,
-  `KernelFluidDensity`, and `KernelFluidForce` slices;
+- SPIR-V emission beyond the project oracle and the eight launched entries
+  marked **Exact fixture** in
+  [`../../docs/research/kernel-status.md`](../../docs/research/kernel-status.md);
 - shader caching;
 - CUDA module/runtime integration.
 

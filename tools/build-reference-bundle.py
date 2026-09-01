@@ -19,9 +19,11 @@ VULKAN_REPORTS = {
     "fluid_reorder": "fluid-reorder.json",
     "fluid_density": "fluid-density.json",
     "fluid_force": "fluid-force.json",
+    "fluid_constraints": "fluid-constraints.json",
     "deformable_update": "deformable-update.json",
     "deformable_solver": "deformable-solver.json",
     "deformable_collision": "deformable-collision.json",
+    "deformable_sequence": "deformable-sequence.json",
 }
 
 
@@ -64,6 +66,11 @@ def parse_args() -> argparse.Namespace:
         "--cuda-physx", type=Path, help="generated cuda-physx-fixture result"
     )
     parser.add_argument(
+        "--cuda-fluid-constraints",
+        type=Path,
+        help="generated cuda-fluid-constraints-fixture result",
+    )
+    parser.add_argument(
         "--cuda-deformable",
         type=Path,
         help="generated cuda-deformable-fixture result",
@@ -77,6 +84,11 @@ def parse_args() -> argparse.Namespace:
         "--cuda-deformable-collision",
         type=Path,
         help="generated cuda-deformable-collision-fixture result",
+    )
+    parser.add_argument(
+        "--cuda-deformable-sequence",
+        type=Path,
+        help="generated cuda-deformable-sequence-fixture result",
     )
     parser.add_argument(
         "--base",
@@ -108,6 +120,11 @@ def main() -> int:
         if args.cuda_physx
         else base.get("cuda", {}).get("physx_fluid_pipeline") if base else None
     )
+    cuda_fluid_constraints = (
+        load_json(args.cuda_fluid_constraints.resolve())
+        if args.cuda_fluid_constraints
+        else base.get("cuda", {}).get("fluid_constraints") if base else None
+    )
     cuda_deformable = (
         load_json(args.cuda_deformable.resolve())
         if args.cuda_deformable
@@ -123,18 +140,26 @@ def main() -> int:
         if args.cuda_deformable_collision
         else base.get("cuda", {}).get("deformable_collision") if base else None
     )
+    cuda_deformable_sequence = (
+        load_json(args.cuda_deformable_sequence.resolve())
+        if args.cuda_deformable_sequence
+        else base.get("cuda", {}).get("deformable_sequence") if base else None
+    )
     if (
         cuda_oracle is None
         or cuda_physx is None
+        or cuda_fluid_constraints is None
         or cuda_deformable is None
         or cuda_deformable_solver is None
         or cuda_deformable_collision is None
+        or cuda_deformable_sequence is None
     ):
         raise SystemExit(
             "a new bundle requires --cuda-oracle, --cuda-physx, "
-            "--cuda-deformable, --cuda-deformable-solver, and "
-            "--cuda-deformable-collision; otherwise supply --base containing "
-            "all five"
+            "--cuda-fluid-constraints, --cuda-deformable, "
+            "--cuda-deformable-solver, --cuda-deformable-collision, and "
+            "--cuda-deformable-sequence; otherwise supply --base containing "
+            "all seven"
         )
 
     profile = base.get("profile", args.profile) if base else args.profile
@@ -144,9 +169,11 @@ def main() -> int:
         "cuda": {
             "semantic_oracle": cuda_oracle,
             "physx_fluid_pipeline": cuda_physx,
+            "fluid_constraints": cuda_fluid_constraints,
             "deformable_update": cuda_deformable,
             "deformable_solver": cuda_deformable_solver,
             "deformable_collision": cuda_deformable_collision,
+            "deformable_sequence": cuda_deformable_sequence,
         },
         "vulkan": load_vulkan_reports(args.vulkan_results.resolve()),
     }

@@ -2243,6 +2243,34 @@ private:
             define(operands.at(0), value);
             return;
         }
+        if (variant == "ld.shared.v2.f32" ||
+            variant == "ld.shared.v4.f32" ||
+            variant == "ld.shared.v4.u32") {
+            const Value base_address = address_operand(operands.at(1));
+            const std::vector<std::string> destinations =
+                register_operand_list(operands.at(0));
+            for (std::uint32_t component = 0u;
+                 component < destinations.size();
+                 ++component) {
+                Value address = base_address;
+                if (component != 0u) {
+                    address = module_.instruction(
+                        SpvOpIAdd,
+                        ValueType::u32,
+                        {base_address.id,
+                         module_.constant(
+                             ValueType::u32, component * 4u).id});
+                }
+                const Value word =
+                    module_.load_shared(word_index(address));
+                define_register(
+                    destinations[component],
+                    has_modifier(instruction, "f32")
+                        ? module_.coerce(word, ValueType::f32)
+                        : word);
+            }
+            return;
+        }
         if (base == "ld" && has_modifier(instruction, "shared")) {
             const Value address = address_operand(operands.at(1));
             const Value loaded =

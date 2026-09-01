@@ -8,11 +8,12 @@ numerical correctness.
 
 The project has a committed native NVIDIA semantic oracle for f32,
 `bar.sync 0`, invocation-private local memory, and signed-coordinate `u32`/`f32`
-linear textures. Repeatable focused native RTX fixtures for all four translated
-fluid kernels and all three captured deformable kernels pass bit-for-bit through
-Vulkan on Intel and RTX, including guard ranges. The remaining family-level
-correctness gap is a complete deformable sequence fixture; captured in-game
-state remains a later integration gate.
+linear textures. Repeatable native RTX fixtures for all five translated fluid
+kernels and all three captured deformable kernels pass bit-for-bit through
+Vulkan on Intel and RTX, including guard ranges. An ordered three-kernel
+deformable step also passes with one shared heap and explicit compute barriers.
+It is trace-shaped but synthetic: zero shapes and zero solver iterations.
+Captured in-game state remains a later integration gate.
 
 This document defines pass/fail evidence. It does not select the permanent test
 framework, runtime language, shader compiler, or architecture.
@@ -196,11 +197,18 @@ For each of the 17 cataloged PTX hashes:
 The project-owned oracle completes this sequence through direct SPIR-V emission
 and exact Intel/RTX execution. The captured `KernelFluidCalcHashPacked`,
 `KernelReorderPosVelAndFindCellStartPacked`, `KernelFluidDensity`, and
-`KernelFluidForce` entries also compile, validate, and execute. Native RTX runs
-them as a one-particle pipeline; PTX-derived Vulkan matches calc/reorder state,
-both density outputs, and the force vector on Intel and RTX. Density and force
-use trace-observed texture lengths, constant-copy lengths, and block sizes with
-synthetic exact constant values.
+`KernelFluidForce` entries compile, validate, and execute as a one-particle
+pipeline. PTX-derived Vulkan matches calc/reorder state, both density outputs,
+and the force vector on Intel and RTX. Density and force use trace-observed
+texture lengths, constant-copy lengths, and block sizes with synthetic exact
+constant values.
+
+`PxgCudaFluidCollisionConstraintsBatch` is the eighth captured entry to compile
+and execute. Its 725 instructions emit a deterministic 59,442-word module at
+local size 128 with 1,840 bytes of static shared memory. A focused one-particle
+no-contact record produces exact position, velocity, unit-weight, and twelve
+cleared-output results with intact guards on native RTX and translated
+Intel/RTX.
 
 `PxgCudaDeformableUpdate`, `KernelDeformableUberCollision`, and
 `KernelDeformableUberSolver<512>` are the fifth through seventh captured entries
@@ -209,8 +217,15 @@ slots produces deterministic 9,792-, 175,407-, and 80,354-word SPIR-V modules;
 all pass Vulkan 1.2 validation. Native RTX and translated Intel/RTX match exact
 output bits and guard ranges for all three focused fixtures. Collision uses the
 captured local size 64 and 4,097-byte static shared layout; solver uses local
-size 64 and the captured 7,072-byte dynamic shared allocation. The other nine
+size 64 and the captured 7,072-byte dynamic shared allocation. The other eight
 launched entries remain parse/type/CFG validated rather than lowered.
+
+The same three modules also execute as one ordered step. Native CUDA queues
+update, collision, and solver on the default stream without intermediate host
+synchronization. Vulkan dispatches the same shaders against one heap with
+compute-write to compute-read/write barriers between them. Both Intel and RTX
+match the native update motion, collision state, solver delta, and 64-byte
+record exactly.
 
 The raw PTX remains local. A committed normalized manifest should contain only
 hashes and non-proprietary structural expectations already documented in
@@ -368,8 +383,18 @@ without inventing shape data not present in the trace evidence. Native RTX and
 PTX-derived Intel/RTX match the copied particle vectors, cleared collision
 state, exact scalar words, and 17 guarded heap ranges.
 
-These focused fixtures do not alone prove the full fluid or deformable
-pipeline. Complete sequence fixtures remain separate acceptance gates.
+The ordered fixture then connects those focused states instead of replaying
+three isolated heaps. Collision reads update's position/motion ranges, and
+solver reads and updates collision's position output. Native CUDA uses one
+default-stream submission chain and one final synchronization; Vulkan uses one
+command buffer with two explicit inter-dispatch barriers. All 25 live ranges
+remain guarded, and Intel/RTX match native output bit-for-bit. This proves the
+dispatch and shared-heap contract for the trace-shaped path, not collision
+geometry or iterative constraint response.
+
+The focused and ordered synthetic fixtures do not prove captured in-game
+deformable state or the complete fluid pipeline. Those remain separate
+acceptance gates.
 
 ### Comparison policy
 
@@ -385,11 +410,11 @@ Bitwise output is required initially. A mismatch inside a float-bearing range
 must be traced to a named PTX operation before any structured field or ULP
 comparison is introduced.
 
-After both single-kernel fixtures pass, capture one complete nine-kernel fluid
-spine and one three-kernel deformable step. These sequence fixtures validate
-default-stream ordering, dispatch barriers, dynamic shared memory, and
-inter-kernel state. They are required before claiming workload-family
-correctness, but not before the first translated-kernel milestone.
+The ordered three-kernel deformable step now passes and validates default-stream
+ordering, Vulkan dispatch barriers, static/dynamic shared launch shapes, and
+inter-kernel state flow. A captured-state deformable replay and the complete
+nine-kernel fluid spine remain required before claiming full workload-family
+correctness.
 
 ## Mirror's Edge integration smoke
 

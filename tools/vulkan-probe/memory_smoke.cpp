@@ -132,6 +132,59 @@ constexpr std::array<std::uint32_t, 4> kExpectedCollisionMotion = {
 constexpr std::array<std::uint32_t, 4> kExpectedCollisionScalars = {
     0xbf800000u, 0x00000000u, 0x0000ffffu, 0x00000000u,
 };
+
+constexpr std::size_t kSequenceUpdatePackedOffset = 8;
+constexpr std::size_t kSequenceUpdatePositionOffset = 16;
+constexpr std::size_t kSequenceUpdateMotionOffset = 24;
+constexpr std::size_t kSequenceUpdateFlagsOffset = 32;
+constexpr std::size_t kSequenceUpdateIgnoredOffset = 36;
+constexpr std::size_t kSequenceCollisionBatchOffset = 40;
+constexpr std::size_t kSequenceCollisionOutput8Offset = 48;
+constexpr std::size_t kSequenceCollisionOutput12Offset = 56;
+constexpr std::size_t kSequenceCollisionOutput20Offset = 64;
+constexpr std::size_t kSequenceCollisionOutputPositionOffset = 72;
+constexpr std::size_t kSequenceCollisionOutputMotionOffset = 80;
+constexpr std::size_t kSequenceCollisionVector40Offset = 88;
+constexpr std::size_t kSequenceCollisionVector44Offset = 96;
+constexpr std::size_t kSequenceCollisionScalar48Offset = 104;
+constexpr std::size_t kSequenceCollisionScalar52Offset = 108;
+constexpr std::size_t kSequenceCollisionScalar56Offset = 112;
+constexpr std::size_t kSequenceCollisionScalar60Offset = 116;
+constexpr std::size_t kSequenceCollisionVector64Offset = 120;
+constexpr std::size_t kSequenceCollisionActiveOffset = 128;
+constexpr std::size_t kSequenceSolverAOffset = 144;
+constexpr std::size_t kSequenceSolverBOffset = 152;
+constexpr std::size_t kSequenceSolverCOffset = 160;
+constexpr std::size_t kSequenceSolverFlagsOffset = 168;
+constexpr std::size_t kSequenceSolverPackedOffset = 172;
+constexpr std::size_t kSequenceSolverOutputOffset = 180;
+constexpr VkDeviceSize kSequencePayloadBytes =
+    320u * sizeof(std::uint32_t);
+constexpr std::size_t kConstraintsWorkUnitOffset = 8;
+constexpr std::size_t kConstraintsStartAddrsOffset = 16;
+constexpr std::size_t kConstraintsParametersOffset = 52;
+constexpr std::size_t kConstraintsKeyOffset = 96;
+constexpr std::size_t kConstraintsInputPositionOffset = 104;
+constexpr std::size_t kConstraintsInputMotionOffset = 112;
+constexpr std::size_t kConstraintsInputOtherOffset = 120;
+constexpr std::array<std::size_t, 8> kConstraintsVectorOutputOffsets = {
+    128, 136, 144, 152, 160, 168, 216, 224,
+};
+constexpr std::array<std::size_t, 4> kConstraintsScalarOutputOffsets = {
+    176, 180, 184, 188,
+};
+constexpr std::size_t kConstraintsWeightOffset = 192;
+constexpr std::size_t kConstraintsOutputPositionOffset = 200;
+constexpr std::size_t kConstraintsOutputVelocityOffset = 208;
+constexpr std::size_t kConstraintsErrorOffset = 232;
+constexpr VkDeviceSize kConstraintsPayloadBytes =
+    320u * sizeof(std::uint32_t);
+constexpr std::array<std::uint32_t, 4> kExpectedConstraintsPosition = {
+    0x40400000u, 0x40900000u, 0x40c00000u, 0u,
+};
+constexpr std::array<std::uint32_t, 4> kExpectedConstraintsVelocity = {
+    0x40800000u, 0x40a00000u, 0x40c00000u, 0u,
+};
 constexpr std::array<std::uint32_t, 4> kExpectedReorderedPosition = {
     0x3f800000u, 0x40000000u, 0x40400000u, 0u,
 };
@@ -510,6 +563,17 @@ struct DeviceResult {
     std::array<std::uint32_t, 4> collision_motion = {};
     std::array<std::uint32_t, 4> collision_scalars = {};
     bool collision_guards_intact = false;
+    std::array<std::uint32_t, 4> sequence_update_motion = {};
+    std::array<std::uint32_t, 4> sequence_collision_motion = {};
+    std::array<std::uint32_t, 4> sequence_collision_scalars = {};
+    std::array<std::uint32_t, 4> sequence_solver_a = {};
+    std::array<std::uint32_t, 4> sequence_solver_position = {};
+    std::array<std::uint32_t, 16> sequence_solver_output = {};
+    bool sequence_guards_intact = false;
+    std::array<std::uint32_t, 4> constraints_position = {};
+    std::array<std::uint32_t, 4> constraints_velocity = {};
+    std::uint32_t constraints_weight = 0;
+    bool constraints_guards_intact = false;
     std::string error;
 };
 
@@ -529,7 +593,8 @@ DeviceResult run_device(
     bool force_fixture_mode,
     bool deformable_fixture_mode,
     bool solver_fixture_mode,
-    bool collision_fixture_mode)
+    bool collision_fixture_mode,
+    bool constraints_fixture_mode)
 {
     DeviceResult result;
     result.index = device_index;
@@ -642,30 +707,103 @@ DeviceResult run_device(
                     ? kKernelFixtureCopyBytes
                     : constant_fixture_mode
                         ? kConstantFixtureCopyBytes
-                        : collision_fixture_mode
-                            ? collision_texture_metadata_offset +
-                                  kCollisionTextureMetadataBytes
-                            : solver_fixture_mode
-                                ? solver_constant_offset + kSolverConstantBytes
-                                : deformable_fixture_mode
-                                    ? deformable_constant_offset +
-                                          kDeformableConstantBytes
-                                    : force_fixture_mode
-                                        ? density_texture_metadata_offset +
-                                              kForceTextureMetadataBytes
-                                        : density_fixture_mode
+                        : constraints_fixture_mode
+                            ? kConstraintsPayloadBytes
+                            : collision_fixture_mode
+                                ? collision_texture_metadata_offset +
+                                      kCollisionTextureMetadataBytes
+                                : solver_fixture_mode
+                                    ? solver_constant_offset + kSolverConstantBytes
+                                    : deformable_fixture_mode
+                                        ? deformable_constant_offset +
+                                              kDeformableConstantBytes
+                                        : force_fixture_mode
                                             ? density_texture_metadata_offset +
-                                                  kDensityTextureMetadataBytes
-                                            : selected_texture_mode
-                                                ? texture_metadata_offset +
-                                                      kTextureMetadataBytes
-                                                : kMemoryCopyBytes;
+                                                  kForceTextureMetadataBytes
+                                            : density_fixture_mode
+                                                ? density_texture_metadata_offset +
+                                                      kDensityTextureMetadataBytes
+                                                : selected_texture_mode
+                                                    ? texture_metadata_offset +
+                                                          kTextureMetadataBytes
+                                                    : kMemoryCopyBytes;
         check(
             vkMapMemory(device, staging_buffer.memory, 0, staging_buffer.allocation_size, 0, &mapped),
             "vkMapMemory");
         auto *words = static_cast<std::uint32_t *>(mapped);
         std::memset(words, 0, static_cast<std::size_t>(copy_bytes));
-        if (collision_fixture_mode) {
+        if (constraints_fixture_mode) {
+            const auto byte_offset = [](std::size_t offset) {
+                return static_cast<std::uint32_t>(
+                    offset * sizeof(std::uint32_t));
+            };
+            const auto initialize = [&](std::size_t offset,
+                                        std::initializer_list<std::uint32_t> values) {
+                words[offset - 1u] = kGuardBefore;
+                std::copy(values.begin(), values.end(), words + offset);
+                words[offset + values.size()] = kGuardAfter;
+            };
+            words[0] = byte_offset(kConstraintsStartAddrsOffset);
+            words[1] = 1u;
+            words[2] = byte_offset(kConstraintsWorkUnitOffset);
+            words[3] = 1u;
+            words[4] = byte_offset(kConstraintsErrorOffset);
+            initialize(kConstraintsWorkUnitOffset, {0u, 1u, 0u, 0u});
+            words[kConstraintsStartAddrsOffset - 1u] = kGuardBefore;
+            std::fill_n(words + kConstraintsStartAddrsOffset, 32u, 0u);
+            words[kConstraintsStartAddrsOffset + 32u] = kGuardAfter;
+            auto *start_addrs = words + kConstraintsStartAddrsOffset;
+            start_addrs[3] = byte_offset(kConstraintsVectorOutputOffsets[7]);
+            start_addrs[4] = byte_offset(kConstraintsVectorOutputOffsets[0]);
+            start_addrs[5] = byte_offset(kConstraintsVectorOutputOffsets[1]);
+            start_addrs[6] = byte_offset(kConstraintsVectorOutputOffsets[2]);
+            start_addrs[7] = byte_offset(kConstraintsKeyOffset);
+            start_addrs[8] = byte_offset(kConstraintsVectorOutputOffsets[3]);
+            start_addrs[9] = byte_offset(kConstraintsVectorOutputOffsets[4]);
+            start_addrs[10] = byte_offset(kConstraintsVectorOutputOffsets[5]);
+            start_addrs[11] = byte_offset(kConstraintsScalarOutputOffsets[0]);
+            start_addrs[12] = byte_offset(kConstraintsWeightOffset);
+            start_addrs[13] = byte_offset(kConstraintsOutputPositionOffset);
+            start_addrs[14] = byte_offset(kConstraintsOutputVelocityOffset);
+            start_addrs[15] = byte_offset(kConstraintsVectorOutputOffsets[6]);
+            start_addrs[16] = byte_offset(kConstraintsScalarOutputOffsets[1]);
+            start_addrs[17] = byte_offset(kConstraintsScalarOutputOffsets[2]);
+            start_addrs[18] = byte_offset(kConstraintsScalarOutputOffsets[3]);
+            start_addrs[20] = byte_offset(kConstraintsInputPositionOffset);
+            start_addrs[21] = byte_offset(kConstraintsInputMotionOffset);
+            start_addrs[22] = byte_offset(kConstraintsInputOtherOffset);
+            start_addrs[27] = byte_offset(kConstraintsParametersOffset);
+            words[kConstraintsParametersOffset - 1u] = kGuardBefore;
+            std::fill_n(words + kConstraintsParametersOffset, 40u, 0u);
+            words[kConstraintsParametersOffset] = 0x3f000000u;
+            words[kConstraintsParametersOffset + 40u] = kGuardAfter;
+            initialize(kConstraintsKeyOffset, {0x0000ffffu, 0x12345678u});
+            initialize(
+                kConstraintsInputPositionOffset,
+                {0x3f800000u, 0x40000000u, 0x40400000u, 0xdeadbeefu});
+            initialize(
+                kConstraintsInputMotionOffset,
+                {0x40800000u, 0x40a00000u, 0x40c00000u, 0xcafebabeu});
+            initialize(
+                kConstraintsInputOtherOffset,
+                {0x3dcccccdu, 0x3e4ccccdu, 0x3e99999au, 0xabcdef01u});
+            for (const std::size_t offset : kConstraintsVectorOutputOffsets) {
+                initialize(
+                    offset,
+                    {0xaaaaaaaau, 0xbbbbbbbbu, 0xccccccccu, 0xddddddddu});
+            }
+            for (const std::size_t offset : kConstraintsScalarOutputOffsets) {
+                initialize(offset, {0xfeedfaceu});
+            }
+            initialize(kConstraintsWeightOffset, {0xfeedfaceu});
+            initialize(
+                kConstraintsOutputPositionOffset,
+                {0xaaaaaaaau, 0xbbbbbbbbu, 0xccccccccu, 0xddddddddu});
+            initialize(
+                kConstraintsOutputVelocityOffset,
+                {0xaaaaaaaau, 0xbbbbbbbbu, 0xccccccccu, 0xddddddddu});
+            initialize(kConstraintsErrorOffset, {0xfeedfaceu});
+        } else if (collision_fixture_mode) {
             words[0] = 0u;
             const auto initialize = [&](std::size_t offset,
                                         std::initializer_list<std::uint32_t> values) {
@@ -1087,7 +1225,10 @@ DeviceResult run_device(
                 : ptx_oracle_mode || constant_fixture_mode ||
                           deformable_fixture_mode || solver_fixture_mode
                     ? 3u
-                    : kernel_fixture_mode || reorder_fixture_mode ? 2u : 1u;
+                    : kernel_fixture_mode || reorder_fixture_mode ||
+                              constraints_fixture_mode
+                        ? 2u
+                        : 1u;
         std::array<VkDescriptorSetLayoutBinding, 4> bindings = {};
         for (std::uint32_t binding_index = 0;
              binding_index < binding_count;
@@ -1363,7 +1504,65 @@ DeviceResult run_device(
         }
         result.input_after = words[0];
         result.result = words[1];
-        if (collision_fixture_mode) {
+        if (constraints_fixture_mode) {
+            std::copy_n(
+                words + kConstraintsOutputPositionOffset,
+                result.constraints_position.size(),
+                result.constraints_position.begin());
+            std::copy_n(
+                words + kConstraintsOutputVelocityOffset,
+                result.constraints_velocity.size(),
+                result.constraints_velocity.begin());
+            result.constraints_weight = words[kConstraintsWeightOffset];
+            const auto guards_match =
+                [&](std::size_t offset, std::size_t count) {
+                    return words[offset - 1u] == kGuardBefore &&
+                        words[offset + count] == kGuardAfter;
+                };
+            result.constraints_guards_intact =
+                guards_match(kConstraintsWorkUnitOffset, 4u) &&
+                guards_match(kConstraintsStartAddrsOffset, 32u) &&
+                guards_match(kConstraintsParametersOffset, 40u) &&
+                guards_match(kConstraintsKeyOffset, 2u) &&
+                guards_match(kConstraintsInputPositionOffset, 4u) &&
+                guards_match(kConstraintsInputMotionOffset, 4u) &&
+                guards_match(kConstraintsInputOtherOffset, 4u) &&
+                guards_match(kConstraintsWeightOffset, 1u) &&
+                guards_match(kConstraintsOutputPositionOffset, 4u) &&
+                guards_match(kConstraintsOutputVelocityOffset, 4u) &&
+                guards_match(kConstraintsErrorOffset, 1u);
+            for (const std::size_t offset : kConstraintsVectorOutputOffsets) {
+                result.constraints_guards_intact =
+                    result.constraints_guards_intact &&
+                    guards_match(offset, 4u);
+            }
+            for (const std::size_t offset : kConstraintsScalarOutputOffsets) {
+                result.constraints_guards_intact =
+                    result.constraints_guards_intact &&
+                    guards_match(offset, 1u);
+            }
+            const std::array<std::uint32_t, 4> zero_vector = {};
+            result.pass =
+                result.constraints_position == kExpectedConstraintsPosition &&
+                result.constraints_velocity == kExpectedConstraintsVelocity &&
+                result.constraints_weight == 0x3f800000u &&
+                words[kConstraintsParametersOffset] == 0x3f000000u &&
+                words[kConstraintsKeyOffset] == 0x0000ffffu &&
+                words[kConstraintsKeyOffset + 1u] == 0x12345678u &&
+                words[kConstraintsErrorOffset] == 0xfeedfaceu &&
+                result.constraints_guards_intact;
+            for (const std::size_t offset : kConstraintsVectorOutputOffsets) {
+                result.pass =
+                    result.pass &&
+                    std::equal(
+                        words + offset,
+                        words + offset + zero_vector.size(),
+                        zero_vector.begin());
+            }
+            for (const std::size_t offset : kConstraintsScalarOutputOffsets) {
+                result.pass = result.pass && words[offset] == 0u;
+            }
+        } else if (collision_fixture_mode) {
             std::copy_n(
                 words + kCollisionOutputPositionOffset,
                 result.collision_position.size(),
@@ -1635,27 +1834,29 @@ DeviceResult run_device(
             }
         }
         if (!result.pass) {
-            result.error = collision_fixture_mode
-                ? "deformable collision fixture result mismatch"
-                : solver_fixture_mode
-                    ? "deformable solver fixture result mismatch"
-                    : deformable_fixture_mode
-                        ? "deformable update fixture result mismatch"
-                        : force_fixture_mode
-                            ? "force kernel fixture result mismatch"
-                            : density_fixture_mode
-                                ? "density kernel fixture result mismatch"
-                                : reorder_fixture_mode
-                                    ? "reorder kernel fixture result mismatch"
-                                    : kernel_fixture_mode
-                                        ? "selected kernel fixture result mismatch"
-                                        : constant_fixture_mode
-                                            ? "constant kernel fixture result mismatch"
-                                            : selected_texture_mode
-                                                ? "selected texture kernel fixture result mismatch"
-                                                : oracle_mode
-                                                    ? "standalone oracle result mismatch"
-                                                    : "integer/global-memory result mismatch";
+            result.error = constraints_fixture_mode
+                ? "fluid collision constraints fixture result mismatch"
+                : collision_fixture_mode
+                    ? "deformable collision fixture result mismatch"
+                    : solver_fixture_mode
+                        ? "deformable solver fixture result mismatch"
+                        : deformable_fixture_mode
+                            ? "deformable update fixture result mismatch"
+                            : force_fixture_mode
+                                ? "force kernel fixture result mismatch"
+                                : density_fixture_mode
+                                    ? "density kernel fixture result mismatch"
+                                    : reorder_fixture_mode
+                                        ? "reorder kernel fixture result mismatch"
+                                        : kernel_fixture_mode
+                                            ? "selected kernel fixture result mismatch"
+                                            : constant_fixture_mode
+                                                ? "constant kernel fixture result mismatch"
+                                                : selected_texture_mode
+                                                    ? "selected texture kernel fixture result mismatch"
+                                                    : oracle_mode
+                                                        ? "standalone oracle result mismatch"
+                                                        : "integer/global-memory result mismatch";
         }
     } catch (const std::exception &error) {
         result.error = error.what();
@@ -1678,6 +1879,786 @@ DeviceResult run_device(
         }
         if (shader_module != VK_NULL_HANDLE) {
             vkDestroyShaderModule(device, shader_module, nullptr);
+        }
+        if (pipeline_layout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
+        }
+        if (descriptor_pool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
+        }
+        if (descriptor_layout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device, descriptor_layout, nullptr);
+        }
+        if (staging_buffer.buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device, staging_buffer.buffer, nullptr);
+        }
+        if (staging_buffer.memory != VK_NULL_HANDLE) {
+            vkFreeMemory(device, staging_buffer.memory, nullptr);
+        }
+        if (device_buffer.buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device, device_buffer.buffer, nullptr);
+        }
+        if (device_buffer.memory != VK_NULL_HANDLE) {
+            vkFreeMemory(device, device_buffer.memory, nullptr);
+        }
+        vkDestroyDevice(device, nullptr);
+    }
+    return result;
+}
+
+DeviceResult run_deformable_sequence_device(
+    std::uint32_t device_index,
+    VkPhysicalDevice physical_device,
+    const std::array<std::vector<std::uint32_t>, 3> &shaders)
+{
+    DeviceResult result;
+    result.index = device_index;
+    vkGetPhysicalDeviceProperties(physical_device, &result.properties);
+
+    const VkDeviceSize alignment = std::max<VkDeviceSize>(
+        4u, result.properties.limits.minStorageBufferOffsetAlignment);
+    const VkDeviceSize update_parameter_offset =
+        align_up(kSequencePayloadBytes, alignment);
+    const VkDeviceSize collision_parameter_offset =
+        align_up(update_parameter_offset + 3u * sizeof(std::uint32_t), alignment);
+    const VkDeviceSize solver_parameter_offset =
+        align_up(collision_parameter_offset + sizeof(std::uint32_t), alignment);
+    const VkDeviceSize update_constant_offset =
+        align_up(solver_parameter_offset + 4u * sizeof(std::uint32_t), alignment);
+    const VkDeviceSize collision_constant_offset =
+        align_up(update_constant_offset + kDeformableConstantBytes, alignment);
+    const VkDeviceSize solver_constant_offset =
+        align_up(collision_constant_offset + kCollisionConstantBytes, alignment);
+    const VkDeviceSize texture_metadata_offset =
+        align_up(solver_constant_offset + kSolverConstantBytes, alignment);
+    const VkDeviceSize copy_bytes =
+        texture_metadata_offset + kCollisionTextureMetadataBytes;
+
+    VkDevice device = VK_NULL_HANDLE;
+    BufferAllocation device_buffer;
+    BufferAllocation staging_buffer;
+    void *mapped = nullptr;
+    VkDescriptorSetLayout descriptor_layout = VK_NULL_HANDLE;
+    VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
+    std::array<VkDescriptorSet, 3> descriptor_sets = {};
+    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+    std::array<VkShaderModule, 3> shader_modules = {};
+    std::array<VkPipeline, 3> pipelines = {};
+    VkCommandPool command_pool = VK_NULL_HANDLE;
+    VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+
+    try {
+        std::uint32_t queue_family_count = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(
+            physical_device, &queue_family_count, nullptr);
+        std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+        vkGetPhysicalDeviceQueueFamilyProperties(
+            physical_device,
+            &queue_family_count,
+            queue_families.data());
+        std::uint32_t queue_family = UINT32_MAX;
+        for (std::uint32_t index = 0u; index < queue_family_count; ++index) {
+            if ((queue_families[index].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0u) {
+                queue_family = index;
+                break;
+            }
+        }
+        if (queue_family == UINT32_MAX) {
+            throw std::runtime_error("device has no compute queue");
+        }
+
+        const float priority = 1.0f;
+        VkDeviceQueueCreateInfo queue_info = {
+            VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            nullptr,
+            0,
+            queue_family,
+            1,
+            &priority,
+        };
+        VkDeviceCreateInfo device_info = {
+            VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &queue_info,
+            0,
+            nullptr,
+            0,
+            nullptr,
+            nullptr,
+        };
+        check(
+            vkCreateDevice(physical_device, &device_info, nullptr, &device),
+            "vkCreateDevice");
+        volkLoadDevice(device);
+        VkQueue queue = VK_NULL_HANDLE;
+        vkGetDeviceQueue(device, queue_family, 0, &queue);
+
+        device_buffer = create_buffer(
+            physical_device,
+            device,
+            kBufferBytes,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            0,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        staging_buffer = create_buffer(
+            physical_device,
+            device,
+            kBufferBytes,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        result.device_memory_local = device_buffer.device_local;
+        result.staging_coherent = staging_buffer.host_coherent;
+
+        check(
+            vkMapMemory(
+                device,
+                staging_buffer.memory,
+                0,
+                staging_buffer.allocation_size,
+                0,
+                &mapped),
+            "vkMapMemory");
+        auto *bytes = static_cast<std::uint8_t *>(mapped);
+        auto *words = reinterpret_cast<std::uint32_t *>(bytes);
+        std::memset(mapped, 0, static_cast<std::size_t>(copy_bytes));
+        const auto initialize = [&](std::size_t offset,
+                                    std::initializer_list<std::uint32_t> values) {
+            words[offset - 1u] = kGuardBefore;
+            std::copy(values.begin(), values.end(), words + offset);
+            words[offset + values.size()] = kGuardAfter;
+        };
+        const auto sentinel_vector = [&initialize](std::size_t offset) {
+            initialize(
+                offset,
+                {0xaaaaaaaau, 0xbbbbbbbbu, 0xccccccccu, 0xddddddddu});
+        };
+        const auto sentinel_scalar = [&initialize](std::size_t offset) {
+            initialize(offset, {0xfeedfaceu});
+        };
+        const auto byte_offset = [](std::size_t offset) {
+            return static_cast<std::uint32_t>(
+                offset * sizeof(std::uint32_t));
+        };
+
+        initialize(kSequenceUpdatePackedOffset, {0xfeedfaceu});
+        initialize(
+            kSequenceUpdatePositionOffset,
+            {0x3f800000u, 0x40000000u, 0x40400000u, 0u});
+        initialize(
+            kSequenceUpdateMotionOffset,
+            {0x40800000u, 0x40a00000u, 0x40c00000u, 0x40e00000u});
+        initialize(kSequenceUpdateFlagsOffset, {0x00000014u});
+        initialize(kSequenceUpdateIgnoredOffset, {0xcafebabeu});
+        initialize(kSequenceCollisionBatchOffset, {0x00010000u, 0u});
+        for (const std::size_t offset : {
+                 kSequenceCollisionOutput8Offset,
+                 kSequenceCollisionOutput12Offset,
+                 kSequenceCollisionOutputPositionOffset,
+                 kSequenceCollisionOutputMotionOffset,
+                 kSequenceCollisionVector40Offset,
+                 kSequenceCollisionVector44Offset,
+                 kSequenceCollisionVector64Offset,
+             }) {
+            sentinel_vector(offset);
+        }
+        for (const std::size_t offset : {
+                 kSequenceCollisionOutput20Offset,
+                 kSequenceCollisionScalar48Offset,
+                 kSequenceCollisionScalar52Offset,
+                 kSequenceCollisionScalar56Offset,
+                 kSequenceCollisionScalar60Offset,
+             }) {
+            sentinel_scalar(offset);
+        }
+        initialize(kSequenceCollisionActiveOffset, {1u});
+        initialize(
+            kSequenceSolverAOffset,
+            {0x41200000u, 0x41300000u, 0x41400000u, 0u});
+        initialize(
+            kSequenceSolverBOffset,
+            {0x41a00000u, 0x41a80000u, 0x41b00000u, 0u});
+        initialize(
+            kSequenceSolverCOffset,
+            {0x41f00000u, 0x41f80000u, 0x42000000u, 0u});
+        initialize(kSequenceSolverFlagsOffset, {0x00000400u});
+        initialize(kSequenceSolverPackedOffset, {0xabcdef01u});
+        words[kSequenceSolverOutputOffset - 1u] = kGuardBefore;
+        std::fill_n(words + kSequenceSolverOutputOffset, 16u, 0u);
+        words[kSequenceSolverOutputOffset + 16u] = kGuardAfter;
+
+        auto *update_parameters =
+            reinterpret_cast<std::uint32_t *>(bytes + update_parameter_offset);
+        update_parameters[0] = byte_offset(kSequenceUpdatePackedOffset);
+        update_parameters[1] = 1u;
+        update_parameters[2] = byte_offset(kSequenceUpdateIgnoredOffset);
+        auto *collision_parameters =
+            reinterpret_cast<std::uint32_t *>(bytes + collision_parameter_offset);
+        collision_parameters[0] = 0u;
+        auto *solver_parameters =
+            reinterpret_cast<std::uint32_t *>(bytes + solver_parameter_offset);
+        solver_parameters[0] = 0u;
+        solver_parameters[1] = 0u;
+        solver_parameters[2] = byte_offset(kSequenceSolverOutputOffset);
+        solver_parameters[3] = 0u;
+
+        auto *update_constants =
+            reinterpret_cast<std::uint32_t *>(bytes + update_constant_offset);
+        update_constants[0] = 0x3e800000u;
+        update_constants[1] = 0xbf000000u;
+        update_constants[2] = 0x3f800000u;
+        update_constants[7] = 1u;
+        update_constants[15] = 0x3f000000u;
+        update_constants[16] = byte_offset(kSequenceUpdatePositionOffset);
+        update_constants[17] = byte_offset(kSequenceUpdateMotionOffset);
+        update_constants[22] = byte_offset(kSequenceUpdateFlagsOffset);
+
+        auto *collision_constants =
+            reinterpret_cast<std::uint32_t *>(bytes + collision_constant_offset);
+        collision_constants[0] = byte_offset(kSequenceUpdatePositionOffset);
+        collision_constants[1] = byte_offset(kSequenceUpdateMotionOffset);
+        collision_constants[2] = byte_offset(kSequenceCollisionOutput8Offset);
+        collision_constants[3] = byte_offset(kSequenceCollisionOutput12Offset);
+        collision_constants[5] = byte_offset(kSequenceCollisionOutput20Offset);
+        collision_constants[6] = byte_offset(kSequenceUpdateFlagsOffset);
+        collision_constants[8] =
+            byte_offset(kSequenceCollisionOutputPositionOffset);
+        collision_constants[9] =
+            byte_offset(kSequenceCollisionOutputMotionOffset);
+        collision_constants[10] =
+            byte_offset(kSequenceCollisionVector40Offset);
+        collision_constants[11] =
+            byte_offset(kSequenceCollisionVector44Offset);
+        collision_constants[12] =
+            byte_offset(kSequenceCollisionScalar48Offset);
+        collision_constants[13] =
+            byte_offset(kSequenceCollisionScalar52Offset);
+        collision_constants[14] =
+            byte_offset(kSequenceCollisionScalar56Offset);
+        collision_constants[15] =
+            byte_offset(kSequenceCollisionScalar60Offset);
+        collision_constants[16] =
+            byte_offset(kSequenceCollisionVector64Offset);
+        collision_constants[17] =
+            byte_offset(kSequenceCollisionActiveOffset);
+        collision_constants[4480u + 17u] =
+            byte_offset(kSequenceCollisionBatchOffset);
+
+        auto *solver_constants =
+            reinterpret_cast<std::uint32_t *>(bytes + solver_constant_offset);
+        solver_constants[1] = 1u;
+        solver_constants[8] = 0x3f800000u;
+        solver_constants[14] = byte_offset(kSequenceSolverAOffset);
+        solver_constants[15] =
+            byte_offset(kSequenceCollisionOutputPositionOffset);
+        solver_constants[16] = byte_offset(kSequenceSolverBOffset);
+        solver_constants[17] = byte_offset(kSequenceSolverCOffset);
+        solver_constants[18] = byte_offset(kSequenceSolverCOffset);
+        solver_constants[21] = byte_offset(kSequenceSolverFlagsOffset);
+        solver_constants[22] = byte_offset(kSequenceSolverPackedOffset);
+
+        if (!staging_buffer.host_coherent) {
+            VkMappedMemoryRange range = {
+                VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                nullptr,
+                staging_buffer.memory,
+                0,
+                VK_WHOLE_SIZE,
+            };
+            check(
+                vkFlushMappedMemoryRanges(device, 1, &range),
+                "vkFlushMappedMemoryRanges");
+        }
+
+        std::array<VkDescriptorSetLayoutBinding, 4> bindings = {};
+        for (std::uint32_t binding_index = 0u;
+             binding_index < bindings.size();
+             ++binding_index) {
+            bindings[binding_index] = {
+                binding_index,
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                1,
+                VK_SHADER_STAGE_COMPUTE_BIT,
+                nullptr,
+            };
+        }
+        VkDescriptorSetLayoutCreateInfo descriptor_layout_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            static_cast<std::uint32_t>(bindings.size()),
+            bindings.data(),
+        };
+        check(
+            vkCreateDescriptorSetLayout(
+                device,
+                &descriptor_layout_info,
+                nullptr,
+                &descriptor_layout),
+            "vkCreateDescriptorSetLayout");
+
+        VkDescriptorPoolSize pool_size = {
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            static_cast<std::uint32_t>(
+                descriptor_sets.size() * bindings.size()),
+        };
+        VkDescriptorPoolCreateInfo pool_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            nullptr,
+            0,
+            static_cast<std::uint32_t>(descriptor_sets.size()),
+            1,
+            &pool_size,
+        };
+        check(
+            vkCreateDescriptorPool(
+                device, &pool_info, nullptr, &descriptor_pool),
+            "vkCreateDescriptorPool");
+        const std::array<VkDescriptorSetLayout, 3> set_layouts = {
+            descriptor_layout, descriptor_layout, descriptor_layout,
+        };
+        VkDescriptorSetAllocateInfo set_info = {
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            nullptr,
+            descriptor_pool,
+            static_cast<std::uint32_t>(set_layouts.size()),
+            set_layouts.data(),
+        };
+        check(
+            vkAllocateDescriptorSets(
+                device, &set_info, descriptor_sets.data()),
+            "vkAllocateDescriptorSets");
+
+        const std::array<VkDeviceSize, 3> parameter_offsets = {
+            update_parameter_offset,
+            collision_parameter_offset,
+            solver_parameter_offset,
+        };
+        const std::array<VkDeviceSize, 3> parameter_ranges = {
+            3u * sizeof(std::uint32_t),
+            sizeof(std::uint32_t),
+            4u * sizeof(std::uint32_t),
+        };
+        const std::array<VkDeviceSize, 3> constant_offsets = {
+            update_constant_offset,
+            collision_constant_offset,
+            solver_constant_offset,
+        };
+        const std::array<VkDeviceSize, 3> constant_ranges = {
+            kDeformableConstantBytes,
+            kCollisionConstantBytes,
+            kSolverConstantBytes,
+        };
+        std::array<VkDescriptorBufferInfo, 12> descriptor_infos = {};
+        std::array<VkWriteDescriptorSet, 12> descriptor_writes = {};
+        for (std::size_t set_index = 0u;
+             set_index < descriptor_sets.size();
+             ++set_index) {
+            const std::array<VkDescriptorBufferInfo, 4> infos = {{
+                {device_buffer.buffer, 0, kBufferBytes},
+                {device_buffer.buffer,
+                 parameter_offsets[set_index],
+                 parameter_ranges[set_index]},
+                {device_buffer.buffer,
+                 constant_offsets[set_index],
+                 constant_ranges[set_index]},
+                {device_buffer.buffer,
+                 texture_metadata_offset,
+                 kCollisionTextureMetadataBytes},
+            }};
+            for (std::size_t binding_index = 0u;
+                 binding_index < infos.size();
+                 ++binding_index) {
+                const std::size_t descriptor_index =
+                    set_index * bindings.size() + binding_index;
+                descriptor_infos[descriptor_index] = infos[binding_index];
+                descriptor_writes[descriptor_index] = {
+                    VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    nullptr,
+                    descriptor_sets[set_index],
+                    static_cast<std::uint32_t>(binding_index),
+                    0,
+                    1,
+                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    nullptr,
+                    &descriptor_infos[descriptor_index],
+                    nullptr,
+                };
+            }
+        }
+        vkUpdateDescriptorSets(
+            device,
+            static_cast<std::uint32_t>(descriptor_writes.size()),
+            descriptor_writes.data(),
+            0,
+            nullptr);
+
+        VkPipelineLayoutCreateInfo pipeline_layout_info = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            1,
+            &descriptor_layout,
+            0,
+            nullptr,
+        };
+        check(
+            vkCreatePipelineLayout(
+                device,
+                &pipeline_layout_info,
+                nullptr,
+                &pipeline_layout),
+            "vkCreatePipelineLayout");
+        for (std::size_t index = 0u; index < shaders.size(); ++index) {
+            VkShaderModuleCreateInfo shader_info = {
+                VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                nullptr,
+                0,
+                shaders[index].size() * sizeof(std::uint32_t),
+                shaders[index].data(),
+            };
+            check(
+                vkCreateShaderModule(
+                    device,
+                    &shader_info,
+                    nullptr,
+                    &shader_modules[index]),
+                "vkCreateShaderModule");
+            VkPipelineShaderStageCreateInfo stage_info = {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                nullptr,
+                0,
+                VK_SHADER_STAGE_COMPUTE_BIT,
+                shader_modules[index],
+                "main",
+                nullptr,
+            };
+            VkComputePipelineCreateInfo pipeline_info = {
+                VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                nullptr,
+                0,
+                stage_info,
+                pipeline_layout,
+                VK_NULL_HANDLE,
+                -1,
+            };
+            check(
+                vkCreateComputePipelines(
+                    device,
+                    VK_NULL_HANDLE,
+                    1,
+                    &pipeline_info,
+                    nullptr,
+                    &pipelines[index]),
+                "vkCreateComputePipelines");
+        }
+
+        VkCommandPoolCreateInfo command_pool_info = {
+            VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            nullptr,
+            0,
+            queue_family,
+        };
+        check(
+            vkCreateCommandPool(
+                device, &command_pool_info, nullptr, &command_pool),
+            "vkCreateCommandPool");
+        VkCommandBufferAllocateInfo command_buffer_info = {
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            nullptr,
+            command_pool,
+            VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            1,
+        };
+        check(
+            vkAllocateCommandBuffers(
+                device, &command_buffer_info, &command_buffer),
+            "vkAllocateCommandBuffers");
+        VkCommandBufferBeginInfo begin_info = {
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            nullptr,
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            nullptr,
+        };
+        check(
+            vkBeginCommandBuffer(command_buffer, &begin_info),
+            "vkBeginCommandBuffer");
+        VkBufferCopy copy = {0, 0, copy_bytes};
+        vkCmdCopyBuffer(
+            command_buffer,
+            staging_buffer.buffer,
+            device_buffer.buffer,
+            1,
+            &copy);
+        VkBufferMemoryBarrier upload_barrier = {
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            nullptr,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_buffer.buffer,
+            0,
+            copy_bytes,
+        };
+        vkCmdPipelineBarrier(
+            command_buffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0,
+            0,
+            nullptr,
+            1,
+            &upload_barrier,
+            0,
+            nullptr);
+        VkBufferMemoryBarrier dispatch_barrier = {
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            nullptr,
+            VK_ACCESS_SHADER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_buffer.buffer,
+            0,
+            copy_bytes,
+        };
+        for (std::size_t index = 0u; index < pipelines.size(); ++index) {
+            vkCmdBindPipeline(
+                command_buffer,
+                VK_PIPELINE_BIND_POINT_COMPUTE,
+                pipelines[index]);
+            vkCmdBindDescriptorSets(
+                command_buffer,
+                VK_PIPELINE_BIND_POINT_COMPUTE,
+                pipeline_layout,
+                0,
+                1,
+                &descriptor_sets[index],
+                0,
+                nullptr);
+            vkCmdDispatch(command_buffer, 1, 1, 1);
+            if (index + 1u < pipelines.size()) {
+                vkCmdPipelineBarrier(
+                    command_buffer,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    0,
+                    0,
+                    nullptr,
+                    1,
+                    &dispatch_barrier,
+                    0,
+                    nullptr);
+            }
+        }
+        VkBufferMemoryBarrier download_barrier = {
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            nullptr,
+            VK_ACCESS_SHADER_WRITE_BIT,
+            VK_ACCESS_TRANSFER_READ_BIT,
+            VK_QUEUE_FAMILY_IGNORED,
+            VK_QUEUE_FAMILY_IGNORED,
+            device_buffer.buffer,
+            0,
+            copy_bytes,
+        };
+        vkCmdPipelineBarrier(
+            command_buffer,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0,
+            0,
+            nullptr,
+            1,
+            &download_barrier,
+            0,
+            nullptr);
+        vkCmdCopyBuffer(
+            command_buffer,
+            device_buffer.buffer,
+            staging_buffer.buffer,
+            1,
+            &copy);
+        check(vkEndCommandBuffer(command_buffer), "vkEndCommandBuffer");
+
+        VkFenceCreateInfo fence_info = {
+            VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, 0,
+        };
+        check(
+            vkCreateFence(device, &fence_info, nullptr, &fence),
+            "vkCreateFence");
+        VkSubmitInfo submit_info = {
+            VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            nullptr,
+            0,
+            nullptr,
+            nullptr,
+            1,
+            &command_buffer,
+            0,
+            nullptr,
+        };
+        check(
+            vkQueueSubmit(queue, 1, &submit_info, fence),
+            "vkQueueSubmit");
+        check(
+            vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX),
+            "vkWaitForFences");
+        if (!staging_buffer.host_coherent) {
+            VkMappedMemoryRange range = {
+                VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                nullptr,
+                staging_buffer.memory,
+                0,
+                VK_WHOLE_SIZE,
+            };
+            check(
+                vkInvalidateMappedMemoryRanges(device, 1, &range),
+                "vkInvalidateMappedMemoryRanges");
+        }
+
+        std::copy_n(
+            words + kSequenceUpdateMotionOffset,
+            result.sequence_update_motion.size(),
+            result.sequence_update_motion.begin());
+        std::copy_n(
+            words + kSequenceCollisionOutputMotionOffset,
+            result.sequence_collision_motion.size(),
+            result.sequence_collision_motion.begin());
+        const std::array<std::size_t, 4> scalar_offsets = {
+            kSequenceCollisionScalar48Offset,
+            kSequenceCollisionScalar52Offset,
+            kSequenceCollisionScalar56Offset,
+            kSequenceCollisionScalar60Offset,
+        };
+        for (std::size_t index = 0u; index < scalar_offsets.size(); ++index) {
+            result.sequence_collision_scalars[index] =
+                words[scalar_offsets[index]];
+        }
+        std::copy_n(
+            words + kSequenceSolverAOffset,
+            result.sequence_solver_a.size(),
+            result.sequence_solver_a.begin());
+        std::copy_n(
+            words + kSequenceCollisionOutputPositionOffset,
+            result.sequence_solver_position.size(),
+            result.sequence_solver_position.begin());
+        std::copy_n(
+            words + kSequenceSolverOutputOffset,
+            result.sequence_solver_output.size(),
+            result.sequence_solver_output.begin());
+
+        const auto guards_match =
+            [words](std::size_t offset, std::size_t count) {
+                return words[offset - 1u] == kGuardBefore &&
+                    words[offset + count] == kGuardAfter;
+            };
+        const std::array<std::pair<std::size_t, std::size_t>, 25> ranges = {{
+            {kSequenceUpdatePackedOffset, 1u},
+            {kSequenceUpdatePositionOffset, 4u},
+            {kSequenceUpdateMotionOffset, 4u},
+            {kSequenceUpdateFlagsOffset, 1u},
+            {kSequenceUpdateIgnoredOffset, 1u},
+            {kSequenceCollisionBatchOffset, 2u},
+            {kSequenceCollisionOutput8Offset, 4u},
+            {kSequenceCollisionOutput12Offset, 4u},
+            {kSequenceCollisionOutput20Offset, 1u},
+            {kSequenceCollisionOutputPositionOffset, 4u},
+            {kSequenceCollisionOutputMotionOffset, 4u},
+            {kSequenceCollisionVector40Offset, 4u},
+            {kSequenceCollisionVector44Offset, 4u},
+            {kSequenceCollisionScalar48Offset, 1u},
+            {kSequenceCollisionScalar52Offset, 1u},
+            {kSequenceCollisionScalar56Offset, 1u},
+            {kSequenceCollisionScalar60Offset, 1u},
+            {kSequenceCollisionVector64Offset, 4u},
+            {kSequenceCollisionActiveOffset, 1u},
+            {kSequenceSolverAOffset, 4u},
+            {kSequenceSolverBOffset, 4u},
+            {kSequenceSolverCOffset, 4u},
+            {kSequenceSolverFlagsOffset, 1u},
+            {kSequenceSolverPackedOffset, 1u},
+            {kSequenceSolverOutputOffset, 16u},
+        }};
+        result.sequence_guards_intact = std::all_of(
+            ranges.begin(),
+            ranges.end(),
+            [&guards_match](const auto &range) {
+                return guards_match(range.first, range.second);
+            });
+        const std::array<std::uint32_t, 4> zero_vector = {};
+        result.pass =
+            result.sequence_update_motion == kExpectedDeformableMotion &&
+            result.sequence_collision_motion == kExpectedDeformableMotion &&
+            result.sequence_collision_scalars == kExpectedCollisionScalars &&
+            result.sequence_solver_a == kExpectedSolverA &&
+            result.sequence_solver_position == kExpectedSolverPosition &&
+            result.sequence_solver_output == kExpectedSolverOutput &&
+            std::equal(
+                words + kSequenceUpdatePositionOffset,
+                words + kSequenceUpdatePositionOffset + 4u,
+                kExpectedDeformablePosition.begin()) &&
+            words[kSequenceUpdateFlagsOffset] == 0u &&
+            std::equal(
+                words + kSequenceCollisionOutput8Offset,
+                words + kSequenceCollisionOutput8Offset + 4u,
+                zero_vector.begin()) &&
+            std::equal(
+                words + kSequenceCollisionOutput12Offset,
+                words + kSequenceCollisionOutput12Offset + 4u,
+                zero_vector.begin()) &&
+            words[kSequenceCollisionOutput20Offset] == 0xbf800000u &&
+            std::equal(
+                words + kSequenceCollisionVector40Offset,
+                words + kSequenceCollisionVector40Offset + 4u,
+                zero_vector.begin()) &&
+            std::equal(
+                words + kSequenceCollisionVector44Offset,
+                words + kSequenceCollisionVector44Offset + 4u,
+                zero_vector.begin()) &&
+            std::equal(
+                words + kSequenceCollisionVector64Offset,
+                words + kSequenceCollisionVector64Offset + 4u,
+                zero_vector.begin()) &&
+            words[kSequenceCollisionActiveOffset] == 0u &&
+            words[kSequenceSolverFlagsOffset] == 0x00000400u &&
+            words[kSequenceSolverPackedOffset] == 0xabcdef01u &&
+            result.sequence_guards_intact;
+        if (!result.pass) {
+            result.error = "ordered deformable sequence fixture result mismatch";
+        }
+    } catch (const std::exception &error) {
+        result.error = error.what();
+        result.pass = false;
+    }
+
+    if (device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(device);
+        if (mapped != nullptr) {
+            vkUnmapMemory(device, staging_buffer.memory);
+        }
+        if (fence != VK_NULL_HANDLE) {
+            vkDestroyFence(device, fence, nullptr);
+        }
+        if (command_pool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(device, command_pool, nullptr);
+        }
+        for (VkPipeline pipeline : pipelines) {
+            if (pipeline != VK_NULL_HANDLE) {
+                vkDestroyPipeline(device, pipeline, nullptr);
+            }
+        }
+        for (VkShaderModule shader_module : shader_modules) {
+            if (shader_module != VK_NULL_HANDLE) {
+                vkDestroyShaderModule(device, shader_module, nullptr);
+            }
         }
         if (pipeline_layout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
@@ -1731,6 +2712,10 @@ int main(int argc, char **argv)
         argc == 4 && std::string(argv[2]) == "--deformable-solver-fixture";
     const bool collision_fixture_mode =
         argc == 4 && std::string(argv[2]) == "--deformable-collision-fixture";
+    const bool constraints_fixture_mode =
+        argc == 4 && std::string(argv[2]) == "--fluid-constraints-fixture";
+    const bool sequence_fixture_mode =
+        argc == 6 && std::string(argv[2]) == "--deformable-sequence-fixture";
     const bool incomplete_named_mode =
         argc == 3 &&
         (std::string(argv[2]) == "--ptx-oracle" ||
@@ -1743,13 +2728,16 @@ int main(int argc, char **argv)
          std::string(argv[2]) == "--force-fixture" ||
          std::string(argv[2]) == "--deformable-fixture" ||
          std::string(argv[2]) == "--deformable-solver-fixture" ||
+         std::string(argv[2]) == "--deformable-sequence-fixture" ||
+         std::string(argv[2]) == "--fluid-constraints-fixture" ||
          std::string(argv[2]) == "--deformable-collision-fixture");
     if ((argc != 2 && argc != 3 &&
          !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
          !constant_fixture_mode && !texture_fixture_mode &&
          !texture_float_fixture_mode && !density_fixture_mode &&
          !force_fixture_mode && !deformable_fixture_mode &&
-         !solver_fixture_mode && !collision_fixture_mode) ||
+         !solver_fixture_mode && !collision_fixture_mode &&
+         !constraints_fixture_mode && !sequence_fixture_mode) ||
         incomplete_named_mode) {
         std::cerr << "usage: vulkan-memory-smoke <output.json> [oracle.spv]\n"
                   << "       vulkan-memory-smoke <output.json> --ptx-oracle <generated.spv>\n"
@@ -1762,7 +2750,9 @@ int main(int argc, char **argv)
                   << "       vulkan-memory-smoke <output.json> --force-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-fixture <generated.spv>\n"
                   << "       vulkan-memory-smoke <output.json> --deformable-solver-fixture <generated.spv>\n"
-                  << "       vulkan-memory-smoke <output.json> --deformable-collision-fixture <generated.spv>\n";
+                  << "       vulkan-memory-smoke <output.json> --deformable-collision-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --fluid-constraints-fixture <generated.spv>\n"
+                  << "       vulkan-memory-smoke <output.json> --deformable-sequence-fixture <update.spv> <collision.spv> <solver.spv>\n";
         return 2;
     }
 
@@ -1810,68 +2800,91 @@ int main(int argc, char **argv)
         constant_fixture_mode || texture_fixture_mode ||
         texture_float_fixture_mode || density_fixture_mode ||
         force_fixture_mode || deformable_fixture_mode || solver_fixture_mode ||
-        collision_fixture_mode;
+        collision_fixture_mode || constraints_fixture_mode;
     const bool require_memory_result =
         !ptx_oracle_mode && !kernel_fixture_mode && !reorder_fixture_mode &&
         !constant_fixture_mode && !texture_fixture_mode &&
         !texture_float_fixture_mode && !density_fixture_mode &&
         !force_fixture_mode && !deformable_fixture_mode &&
-        !solver_fixture_mode && !collision_fixture_mode;
+        !solver_fixture_mode && !collision_fixture_mode &&
+        !constraints_fixture_mode;
     std::vector<std::uint32_t> shader;
-    if (shader_input_mode) {
+    std::array<std::vector<std::uint32_t>, 3> sequence_shaders;
+    const auto load_shader = [](const char *path,
+                                std::vector<std::uint32_t> &target) {
+        std::ifstream input(path, std::ios::binary | std::ios::ate);
+        if (!input) {
+            std::cerr << "failed to open SPIR-V input file: " << path << '\n';
+            return false;
+        }
+        const std::streamsize byte_count = input.tellg();
+        if (byte_count <= 0 ||
+            byte_count % static_cast<std::streamsize>(sizeof(std::uint32_t)) != 0) {
+            std::cerr << "invalid SPIR-V byte length: " << path << '\n';
+            return false;
+        }
+        target.resize(
+            static_cast<std::size_t>(byte_count) / sizeof(std::uint32_t));
+        input.seekg(0);
+        input.read(reinterpret_cast<char *>(target.data()), byte_count);
+        if (!input || target.front() != SpvMagicNumber) {
+            std::cerr << "invalid SPIR-V module: " << path << '\n';
+            return false;
+        }
+        return true;
+    };
+    bool shaders_loaded = true;
+    if (sequence_fixture_mode) {
+        for (std::size_t index = 0u;
+             index < sequence_shaders.size();
+             ++index) {
+            shaders_loaded =
+                load_shader(argv[3 + index], sequence_shaders[index]) &&
+                shaders_loaded;
+        }
+    } else if (shader_input_mode) {
         const char *shader_path =
             ptx_oracle_mode || kernel_fixture_mode || reorder_fixture_mode ||
                     constant_fixture_mode || texture_fixture_mode ||
                     texture_float_fixture_mode || density_fixture_mode ||
                     force_fixture_mode || deformable_fixture_mode ||
-                    solver_fixture_mode || collision_fixture_mode
+                    solver_fixture_mode || collision_fixture_mode ||
+                    constraints_fixture_mode
                 ? argv[3]
                 : argv[2];
-        std::ifstream shader_input(shader_path, std::ios::binary | std::ios::ate);
-        if (!shader_input) {
-            vkDestroyInstance(instance, nullptr);
-            std::cerr << "failed to open SPIR-V input file\n";
-            return 3;
-        }
-        const std::streamsize byte_count = shader_input.tellg();
-        if (byte_count <= 0 ||
-            byte_count % static_cast<std::streamsize>(sizeof(std::uint32_t)) != 0) {
-            vkDestroyInstance(instance, nullptr);
-            std::cerr << "invalid SPIR-V byte length\n";
-            return 3;
-        }
-        shader.resize(static_cast<std::size_t>(byte_count) / sizeof(std::uint32_t));
-        shader_input.seekg(0);
-        shader_input.read(reinterpret_cast<char *>(shader.data()), byte_count);
-        if (!shader_input || shader.front() != SpvMagicNumber) {
-            vkDestroyInstance(instance, nullptr);
-            std::cerr << "invalid SPIR-V module\n";
-            return 3;
-        }
+        shaders_loaded = load_shader(shader_path, shader);
     } else {
         shader = make_memory_shader();
+    }
+    if (!shaders_loaded) {
+        vkDestroyInstance(instance, nullptr);
+        return 3;
     }
     std::vector<DeviceResult> results;
     results.reserve(device_count);
     bool all_passed = true;
     for (std::uint32_t index = 0; index < device_count; ++index) {
-        DeviceResult result = run_device(
-            index,
-            devices[index],
-            shader,
-            oracle_mode,
-            ptx_oracle_mode,
-            require_memory_result,
-            kernel_fixture_mode,
-            reorder_fixture_mode,
-            constant_fixture_mode,
-            texture_fixture_mode,
-            texture_float_fixture_mode,
-            density_fixture_mode,
-            force_fixture_mode,
-            deformable_fixture_mode,
-            solver_fixture_mode,
-            collision_fixture_mode);
+        DeviceResult result = sequence_fixture_mode
+            ? run_deformable_sequence_device(
+                  index, devices[index], sequence_shaders)
+            : run_device(
+                  index,
+                  devices[index],
+                  shader,
+                  oracle_mode,
+                  ptx_oracle_mode,
+                  require_memory_result,
+                  kernel_fixture_mode,
+                  reorder_fixture_mode,
+                  constant_fixture_mode,
+                  texture_fixture_mode,
+                  texture_float_fixture_mode,
+                  density_fixture_mode,
+                  force_fixture_mode,
+                  deformable_fixture_mode,
+                  solver_fixture_mode,
+                  collision_fixture_mode,
+                  constraints_fixture_mode);
         all_passed = all_passed && result.pass;
         results.push_back(std::move(result));
     }
@@ -1886,7 +2899,9 @@ int main(int argc, char **argv)
            << "  \"schema_version\": 1,\n"
            << "  \"pointer_bits\": " << sizeof(void *) * 8u << ",\n"
            << "  \"test\": \""
-           << (collision_fixture_mode ? "deformable_collision_fixture" :
+           << (sequence_fixture_mode ? "deformable_sequence_fixture" :
+               constraints_fixture_mode ? "fluid_constraints_fixture" :
+               collision_fixture_mode ? "deformable_collision_fixture" :
                solver_fixture_mode ? "deformable_solver_fixture" :
                deformable_fixture_mode ? "deformable_update_fixture" :
                force_fixture_mode ? "force_kernel_fixture" :
@@ -1900,7 +2915,27 @@ int main(int argc, char **argv)
                oracle_mode ? "cuda_semantic_oracle" : "integer_global_memory")
            << "\",\n"
            << "  \"buffer_bytes\": " << kBufferBytes << ",\n";
-    if (collision_fixture_mode) {
+    if (sequence_fixture_mode) {
+        output << "  \"kernel_order\": [\"PxgCudaDeformableUpdate\", "
+                  "\"KernelDeformableUberCollision\", "
+                  "\"KernelDeformableUberSolver<512>\"],\n"
+               << "  \"particle_count\": 1,\n"
+               << "  \"shape_count\": 0,\n"
+               << "  \"iteration_count\": 0,\n"
+               << "  \"collision_static_shared_bytes\": 4097,\n"
+               << "  \"solver_dynamic_shared_bytes\": 7072,\n";
+    } else if (constraints_fixture_mode) {
+        output << "  \"kernel\": \"PxgCudaFluidCollisionConstraintsBatch\",\n"
+               << "  \"particle_count\": 1,\n"
+               << "  \"constraint_key\": \"0x0000ffff\",\n"
+               << "  \"time_step_bits\": \"0x3f000000\",\n"
+               << "  \"static_shared_bytes\": 1840,\n"
+               << "  \"expected_position_bits\": [\"0x40400000\", "
+                  "\"0x40900000\", \"0x40c00000\", \"0x00000000\"],\n"
+               << "  \"expected_velocity_bits\": [\"0x40800000\", "
+                  "\"0x40a00000\", \"0x40c00000\", \"0x00000000\"],\n"
+               << "  \"expected_weight_bits\": \"0x3f800000\",\n";
+    } else if (collision_fixture_mode) {
         output << "  \"kernel\": \"KernelDeformableUberCollision\",\n"
                << "  \"particle_count\": 1,\n"
                << "  \"shape_count\": 0,\n"
@@ -1979,8 +3014,23 @@ int main(int argc, char **argv)
                << "  \"addend\": \"" << hex32(kAddend) << "\",\n"
                << "  \"expected\": \"" << hex32(kExpected) << "\",\n";
     }
-    output << "  \"spirv_words\": " << shader.size() << ",\n"
-           << "  \"devices\": [\n";
+    if (sequence_fixture_mode) {
+        output << "  \"spirv_words\": ["
+               << sequence_shaders[0].size() << ", "
+               << sequence_shaders[1].size() << ", "
+               << sequence_shaders[2].size() << "],\n";
+    } else {
+        output << "  \"spirv_words\": " << shader.size() << ",\n";
+    }
+    output << "  \"devices\": [\n";
+    const auto write_bits = [&output](const auto &values) {
+        output << '[';
+        for (std::size_t index = 0u; index < values.size(); ++index) {
+            output << (index == 0u ? "" : ", ")
+                   << "\"" << hex32(values[index]) << "\"";
+        }
+        output << ']';
+    };
     for (std::size_t index = 0; index < results.size(); ++index) {
         const DeviceResult &result = results[index];
         output << "    {\n"
@@ -1997,7 +3047,35 @@ int main(int argc, char **argv)
                << (result.device_memory_local ? "true" : "false") << ",\n"
                << "      \"staging_host_coherent\": "
                << (result.staging_coherent ? "true" : "false") << ",\n";
-        if (collision_fixture_mode) {
+        if (sequence_fixture_mode) {
+            output << "      \"update_motion_bits\": ";
+            write_bits(result.sequence_update_motion);
+            output << ",\n      \"collision_motion_bits\": ";
+            write_bits(result.sequence_collision_motion);
+            output << ",\n      \"collision_scalar_bits\": ";
+            write_bits(result.sequence_collision_scalars);
+            output << ",\n      \"solver_a_bits\": ";
+            write_bits(result.sequence_solver_a);
+            output << ",\n      \"solver_position_bits\": ";
+            write_bits(result.sequence_solver_position);
+            output << ",\n      \"solver_output_bits\": ";
+            write_bits(result.sequence_solver_output);
+            output << ",\n"
+                   << "      \"guards_intact\": "
+                   << (result.sequence_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (constraints_fixture_mode) {
+            output << "      \"output_position_bits\": ";
+            write_bits(result.constraints_position);
+            output << ",\n      \"output_velocity_bits\": ";
+            write_bits(result.constraints_velocity);
+            output << ",\n"
+                   << "      \"output_weight_bits\": \""
+                   << hex32(result.constraints_weight) << "\",\n"
+                   << "      \"guards_intact\": "
+                   << (result.constraints_guards_intact ? "true" : "false")
+                   << ",\n";
+        } else if (collision_fixture_mode) {
             output << "      \"output_position_bits\": [";
             for (std::size_t component = 0u;
                  component < result.collision_position.size();

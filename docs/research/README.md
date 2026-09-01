@@ -13,7 +13,11 @@ Architecture work begins only after this sequence is complete:
 | 6 | [`native-oracle-probes.md`](native-oracle-probes.md) | **Core PTX semantic probes complete; captured workload/runtime probes remain.** An x86 tool and committed RTX 3070 fixture define native FTZ, FMA, approximate math, conversion, `bar.sync`, aligned invocation-private local memory, and integer/float legacy linear-texture bounds behavior. |
 | 7 | [`vulkan-requirements.md`](vulkan-requirements.md) | **Complete for the captured corpus and observed Intel, NVIDIA, and AMD x86 devices.** Vulkan 1.2, integer/float-control features, quantitative limits, storage/workgroup mappings, dispatch barriers, software-FTZ risk, texture bounds, and the non-requirement for subgroup size 32 are documented without selecting a permanent wrapper or runtime architecture. |
 | 8 | [`validation-plan.md`](validation-plan.md) | **Complete for the captured target.** Layered x86 facade, CUDA state, PTX corpus, standalone Vulkan differential, real-kernel replay, fluid/deformable sequence, and three-route game checks now have explicit artifacts, pass criteria, comparison policy, and acceptance gates. |
-| 9 | [`research-synthesis.md`](research-synthesis.md) | **Complete; standalone Vulkan oracle, schema-5 storage IR, four executed fluid kernels, all three executed deformable kernels, and all 17 PTX modules have evidence-backed validation.** The minimum in-process design, finite PTX-to-SPIR-V path, memory/command model, cross-vendor device selection, exclusions, blockers, risks, and independently testable slices are fixed. |
+| 9 | [`research-synthesis.md`](research-synthesis.md) | **Complete; standalone Vulkan oracle, schema-5 storage IR, five executed fluid kernels, all three executed deformable kernels, their ordered synthetic step, and all 17 PTX modules have evidence-backed validation.** The minimum in-process design, finite PTX-to-SPIR-V path, memory/command model, cross-vendor device selection, exclusions, blockers, risks, and independently testable slices are fixed. |
+
+The finite launched-entry implementation ledger, exact CUDA symbols, extracted
+PTX filenames, launch storage requirements, and validation state are maintained
+in [`kernel-status.md`](kernel-status.md).
 
 ## Evidence rules
 
@@ -48,8 +52,9 @@ permanent pxvk runtime, complete enough research to answer:
   slice and confirms that unresolved items do not block it.
 
 The synthesis gate now permits the standalone cross-vendor Vulkan oracle
-runner. The permanent game runtime remains behind the CUDA facade, complete
-fluid/deformable sequence fixtures, and the later NVAPI/game-integration gate.
+runner. The permanent game runtime remains behind the CUDA facade, the complete
+fluid spine, captured-state deformable replay, and the later
+NVAPI/game-integration gate.
 
 ## Deferred probe register
 
@@ -57,7 +62,7 @@ Open probes are tracked rather than dropped:
 
 | Probe | Status | Required before |
 |---|---|---|
-| Deterministic fluid/deformable kernel outputs | Complete for focused fixtures: fluid calc-hash/reorder/density/force plus deformable update/collision/solver match native CUDA on PTX-derived Intel/RTX Vulkan with exact outputs and guards; complete sequences and captured in-game state remain deferred | Accepting a translated workload family without focused fixtures |
+| Deterministic fluid/deformable kernel outputs | Complete for focused fixtures and the ordered synthetic deformable step: fluid calc-hash/reorder/density/force plus deformable update/collision/solver match native CUDA on PTX-derived Intel/RTX Vulkan with exact outputs and guards; the full fluid sequence and captured in-game state remain deferred | Accepting a translated workload family without focused fixtures |
 | Float legacy-texture fetch bits/OOB | Complete on native RTX and PTX-derived Intel/RTX Vulkan: in-range bits preserved, signed OOB returns four positive zeros | Accepting current `tex.1d.v4.f32.s32` lowering |
 | Queried-only CUDA symbol NULL versus stub behavior | Non-blocking; ZLUDA proves non-null not-supported stubs work | Removing conservative export stubs |
 | Minimal non-NVIDIA NVAPI interface set | Deferred to game-integration validation | Running the original PhysX runtime without NVIDIA |
@@ -67,6 +72,6 @@ Open probes are tracked rather than dropped:
 | AMD generated-SPIR-V execution | Hardware preflight passes; full oracle deferred until the AMD machine is available | Claiming cross-vendor execution correctness on AMD |
 
 Each probe blocks only the named acceptance point. None blocks the next local
-slice: analyze the trace-ordered `PxgCudaFluidCollisionConstraintsBatch` entry
-from module 0005 without broadening beyond its captured instruction and state
-contract.
+slice: analyze the trace-ordered `PxgCudaFluidCollisionDynamicResponseBatch`
+entry from module 0007 against the now-validated constraints output contract,
+without broadening beyond its captured instruction and state surface.

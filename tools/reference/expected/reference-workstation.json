@@ -445,6 +445,43 @@
       ],
       "pass": true
     },
+    "fluid_constraints": {
+      "schema_version": 1,
+      "device": "NVIDIA GeForce RTX 3070 Laptop GPU",
+      "kernel": "PxgCudaFluidCollisionConstraintsBatch",
+      "particle_count": 1,
+      "constraint_key": "0x0000ffff",
+      "time_step_bits": "0x3f000000",
+      "input_position_bits": [
+        "0x3f800000",
+        "0x40000000",
+        "0x40400000",
+        "0xdeadbeef"
+      ],
+      "input_motion_bits": [
+        "0x40800000",
+        "0x40a00000",
+        "0x40c00000",
+        "0xcafebabe"
+      ],
+      "output_position_bits": [
+        "0x40400000",
+        "0x40900000",
+        "0x40c00000",
+        "0x00000000"
+      ],
+      "output_velocity_bits": [
+        "0x40800000",
+        "0x40a00000",
+        "0x40c00000",
+        "0x00000000"
+      ],
+      "output_weight_bits": "0x3f800000",
+      "cleared_vector_count": 8,
+      "cleared_scalar_count": 4,
+      "guards_intact": true,
+      "pass": true
+    },
     "deformable_update": {
       "schema_version": 1,
       "device": "NVIDIA GeForce RTX 3070 Laptop GPU",
@@ -541,6 +578,68 @@
         "0xbf800000",
         "0x00000000",
         "0x0000ffff",
+        "0x00000000"
+      ],
+      "guards_intact": true,
+      "pass": true
+    },
+    "deformable_sequence": {
+      "schema_version": 1,
+      "device": "NVIDIA GeForce RTX 3070 Laptop GPU",
+      "kernel_order": [
+        "PxgCudaDeformableUpdate",
+        "KernelDeformableUberCollision",
+        "KernelDeformableUberSolver<512>"
+      ],
+      "particle_count": 1,
+      "shape_count": 0,
+      "iteration_count": 0,
+      "update_motion_bits": [
+        "0x40440000",
+        "0x408c0000",
+        "0x40c80000",
+        "0x40e00000"
+      ],
+      "collision_motion_bits": [
+        "0x40440000",
+        "0x408c0000",
+        "0x40c80000",
+        "0x40e00000"
+      ],
+      "collision_scalar_bits": [
+        "0xbf800000",
+        "0x00000000",
+        "0x0000ffff",
+        "0x00000000"
+      ],
+      "solver_a_bits": [
+        "0x3f800000",
+        "0x40000000",
+        "0x40400000",
+        "0x00000000"
+      ],
+      "solver_position_bits": [
+        "0xc1100000",
+        "0xc1100000",
+        "0xc1100000",
+        "0x00000000"
+      ],
+      "solver_output_bits": [
+        "0x3f800000",
+        "0x40000000",
+        "0x40400000",
+        "0x00000400",
+        "0x41f00000",
+        "0x41f80000",
+        "0x42000000",
+        "0xabcdef01",
+        "0xc1100000",
+        "0xc1100000",
+        "0xc1100000",
+        "0x00000000",
+        "0x41a00000",
+        "0x41a80000",
+        "0x41b00000",
         "0x00000000"
       ],
       "guards_intact": true,
@@ -3023,6 +3122,85 @@
         }
       ]
     },
+    "fluid_constraints": {
+      "schema_version": 1,
+      "pointer_bits": 32,
+      "test": "fluid_constraints_fixture",
+      "buffer_bytes": 33554432,
+      "kernel": "PxgCudaFluidCollisionConstraintsBatch",
+      "particle_count": 1,
+      "constraint_key": "0x0000ffff",
+      "time_step_bits": "0x3f000000",
+      "static_shared_bytes": 1840,
+      "expected_position_bits": [
+        "0x40400000",
+        "0x40900000",
+        "0x40c00000",
+        "0x00000000"
+      ],
+      "expected_velocity_bits": [
+        "0x40800000",
+        "0x40a00000",
+        "0x40c00000",
+        "0x00000000"
+      ],
+      "expected_weight_bits": "0x3f800000",
+      "spirv_words": 59442,
+      "devices": [
+        {
+          "index": 0,
+          "name": "Intel(R) UHD Graphics",
+          "vendor_id": "0x00008086",
+          "device_id": "0x00009a60",
+          "api_version": "1.4.323",
+          "driver_version_raw": 1661869,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "output_position_bits": [
+            "0x40400000",
+            "0x40900000",
+            "0x40c00000",
+            "0x00000000"
+          ],
+          "output_velocity_bits": [
+            "0x40800000",
+            "0x40a00000",
+            "0x40c00000",
+            "0x00000000"
+          ],
+          "output_weight_bits": "0x3f800000",
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        },
+        {
+          "index": 1,
+          "name": "NVIDIA GeForce RTX 3070 Laptop GPU",
+          "vendor_id": "0x000010de",
+          "device_id": "0x000024dd",
+          "api_version": "1.4.341",
+          "driver_version_raw": 2559967232,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "output_position_bits": [
+            "0x40400000",
+            "0x40900000",
+            "0x40c00000",
+            "0x00000000"
+          ],
+          "output_velocity_bits": [
+            "0x40800000",
+            "0x40a00000",
+            "0x40c00000",
+            "0x00000000"
+          ],
+          "output_weight_bits": "0x3f800000",
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        }
+      ]
+    },
     "deformable_update": {
       "schema_version": 1,
       "pointer_bits": 32,
@@ -3272,6 +3450,151 @@
             "0xbf800000",
             "0x00000000",
             "0x0000ffff",
+            "0x00000000"
+          ],
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        }
+      ]
+    },
+    "deformable_sequence": {
+      "schema_version": 1,
+      "pointer_bits": 32,
+      "test": "deformable_sequence_fixture",
+      "buffer_bytes": 33554432,
+      "kernel_order": [
+        "PxgCudaDeformableUpdate",
+        "KernelDeformableUberCollision",
+        "KernelDeformableUberSolver<512>"
+      ],
+      "particle_count": 1,
+      "shape_count": 0,
+      "iteration_count": 0,
+      "collision_static_shared_bytes": 4097,
+      "solver_dynamic_shared_bytes": 7072,
+      "spirv_words": [
+        9792,
+        175407,
+        80354
+      ],
+      "devices": [
+        {
+          "index": 0,
+          "name": "Intel(R) UHD Graphics",
+          "vendor_id": "0x00008086",
+          "device_id": "0x00009a60",
+          "api_version": "1.4.323",
+          "driver_version_raw": 1661869,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "update_motion_bits": [
+            "0x40440000",
+            "0x408c0000",
+            "0x40c80000",
+            "0x40e00000"
+          ],
+          "collision_motion_bits": [
+            "0x40440000",
+            "0x408c0000",
+            "0x40c80000",
+            "0x40e00000"
+          ],
+          "collision_scalar_bits": [
+            "0xbf800000",
+            "0x00000000",
+            "0x0000ffff",
+            "0x00000000"
+          ],
+          "solver_a_bits": [
+            "0x3f800000",
+            "0x40000000",
+            "0x40400000",
+            "0x00000000"
+          ],
+          "solver_position_bits": [
+            "0xc1100000",
+            "0xc1100000",
+            "0xc1100000",
+            "0x00000000"
+          ],
+          "solver_output_bits": [
+            "0x3f800000",
+            "0x40000000",
+            "0x40400000",
+            "0x00000400",
+            "0x41f00000",
+            "0x41f80000",
+            "0x42000000",
+            "0xabcdef01",
+            "0xc1100000",
+            "0xc1100000",
+            "0xc1100000",
+            "0x00000000",
+            "0x41a00000",
+            "0x41a80000",
+            "0x41b00000",
+            "0x00000000"
+          ],
+          "guards_intact": true,
+          "pass": true,
+          "error": ""
+        },
+        {
+          "index": 1,
+          "name": "NVIDIA GeForce RTX 3070 Laptop GPU",
+          "vendor_id": "0x000010de",
+          "device_id": "0x000024dd",
+          "api_version": "1.4.341",
+          "driver_version_raw": 2559967232,
+          "device_memory_local": true,
+          "staging_host_coherent": true,
+          "update_motion_bits": [
+            "0x40440000",
+            "0x408c0000",
+            "0x40c80000",
+            "0x40e00000"
+          ],
+          "collision_motion_bits": [
+            "0x40440000",
+            "0x408c0000",
+            "0x40c80000",
+            "0x40e00000"
+          ],
+          "collision_scalar_bits": [
+            "0xbf800000",
+            "0x00000000",
+            "0x0000ffff",
+            "0x00000000"
+          ],
+          "solver_a_bits": [
+            "0x3f800000",
+            "0x40000000",
+            "0x40400000",
+            "0x00000000"
+          ],
+          "solver_position_bits": [
+            "0xc1100000",
+            "0xc1100000",
+            "0xc1100000",
+            "0x00000000"
+          ],
+          "solver_output_bits": [
+            "0x3f800000",
+            "0x40000000",
+            "0x40400000",
+            "0x00000400",
+            "0x41f00000",
+            "0x41f80000",
+            "0x42000000",
+            "0xabcdef01",
+            "0xc1100000",
+            "0xc1100000",
+            "0xc1100000",
+            "0x00000000",
+            "0x41a00000",
+            "0x41a80000",
+            "0x41b00000",
             "0x00000000"
           ],
           "guards_intact": true,

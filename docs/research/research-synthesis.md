@@ -289,7 +289,7 @@ while avoiding thousands of dead or non-overlapping function variables. The
 collision entry exposed the practical requirement: literal bank-sized
 allocation produced a valid module that the Intel driver could not create a
 pipeline for; liveness allocation passes exact Intel/RTX differentials for all
-seven lowered captured entries.
+eight lowered captured entries.
 
 With the two captured texture variants plus the finite integer/FTZ-float tail,
 all 411 density instructions lower. The deterministic 17,768-word SPIR-V
@@ -308,6 +308,23 @@ committed `force_math_probe.ptx` keeps those selected-entry paths in the
 redistributable CTest suite. The deterministic 27,835-word force module passes
 Vulkan 1.2 validation; SHA-256 is
 `d9816251075a0b4cbc153bcd87fc6377a8d7ee1c79207fa2deb1fb4fcd07b235`.
+
+The next fluid-spine entry, `PxgCudaFluidCollisionConstraintsBatch`, contains
+725 instructions in 71 basic blocks with 107 CFG edges. It uses a 20-byte packed
+parameter block, 1,840 bytes of static shared memory, local size 128, and no
+module constants or textures. Finite lowering adds two- and four-component
+shared float loads plus four-component shared integer loads. The deterministic
+59,442-word module passes Vulkan 1.2 validation; SHA-256 is
+`90c1fbec399219664e7a6b677b3231275af4c693297b5b5d2fa45ad151da270c`.
+
+The focused one-particle fixture selects the `0x0000ffff` no-contact constraint
+record. With time step `0.5f`, position `[1,2,3]`, and motion `[4,5,6]`, native
+CUDA and PTX-derived Intel/RTX Vulkan produce position `[3,4.5,6]`, velocity
+`[4,5,6]`, unit weight, twelve cleared output ranges, and intact guards. Three
+native reports are byte-identical. Native and Vulkan report SHA-256 values are
+`28c23397e099c4dc2db893253fbc292c733e0f414928d9812c5b29fc94d6e7eb`
+and
+`7de7425bff92b4cfb49266564ffac9ef611170a2bf608e2d815276ac17903cbb`.
 
 The first deformable-family entry, `PxgCudaDeformableUpdate`, contains the
 finite unsigned `setp.lt.u32` comparison and bitwise `selp.b32` select variants.
@@ -378,6 +395,22 @@ and Vulkan report SHA-256 values are
 `0413b0348b49fe1b69376e6ed049f7011c2781366e3311ade51b5daaa0287369`
 and
 `cc9980da30b4f6f7f4208d42d404f517a4db3beac855ac82ca1ff38aea770ac2`.
+
+The ordered deformable fixture loads all three proprietary modules at once and
+uses one guarded 32-bit heap. Native CUDA queues update, collision, and solver
+on the default stream before one final synchronization. Collision consumes
+update's position/motion; solver consumes and updates collision's position
+output. Vulkan records the same order in one command buffer with explicit
+compute-write to compute-read/write barriers. Intel UHD and RTX 3070 match the
+native updated motion, collision scalars, solver delta, and 64-byte record
+bit-for-bit; all 25 heap ranges remain guarded. Native and Vulkan report SHA-256
+values are
+`4c71f0c3f14d0c9456c38a15fdf04a04271568cc77acdcc211a78e2d560ba2a8`
+and
+`d215b03ffd1938263653ecea5cef4e6653e4b621394fe8cf12c5ab64ea4ccbd3`.
+The state deliberately has zero shapes and zero constraint iterations. This
+proves ordered dispatch and inter-kernel dataflow, not captured collision
+geometry or iterative constraint response.
 
 `tools/cuda-physx-fixture` now runs a four-kernel one-particle pipeline against
 local proprietary modules 0013, 0010, and 0016. Calc-hash and reorder produce
@@ -713,8 +746,8 @@ while PTX grammar and normalization remain project-owned.
    memory, module state, packed launch, and clean teardown.
 3. **Native real-kernel fixtures:** capture and replay one fluid and one
    deformable entry only after standalone Vulkan semantics pass.
-4. **Sequence execution:** one nine-kernel fluid step and one three-kernel
-   deformable step.
+4. **Sequence execution:** the ordered synthetic three-kernel deformable step
+   passes; the nine-kernel fluid spine and captured-state replays remain.
 5. **NVAPI and game integration:** only after the facade and real workload
    fixtures pass.
 
@@ -726,7 +759,7 @@ behavior.
 | Blocker | Blocks | Does not block |
 |---|---|---|
 | Approximate math beyond fixed oracle inputs | accepting affected real kernels | exact committed reciprocal/sqrt/rsqrt cases |
-| Deterministic deformable fixture | accepting corresponding real kernels | standalone runner, fluid pair, and frontend parsing |
+| Captured-state deformable replay | claiming in-game deformable correctness | exact focused and ordered synthetic differentials |
 | Queried-only NULL/stub probe | shrinking export table | conservative stubs and standalone work |
 | Minimal non-NVIDIA NVAPI set | game startup on AMD/non-NVIDIA renderer | AMD Vulkan preflight and oracle runner |
 | AMD memory/oracle execution replay | claiming generated SPIR-V execution on AMD | continuing and accepting the reference-system runner on Intel/RTX |

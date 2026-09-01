@@ -146,6 +146,12 @@ one-particle self-neighbor produce the exact force vector
 `[0x40800000, 0x40a00000, 0x40c00000, 0x00000000]`. Native RTX and translated
 Intel/RTX match bit-for-bit.
 
+The captured 59,442-word `PxgCudaFluidCollisionConstraintsBatch` module uses
+bindings 0/1, local size 128, and 1,840 bytes of static shared memory. Its
+one-particle no-contact fixture exercises vector shared loads and produces exact
+position, velocity, unit-weight, and cleared-output results. Native RTX and
+translated Intel/RTX match bit-for-bit with every guard intact.
+
 All three captured deformable entries now use the same heap/parameter/constant
 model. The 175,407-word collision shader additionally declares binding 3 for 17
 texture metadata records and uses 4,097 bytes of static shared memory. Its
@@ -154,6 +160,12 @@ particle initialization and collision state on Intel and RTX. The 80,354-word
 solver shader uses the captured 7,072-byte dynamic shared allocation. Narrow
 PTX registers and subword memory operations are represented with explicit
 32-bit masks/extracts, so these entries do not require Vulkan 8/16-bit storage.
+
+The ordered fixture binds three aligned parameter ranges and three aligned
+constant ranges to separate descriptor sets while retaining one binding-0 heap.
+One command buffer dispatches update, collision, and solver with a storage-buffer
+compute barrier between adjacent kernels. Intel and RTX match the native CUDA
+default-stream sequence exactly with all guard ranges intact.
 
 ### Observed device results
 
@@ -445,9 +457,11 @@ Translated real-kernel acceptance now has:
 - native integer and float texture probes fixing both linear-fetch contracts;
 - deterministic fluid calc-hash/reorder/density/force fixtures;
 - exact native/Vulkan deformable-update, collision, and solver fixtures,
-  including static/dynamic shared memory and repeated barriers.
+  including static/dynamic shared memory and repeated barriers;
+- an ordered three-kernel deformable step over one shared heap.
 
-A complete ordered deformable step remains the workload-family gate.
+Captured in-game deformable state, real collision shapes, and iterative
+constraint response remain workload-family integration gates.
 
 The remaining queried-only export, NVAPI, threading, and PhysX-off trace probes
 are integration or hardening gates, not Vulkan device-capability blockers.

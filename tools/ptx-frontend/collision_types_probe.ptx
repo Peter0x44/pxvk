@@ -3,7 +3,7 @@
 .address_size 32
 
 .const .align 4 .b8 collision_probe_bytes[4];
-.shared .align 4 .b8 collision_probe_shared[4];
+.shared .align 16 .b8 collision_probe_shared[32];
 
 .visible .entry collision_types_probe(
     .param .u32 collision_types_probe_param_0
@@ -16,6 +16,12 @@
 
     ld.param.u32 %r1, [collision_types_probe_param_0];
     ld.global.v4.f32 {%f1, %f2, %f3, %f4}, [%r1];
+    st.shared.v4.f32 [collision_probe_shared], {%f1, %f2, %f3, %f4};
+    bar.sync 0;
+    ld.shared.v4.f32 {%f5, %f6, %f7, %f8}, [collision_probe_shared];
+    st.shared.v2.f32 [collision_probe_shared+16], {%f3, %f4};
+    bar.sync 0;
+    ld.shared.v2.f32 {%f9, %f10}, [collision_probe_shared+16];
     ld.global.u16 %r2, [%r1+2];
     ld.global.u8 %rs1, [%r1+1];
     ld.const.u8 %rs2, [collision_probe_bytes+1];
@@ -23,6 +29,9 @@
     st.shared.u8 [collision_probe_shared], %rs3;
     bar.sync 0;
     ld.shared.u8 %rs4, [collision_probe_shared];
+    st.shared.v4.u32 [collision_probe_shared], {%r1, %r2, %r2, %r1};
+    bar.sync 0;
+    ld.shared.v4.u32 {%r4, %r5, %r6, %r7}, [collision_probe_shared];
     setp.eq.b16 %p1, %rs1, %rs2;
     setp.ge.ftz.f32 %p2, %f1, %f2;
     setp.le.ftz.f32 %p3, %f1, %f2;
@@ -35,7 +44,7 @@
     selp.u16 %rs5, %rs3, %rs4, %p7;
     selp.b16 %rs6, %rs1, %rs2, %p8;
     selp.u32 %r3, %r1, %r2, %p6;
-    st.global.v4.f32 [%r1], {%f1, %f2, %f3, %f5};
-    st.global.v4.u32 [%r1+16], {%r2, %r3, %r2, %r3};
+    st.global.v4.f32 [%r1], {%f5, %f6, %f9, %f10};
+    st.global.v4.u32 [%r1+16], {%r4, %r5, %r6, %r7};
     ret;
 }

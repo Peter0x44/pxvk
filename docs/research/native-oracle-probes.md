@@ -14,10 +14,11 @@ standalone JSON report; `tools/build-reference-bundle.py` stores it at
 
 The original native report had SHA-256
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Five native runner reports are stored in the deterministic reference bundle,
-including the focused fluid and all three deformable workload reports. The
-bundle has SHA-256
-`3e5267ccd703fc6a18af5a36ec785382dadd495f9dc0e849e3a590149b4b59b1`.
+Seven native runner reports are stored in the deterministic reference bundle:
+the semantic oracle, four-kernel fluid pipeline, focused fluid constraints,
+all three focused deformable workloads, and the ordered deformable step.
+The bundle has SHA-256
+`a998b331488d7f0f3a6f0ff6ae98d3d2b36fbff90dedd7dfeeccffe033f391eb`.
 
 ## Environment
 
@@ -48,6 +49,23 @@ build\cuda-oracle\cuda-oracle.exe ^
 ```
 
 The output is supplied to `tools/build-reference-bundle.py --cuda-oracle`.
+
+The focused fluid-constraints report uses the extracted constraints module:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-fluid-constraints-fixture.exe `
+  .\local-ptx\fatbin_0002.ptx `
+  .\native-fluid-constraints.json
+```
+
+It launches `PxgCudaFluidCollisionConstraintsBatch` for one synthetic particle
+with the no-contact key `0x0000ffff`, time step `0.5f`, position `[1,2,3]`, and
+motion `[4,5,6]`. The exact outputs are position `[3,4.5,6]`, velocity
+`[4,5,6]`, unit weight, eight zero vectors, and four zero scalars. All guarded
+ranges remain intact; three reports are byte-identical. The native report
+SHA-256 is
+`28c23397e099c4dc2db893253fbc292c733e0f414928d9812c5b29fc94d6e7eb`;
+the report is supplied as `--cuda-fluid-constraints`.
 
 The focused deformable report uses the extracted PhysX module on the native
 NVIDIA reference system:
@@ -96,6 +114,26 @@ vectors/state, crosses all five barriers, and reaches response processing. All
 byte-identical. The native report SHA-256 is
 `0413b0348b49fe1b69376e6ed049f7011c2781366e3311ade51b5daaa0287369`;
 the report is supplied as `--cuda-deformable-collision`.
+
+The sequence fixture launches all three modules on one CUDA default stream with
+one shared 32-bit heap and no intermediate host synchronization:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-deformable-sequence-fixture.exe `
+  .\local-ptx\fatbin_0016.ptx `
+  .\local-ptx\fatbin_0015.ptx `
+  .\local-ptx\fatbin_0017.ptx `
+  .\native-deformable-sequence.json
+```
+
+Collision consumes update's position/motion ranges; solver consumes collision's
+position output. The trace-shaped one-particle path preserves the update motion,
+collision scalars, solver delta, and 64-byte solver record bit-for-bit, with all
+25 live heap ranges guarded. It intentionally uses zero shapes and zero solver
+iterations, so it proves ordering and inter-kernel state flow rather than real
+geometry or constraint response. The native report SHA-256 is
+`4c71f0c3f14d0c9456c38a15fdf04a04271568cc77acdcc211a78e2d560ba2a8`;
+the report is supplied as `--cuda-deformable-sequence`.
 
 ## Probe questions and decisions
 
