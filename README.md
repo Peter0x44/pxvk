@@ -27,6 +27,30 @@ launch against one Vulkan device's native Workgroup-memory limit.
 See [`docs/charter.md`](docs/charter.md) for scope and
 [`docs/research/README.md`](docs/research/README.md) for the evidence index.
 
+The 32-bit [`pxvk-runtime`](tools/pxvk-runtime/README.md) now provides the
+in-process `nvcuda.dll` facade: the captured CUDA export surface, six private
+CUDART/PhysX export tables, 32-bit virtual allocations, module
+globals/textures, packed launches, and Vulkan dispatch for the finite
+translated kernel set.
+
+## Build the DLL and stage SampleCloth
+
+Given a local PhysX 2.8 `SampleCloth` directory and extracted PTX, one command
+builds the x86 runtime and frontend, runs the runtime contract smoke test,
+translates the three deformable shaders, and creates an isolated runnable
+stage:
+
+```powershell
+.\tools\pxvk-runtime\prepare-sample.ps1 `
+  -SampleDirectory .\local-samples\SampleCloth `
+  -CapturedPtxDirectory .\local-ptx `
+  -OutputDirectory .\local-run\SampleCloth
+```
+
+Run `run-pxvk-samplecloth.cmd` in the resulting application directory. The
+launcher selects the staged `spirv` directory and writes `pxvk-runtime.log`
+beside the sample. The original sample and proprietary PTX remain unchanged.
+
 ## Run the portable suite on AMD
 
 Requirements:
