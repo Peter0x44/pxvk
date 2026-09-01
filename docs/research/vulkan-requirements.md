@@ -1,29 +1,28 @@
-# Vulkan requirements for the Mirror's Edge corpus
+# Vulkan requirements for classic 32-bit GPU PhysX 2.8.x
 
 ## Status
 
-The captured Mirror's Edge workload fits a narrow Vulkan 1.2 compute target.
-The first backend does not need CUDA-generic addressing, sampled images,
-subgroup operations, atomics, buffer device addresses, or the Vulkan memory
-model extension.
+Device eligibility is defined for the PhysX 2.8.x 32-bit PTX compatibility
+target, not for individual games, scenes, or captured launch sizes.
 
-The common hard device requirements are:
+The invariant device requirements are:
 
 - a Vulkan 1.2 x86 loader path and a compute queue;
 - f32 signed-zero/Inf/NaN preservation plus RTE control;
-- at least four compute-stage storage-buffer descriptors.
+- core `shaderInt64`, because the version-wide kernel set includes 64-bit
+  integer operations;
+- the ability to execute compute shaders with subgroup size 32, preserving the
+  CUDA-visible warp contract for warp-synchronous kernels.
 
-Workload profiles add only their executed requirements:
-
-- the captured Mirror's Edge profile requires `shaderInt64` and 256
-  workgroup invocations in X;
-- the PhysX 2.8.0 `SampleCloth` scene-1 profile requires 512 workgroup
-  invocations in X and storage-backed shared scratch, but its three executed
-  shaders do not require `shaderInt64`.
+Resource limits are deliberately not copied from a trace into startup policy.
+For each selected PTX entry and launch, the backend derives block dimensions,
+grid dimensions, static plus dynamic shared storage, descriptor bindings,
+storage ranges, and allocation sizes. That concrete request is then checked
+against the queried Vulkan limits.
 
 The installed SDK and x86 loader reach both local GPUs through Volk. Both GPUs
-clear the integer, workgroup, memory, and rounding requirements. The important
-exception is f32 denormal handling: Intel advertises
+clear the version-wide integer, subgroup, and rounding requirements. The
+important exception is f32 denormal handling: Intel advertises
 `shaderDenormFlushToZeroFloat32`, while the RTX 3070 does not. Because the RTX
 3070 is the native reference system, native Vulkan FTZ cannot be a hard device
 requirement. The translator needs a software FTZ path whose output is checked
@@ -270,24 +269,24 @@ runtime uses the core feature/property structs; it does not need to enable the
 legacy extension name. SPIR-V capabilities still require the corresponding
 feature or property to be supported.
 
-| Capability or extension path | Policy | Enablement and workload reason |
+| Capability or extension path | Policy | Enablement and version-wide reason |
 |---|---|---|
 | Vulkan 1.2 compute | required baseline | Supplies SPIR-V 1.5, properties2, storage-buffer storage class, and shader float-control properties |
-| Core `shaderInt64` / SPIR-V `Int64` | required for real kernels | Enable `VkPhysicalDeviceFeatures::shaderInt64`; launched PTX uses `u64`/`s64`, `clz.b64`, 64-bit shifts, comparisons, and arithmetic |
+| Core `shaderInt64` / SPIR-V `Int64` | required for full PhysX 2.8.x compatibility | Enable `VkPhysicalDeviceFeatures::shaderInt64`; the supported kernel family includes `u64`/`s64`, `clz.b64`, 64-bit shifts, comparisons, and arithmetic |
 | `VK_KHR_shader_float_controls` promoted to 1.2 | required properties | Require float32 RTE and signed-zero/Inf/NaN preservation; emit `RoundingModeRTE 32` and `SignedZeroInfNanPreserve 32` |
 | `DenormFlushToZero 32` | preferred per device | Use only where `shaderDenormFlushToZeroFloat32` is true; retain software FTZ because the RTX reports false |
 | `VK_KHR_8bit_storage` promoted to 1.2 | preferred | Enable `storageBuffer8BitAccess` for exact `ld.global.u8`/`ld.const.u8`; packed `u32` extraction is the fallback |
 | `VK_KHR_16bit_storage` promoted to 1.1 | preferred | Enable `storageBuffer16BitAccess` for `ld.global.u16` and vector forms; packed `u32` extraction is the fallback |
-| `VK_KHR_workgroup_memory_explicit_layout` | preferred after feature probing | All three devices advertise the extension. Its 8/16-bit access features can represent the PTX shared byte arena and `ld/st.shared.u8` directly; the probe must record those feature bits before use. Packed `u32` shared storage remains the fallback |
-| `VK_EXT_subgroup_size_control` | conditional | All three devices can request compute subgroup size 32. Use only if a captured kernel gains warp/subgroup operations; the current corpus has none |
-| `VK_KHR_vulkan_memory_model` | optional | All three devices support it, but current workgroup barriers and Vulkan queue dependencies cover the observed workload |
-| `VK_KHR_shader_float_controls2` | optional, currently unused | All three devices support it. Strict PTX lowering uses explicit execution modes and `NoContraction`; enabling fast-math defaults would weaken compatibility |
+| `VK_KHR_workgroup_memory_explicit_layout` | preferred after feature probing | Its 8/16-bit access features can represent the PTX shared byte arena and `ld/st.shared.u8` directly; packed `u32` shared storage remains the fallback |
+| `VK_EXT_subgroup_size_control` | required when the default compute subgroup is not 32 | The backend must be able to select subgroup size 32 for warp-synchronous kernels; a native default size of 32 also satisfies the invariant |
+| `VK_KHR_vulkan_memory_model` | optional | Current workgroup barriers and Vulkan queue dependencies cover the supported workload |
+| `VK_KHR_shader_float_controls2` | optional, currently unused | Strict PTX lowering uses explicit execution modes and `NoContraction`; enabling fast-math defaults would weaken compatibility |
 | `VK_KHR_shader_fma` | not a baseline | Intel does not advertise it. `GLSL.std.450 Fma` plus `NoContraction` already matches the native oracle |
 | `VK_KHR_synchronization2` and timeline semaphores | optional runtime optimization | Can simplify submission/dependency code later; they do not change PTX shader semantics |
 | `robustBufferAccess2` | not required | Texture OOB needs an explicit zero result; invalid CUDA global accesses are not a robustness contract |
 | Buffer device address | rejected for the first runtime | PTX is `.address_size 32`; device pointers remain 32-bit offsets into one bound heap |
-| Sampled images and samplers | rejected for current textures | The observed one-dimensional point fetch requires explicit OOB zero, implemented by bounded storage-buffer loads |
-| Float64, atomics, graphics queues, external-memory interop | not required | No launched PTX requires them; graphics interop remains outside the charter |
+| Sampled images and samplers | rejected for current textures | One-dimensional point fetches use explicitly bounded storage-buffer loads |
+| Float64, atomics, graphics queues, external-memory interop | not required | They are not part of the supported PhysX 2.8.x PTX contract; graphics interop remains outside the charter |
 
 This is a feature-driven policy, not a vendor allowlist. Intel, RTX, and AMD
 currently support the preferred 8/16-bit storage, subgroup-size, Vulkan-memory-
@@ -297,22 +296,24 @@ can differ.
 
 ## Quantitative limits
 
-| Limit | Common requirement | Profile requirement | Evidence | Local minimum |
-|---|---:|---:|---|---:|
-| `maxComputeWorkGroupInvocations` | queried | Mirror's Edge: 256; `SampleCloth` scene 1: 512 | Largest executed block in each workload | 1,024 |
-| `maxComputeWorkGroupSize[0]` | queried | Mirror's Edge: 256; `SampleCloth` scene 1: 512 | Captured launches are X-only | 1,024 |
-| `maxComputeWorkGroupCount[0]` | queried at launch | none at startup | Largest observed grid X is 94; Vulkan 1.2 already guarantees at least 65,535 | 65,536 |
-| `maxComputeSharedMemorySize` | queried | none as a rejection threshold | Native Workgroup backing is selected when the complete launch layout fits; larger launches use per-workgroup storage-buffer scratch | 32,768 B |
-| `maxStorageBufferRange` | queried per request | selected allocation or scratch must fit | Mirror's Edge requests 32 MiB pools; SDK samples request 128 MiB pools | 1,073,741,820 B |
-| maximum memory allocation/buffer size | queried per request | selected allocation must fit | Allocation size is runtime input | 4,294,901,760 B |
-| compute-stage storage buffers | 4 | none | Heap, parameters, constants, and either textures or shared scratch; binding 4 does not require a binding-3 descriptor | 200 |
+| Vulkan limit | Required value | Source of required value | Local minimum |
+|---|---:|---|---:|
+| `maxComputeWorkGroupInvocations` | block X × Y × Z | Current PTX launch | 1,024 |
+| `maxComputeWorkGroupSize[d]` | block dimension d | Current PTX launch | 1,024 / 1,024 / 64 |
+| `maxComputeWorkGroupCount[d]` | grid dimension d | Current PTX launch | 65,536 / 65,535 / 65,535 |
+| `maxComputeSharedMemorySize` | module static + entry static + launch dynamic shared bytes | Selected entry and launch, when using native Workgroup backing | 32,768 B |
+| `maxStorageBufferRange` | selected allocation or storage-scratch range | Caller allocation and selected entry | 1,073,741,820 B |
+| maximum memory allocation/buffer size | selected allocation | Caller request | 4,294,901,760 B |
+| compute-stage storage buffers | number of bindings emitted for the selected kernel | Heap and parameters, plus only the constant, texture-metadata, or storage-scratch resources actually used | 200 |
 
-The native CUDA device query returned 1,024 threads per block. Mirror's Edge
-launched at most 256 threads, while PhysX 2.8.0 `SampleCloth` scene 1 launches
-the solver with 512. These are separate workload-profile gates rather than one
-global eligibility threshold. `shaderInt64` is likewise profile-specific: the
-launched Mirror's Edge triangle entry requires it, while the three emitted
-`SampleCloth` scene-1 shaders do not declare `OpCapability Int64`.
+The 256-thread Mirror's Edge launch, 512-thread `SampleCloth` launch, and
+94-workgroup grid remain evidence fixtures. None is a device eligibility
+constant. A different PhysX 2.8.x application supplies different launch values,
+and those values are checked directly.
+
+`shaderInt64` is version-wide rather than scene-specific. Some selected entries
+do not emit `OpCapability Int64`, but a device advertised as fully compatible
+with the supported PhysX family must also accept the entries that do.
 
 Push constants are not a requirement. Generated kernels read packed launch
 parameters from storage-buffer binding 1. `maxPushConstantsSize` remains useful
@@ -325,15 +326,13 @@ The 64-thread native/Intel/RTX oracle proves independent store/load state at a
 address gate when the 32 MiB descriptor is bound at offset zero and CUDA
 addresses remain shader-side byte offsets.
 
-The observed shared-memory maxima are per entry. They must not be summed across
-kernels. Kernel emission takes the launch's dynamic-shared byte count as an
-explicit pipeline input and combines it with aligned module/routine static
-allocations. If the layout fits the physical Workgroup-memory limit, emission
-uses one Workgroup `u32` arena. Otherwise it uses per-X-workgroup
-storage-buffer scratch with storage-memory barrier semantics. For the current
-X-only launch contract, the caller allocates
-`align4(required-shared-bytes) * grid_x`. A two-workgroup fixture verifies
-distinct slice heads and guarded outputs on Intel and RTX.
+Shared-memory demand is per selected entry and launch; it is never a sum of
+unrelated kernels. Kernel emission combines aligned module/routine static bytes
+with the launch's dynamic-shared byte count. Native Workgroup backing is valid
+when that per-workgroup layout fits. Storage-backed lowering instead allocates
+`align4(required-shared-bytes) * total-dispatched-workgroups` and linearizes
+the workgroup ID to select one non-overlapping slice. The two-X-workgroup
+fixture is a behavioral check of that rule, not the source of the rule.
 
 ## PTX-to-Vulkan mapping constraints
 
@@ -370,9 +369,10 @@ selected memory type.
 - memory scope `Workgroup`;
 - workgroup-memory semantics with acquire/release ordering.
 
-The native 64-thread oracle proves both full-workgroup rendezvous and shared
-write visibility. No subgroup, device-scope, atomic, or cross-workgroup
-primitive is justified.
+The native 64-thread oracle proves full-workgroup rendezvous and shared write
+visibility without device-scope or cross-workgroup primitives. Separately,
+warp-synchronous volatile shared stores use a subgroup barrier and therefore
+require a 32-lane subgroup.
 
 CUDA default-stream ordering also requires dependencies between Vulkan
 dispatches. The conservative first path inserts a compute-write to
@@ -474,36 +474,32 @@ The x86 probes reported:
 | Required-size support in compute | yes | yes | yes |
 | `subgroupSizeControl` | yes | yes | yes |
 
-This is useful headroom, not a current hard requirement. The PTX corpus has no
-`vote`, `shfl`, `match`, `%laneid`, `%warpid`, or lane-mask use. `bar.sync 0` is
-a workgroup operation and must not be lowered to a subgroup barrier.
-
-The CUDA API surface must still report warp size 32, as required by the project
-charter. That emulated device attribute does not require the Vulkan device's
-subgroup size to be 32 when generated shaders contain no subgroup operations.
-A future evidenced warp instruction would reopen the deferred subgroup design
-and may make required subgroup size 32 a pipeline/device gate.
+Subgroup size 32 is a version-wide semantic requirement, not a launch-size
+requirement. The corpus does not use explicit `vote`, `shfl`, `match`,
+`%laneid`, `%warpid`, or lane-mask instructions, and `bar.sync 0` remains a
+workgroup barrier. It does contain warp-synchronous volatile shared-memory
+sequences; the current lowering closes those stores with subgroup barriers.
+Those pipelines therefore need a 32-lane compute subgroup. A device satisfies
+the requirement either with native subgroup size 32 or with subgroup-size
+control that can require 32 for compute.
 
 ## Startup gate
 
-A candidate device first passes the common gate when all of these are true:
+A candidate device passes the PhysX 2.8.x 32-bit invariant gate when all of
+these are true:
 
 1. Vulkan API version is at least 1.2 and a compute queue exists.
 2. f32 signed-zero/Inf/NaN preservation and RTE are true.
-3. four compute-stage and descriptor-set storage-buffer descriptors are
-   available.
-4. either f32 denorm FTZ is advertised or the validated software-FTZ lowering
+3. core `shaderInt64` is available.
+4. compute pipelines can execute with subgroup size 32.
+5. either f32 denorm FTZ is advertised or the validated software-FTZ lowering
    is enabled.
 
-The captured Mirror's Edge profile additionally requires `shaderInt64` and
-local size 256. The `SampleCloth` scene-1 profile instead requires local size
-512 and the X-only storage-scratch path; it does not require `shaderInt64`.
-Preflight reports both profile results independently.
-
-Dispatch count, storage range, allocation, buffer, and Workgroup-memory limits
-are queried inputs to each launch or allocation. They are not fixed startup
-thresholds derived from one trace. The actual request fails only when neither
-the native nor storage-backed representation can satisfy it.
+No captured block size, grid size, descriptor count, shared-memory size,
+storage range, or allocation size belongs in this startup gate. Those values
+come from the selected module and the actual launch. The launch fails with a
+concrete limit diagnostic only when its derived request cannot be represented
+on the selected device.
 
 The gate must produce a concrete diagnostic naming the first missing feature or
 limit. It must not silently choose a semantically weaker floating-point mode.

@@ -14,10 +14,11 @@ SPIR-V generation, memory, synchronization, floating point, and device
 selection before the CUDA facade, proprietary fatbins, or NVAPI are involved.
 
 A cross-vendor hardware preflight is runnable now at
-`tools/vulkan-probe/preflight.ps1`. It enumerates every Vulkan physical device,
-applies common requirements, and reports separate captured Mirror's Edge and
-`SampleCloth` scene-1 profiles. It emits hashed JSON and does not claim shader
-or PhysX correctness.
+`tools/vulkan-probe/preflight.ps1`. It enumerates every Vulkan physical device
+and applies one invariant gate for classic 32-bit GPU PhysX 2.8.x. Launch and
+resource limits remain inputs derived from the selected PTX entry and actual
+launch, not profiles copied from individual games or scenes. The script emits
+hashed JSON and does not claim shader or PhysX correctness.
 
 ## Evidence synthesized
 
@@ -722,11 +723,11 @@ vulkan-preflight/oracle.json
 ```
 
 Override paths with `-OutputDir` and `-BuildDir`. `capabilities.json` is the raw
-deterministic PE32 query. Schema-3 `preflight.json` contains the compiled Vulkan
-header version, common gate, per-workload profile results, FTZ path, dependency
-source, and capability hash. Exit status is nonzero when no enumerated device
-passes the captured Mirror's Edge profile or when a requested execution mode
-fails.
+deterministic PE32 query. Schema-4 `preflight.json` contains the compiled Vulkan
+header version, version-wide invariant gate, raw runtime limits, FTZ path,
+dependency source, and capability hash. Exit status is nonzero when no
+enumerated device passes the invariant gate or when a requested execution mode
+fails. It never turns captured block/grid sizes into startup thresholds.
 
 `-RunOracle` runs the full 64-thread semantic shader on every device. It
 allocates the real 32 MiB device and staging buffers, performs
@@ -737,11 +738,11 @@ NVAPI, or real PhysX kernels.
 
 Observed preflight devices:
 
-| Device | Vendor | Result | f32 path | Default subgroup |
+| Device | Vendor | Result | f32 path | Subgroup size 32 |
 |---|---|---|---|---:|
-| Intel UHD Graphics | `0x8086` | hardware gate passed | native FTZ | 32 |
-| RTX 3070 Laptop | `0x10de` | hardware gate passed | software FTZ required | 32 |
-| AMD Radeon 8060S | `0x1002` | hardware gate passed | native FTZ | 64 |
+| Intel UHD Graphics | `0x8086` | invariant gate passed | native FTZ | native |
+| RTX 3070 Laptop | `0x10de` | invariant gate passed | software FTZ required | native |
+| AMD Radeon 8060S | `0x1002` | invariant gate passed | native FTZ | selectable |
 
 The AMD submission is archived under
 `tools/vulkan-probe/expected/amd-radeon-8060s-device1586-driver8389003/`.
@@ -750,9 +751,9 @@ Its raw capability SHA-256 is
 It proves the cross-vendor PE32 loader and hardware gate on AMD. It does not yet
 prove SPIR-V execution, PTX semantics, NVAPI game startup, or PhysX output.
 
-AMD's default subgroup size is 64 while this corpus has no subgroup operation.
-This independently supports the decision not to make Vulkan subgroup size 32 a
-hardware gate; CUDA-visible warp size remains an emulated API value.
+AMD's default subgroup size is 64, but subgroup-size control can require 32 for
+compute. It therefore passes the version-wide warp invariant without turning
+one game's block dimensions into hardware policy.
 
 ## First independently testable implementation slice
 

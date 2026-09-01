@@ -1,68 +1,62 @@
 {
-    "schema_version":  3,
-    "probe_pointer_bits":  32,
-    "vulkan_header_version":  "1.4.357",
-    "loader_api_version":  "1.4.341",
-    "dependency_source":  "CMake FetchContent with pinned commits",
-    "capabilities_sha256":  "f35d24ad1404a2267e2dd5853466ef63960fb0de330b891d2de6c949c503fa7d",
-    "requirements":  {
-                         "common":  {
-                                        "minimum_vulkan":  "1.2",
-                                        "minimum_compute_queues":  1,
-                                        "signed_zero_inf_nan_preserve_float32":  true,
-                                        "rounding_mode_rte_float32":  true,
-                                        "minimum_compute_storage_buffers":  4
-                                    },
-                         "profiles":  {
-                                          "mirrors_edge_captured":  {
-                                                                        "requires_shader_int64":  true,
-                                                                        "minimum_workgroup_invocations":  256,
-                                                                        "minimum_workgroup_size_x":  256
-                                                                    },
-                                          "sample_cloth_scene_1":  {
-                                                                       "requires_shader_int64":  false,
-                                                                       "minimum_workgroup_invocations":  512,
-                                                                       "minimum_workgroup_size_x":  512,
-                                                                       "shared_backing":  "storage_buffer",
-                                                                       "dispatch_dimensions":  "x_only"
-                                                                   }
-                                      }
-                     },
-    "eligible_device_counts":  {
-                                   "mirrors_edge_captured":  1,
-                                   "sample_cloth_scene_1":  1
-                               },
-    "devices":  [
-                    {
-                        "name":  "AMD Radeon(TM) 8060S Graphics",
-                        "vendor_id":  "0x1002",
-                        "device_id":  "0x1586",
-                        "api_version":  "1.4.349",
-                        "common_gate_pass":  true,
-                        "native_float32_ftz":  true,
-                        "software_ftz_required":  false,
-                        "common_failures":  [
-
-                                            ],
-                        "profiles":  {
-                                         "mirrors_edge_captured":  {
-                                                                       "pass":  true,
-                                                                       "failures":  [
-
-                                                                                    ]
-                                                                   },
-                                         "sample_cloth_scene_1":  {
-                                                                      "pass":  true,
-                                                                      "failures":  [
-
-                                                                                   ]
-                                                                  }
-                                     }
-                    }
-                ],
-    "limitations":  [
-                        "Hardware preflight does not prove arbitrary caller-sized allocations; optional execution probes exercise a 32 MiB fixture.",
-                        "Hardware preflight does not execute SPIR-V or validate software FTZ.",
-                        "AMD game integration still requires the deferred non-NVIDIA NVAPI gate."
-                    ]
+  "schema_version": 4,
+  "probe_pointer_bits": 32,
+  "vulkan_header_version": "1.4.357",
+  "loader_api_version": "1.4.341",
+  "dependency_source": "CMake FetchContent with pinned commits",
+  "capabilities_sha256": "f35d24ad1404a2267e2dd5853466ef63960fb0de330b891d2de6c949c503fa7d",
+  "requirements": {
+    "scope": {
+      "physx_version_family": "2.8.x",
+      "cuda_address_size": 32,
+      "compatibility": "classic GPU PhysX PTX"
+    },
+    "invariant": {
+      "minimum_vulkan": "1.2",
+      "minimum_compute_queues": 1,
+      "signed_zero_inf_nan_preserve_float32": true,
+      "rounding_mode_rte_float32": true,
+      "shader_int64": true,
+      "cuda_visible_warp_size": 32
+    },
+    "runtime_derived": {
+      "local_size": "PTX launch block dimensions",
+      "dispatch_count": "PTX launch grid dimensions",
+      "shared_bytes_per_workgroup": "module static shared bytes + launch dynamic shared bytes",
+      "storage_scratch_bytes": "align4(shared bytes per workgroup) * total dispatched workgroups",
+      "storage_buffer_descriptors": "bindings used by the selected generated kernel",
+      "storage_ranges_and_allocations": "caller allocations and selected-kernel resources"
+    }
+  },
+  "eligible_device_count": 1,
+  "devices": [
+    {
+      "name": "AMD Radeon(TM) 8060S Graphics",
+      "vendor_id": "0x1002",
+      "device_id": "0x1586",
+      "api_version": "1.4.349",
+      "invariant_gate_pass": true,
+      "native_float32_ftz": true,
+      "software_ftz_required": false,
+      "subgroup_size_32_available": true,
+      "failures": [],
+      "runtime_limits": {
+        "max_compute_work_group_invocations": 1024,
+        "max_compute_work_group_size": [1024, 1024, 1024],
+        "max_compute_work_group_count": [4294967295, 65535, 65535],
+        "max_compute_shared_memory_size": 32768,
+        "max_per_stage_storage_buffers": 4294967295,
+        "max_descriptor_set_storage_buffers": 4294967295,
+        "max_storage_buffer_range": 4294967295,
+        "max_memory_allocation_size": 2147483648,
+        "max_buffer_size": 2147483648
+      }
+    }
+  ],
+  "limitations": [
+    "Invariant preflight does not certify an unknown launch; block dimensions, grid dimensions, descriptors, shared storage, ranges, and allocations are checked from the selected module and launch.",
+    "Hardware preflight does not prove arbitrary caller-sized allocations; optional execution probes exercise a 32 MiB fixture.",
+    "Hardware preflight does not execute SPIR-V or validate software FTZ.",
+    "AMD game integration still requires the deferred non-NVIDIA NVAPI gate."
+  ]
 }

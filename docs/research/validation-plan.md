@@ -303,11 +303,12 @@ entries. Its solver uses local size 512 and 42,240 bytes of dynamic shared
 memory. A second solver fixture emits shared storage at descriptor binding 4,
 executes that launch shape on Intel and RTX despite Intel's 32,768-byte native
 workgroup-memory limit, and matches the native RTX output bits and guards
-exactly. A project-owned two-X-workgroup fixture allocates
-`align4(shared-bytes) * grid_x`, writes distinct shared slice heads, and
-verifies both heads plus guarded global outputs on Intel and RTX. The device
-limit selects the backing strategy; it does not reject PTX or redefine the
-supported PhysX workload.
+exactly. A project-owned two-X-workgroup fixture allocates the X-only instance
+of the general scratch rule,
+`align4(shared-bytes) * total-dispatched-workgroups`, writes distinct shared
+slice heads, and verifies both heads plus guarded global outputs on Intel and
+RTX. The device limit selects the backing strategy; it does not reject PTX or
+redefine the supported PhysX workload.
 
 The same three modules also execute as one ordered step. Native CUDA queues
 update, collision, and solver on the default stream without intermediate host

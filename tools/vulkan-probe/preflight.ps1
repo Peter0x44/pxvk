@@ -113,79 +113,77 @@ if ([int]$capabilities.pointer_bits -ne 32) {
 }
 
 $requirements = [ordered]@{
-    common = [ordered]@{
+    scope = [ordered]@{
+        physx_version_family = "2.8.x"
+        cuda_address_size = 32
+        compatibility = "classic GPU PhysX PTX"
+    }
+    invariant = [ordered]@{
         minimum_vulkan = "1.2"
         minimum_compute_queues = 1
         signed_zero_inf_nan_preserve_float32 = $true
         rounding_mode_rte_float32 = $true
-        minimum_compute_storage_buffers = 4
+        shader_int64 = $true
+        cuda_visible_warp_size = 32
     }
-    profiles = [ordered]@{
-        mirrors_edge_captured = [ordered]@{
-            requires_shader_int64 = $true
-            minimum_workgroup_invocations = 256
-            minimum_workgroup_size_x = 256
-        }
-        sample_cloth_scene_1 = [ordered]@{
-            requires_shader_int64 = $false
-            minimum_workgroup_invocations = 512
-            minimum_workgroup_size_x = 512
-            shared_backing = "storage_buffer"
-            dispatch_dimensions = "x_only"
-        }
+    runtime_derived = [ordered]@{
+        local_size = "PTX launch block dimensions"
+        dispatch_count = "PTX launch grid dimensions"
+        shared_bytes_per_workgroup = "module static shared bytes + launch dynamic shared bytes"
+        storage_scratch_bytes = "align4(shared bytes per workgroup) * total dispatched workgroups"
+        storage_buffer_descriptors = "bindings used by the selected generated kernel"
+        storage_ranges_and_allocations = "caller allocations and selected-kernel resources"
     }
 }
 
 $deviceReports = @()
 foreach ($device in $capabilities.devices) {
-    $commonFailures = New-Object System.Collections.Generic.List[string]
+    $failures = New-Object System.Collections.Generic.List[string]
     try {
         $apiVersion = [version]$device.api_version
     }
     catch {
-        [void]$commonFailures.Add("invalid Vulkan API version: $($device.api_version)")
+        [void]$failures.Add("invalid Vulkan API version: $($device.api_version)")
         $apiVersion = [version]"0.0"
     }
 
-    if ($apiVersion -lt [version]$requirements.common.minimum_vulkan) {
-        [void]$commonFailures.Add("Vulkan $($device.api_version) is below 1.2")
+    if ($apiVersion -lt [version]$requirements.invariant.minimum_vulkan) {
+        [void]$failures.Add("Vulkan $($device.api_version) is below 1.2")
     }
-    if ([uint64]$device.compute_queue_count -lt $requirements.common.minimum_compute_queues) {
-        [void]$commonFailures.Add("no compute queue")
+    if ([uint64]$device.compute_queue_count -lt $requirements.invariant.minimum_compute_queues) {
+        [void]$failures.Add("no compute queue")
     }
     if (-not [bool]$device.float_controls.signed_zero_inf_nan_preserve_float32) {
-        [void]$commonFailures.Add("f32 signed-zero/Inf/NaN preservation is false")
+        [void]$failures.Add("f32 signed-zero/Inf/NaN preservation is false")
     }
     if (-not [bool]$device.float_controls.rounding_mode_rte_float32) {
-        [void]$commonFailures.Add("f32 RTE is false")
-    }
-    if ([uint64]$device.limits.max_per_stage_storage_buffers -lt $requirements.common.minimum_compute_storage_buffers) {
-        [void]$commonFailures.Add("compute-stage storage buffers are below 4")
-    }
-    if ([uint64]$device.limits.max_descriptor_set_storage_buffers -lt $requirements.common.minimum_compute_storage_buffers) {
-        [void]$commonFailures.Add("descriptor-set storage buffers are below 4")
-    }
-
-    $mirrorFailures = New-Object System.Collections.Generic.List[string]
-    $sampleClothFailures = New-Object System.Collections.Generic.List[string]
-    foreach ($failure in $commonFailures) {
-        [void]$mirrorFailures.Add($failure)
-        [void]$sampleClothFailures.Add($failure)
+        [void]$failures.Add("f32 RTE is false")
     }
     if (-not [bool]$device.features.shader_int64) {
-        [void]$mirrorFailures.Add("shaderInt64 is false")
+        [void]$failures.Add("shaderInt64 is false")
     }
-    if ([uint64]$device.limits.max_compute_work_group_invocations -lt $requirements.profiles.mirrors_edge_captured.minimum_workgroup_invocations) {
-        [void]$mirrorFailures.Add("max workgroup invocations is below 256")
+
+    $subgroup32Available = ([uint64]$device.subgroup.default_size -eq 32)
+    if (-not $subgroup32Available -and [bool]$device.features.subgroup_size_control) {
+        try {
+            $requiredSizeStagesText = [string]$device.subgroup.required_size_stages
+            $requiredSizeStages = if ($requiredSizeStagesText.StartsWith("0x")) {
+                [Convert]::ToUInt64($requiredSizeStagesText.Substring(2), 16)
+            }
+            else {
+                [Convert]::ToUInt64($requiredSizeStagesText, 10)
+            }
+            $subgroup32Available =
+                ([uint64]$device.subgroup.min_size -le 32) -and
+                ([uint64]$device.subgroup.max_size -ge 32) -and
+                (($requiredSizeStages -band 0x20) -ne 0)
+        }
+        catch {
+            $subgroup32Available = $false
+        }
     }
-    if ([uint64]$device.limits.max_compute_work_group_size[0] -lt $requirements.profiles.mirrors_edge_captured.minimum_workgroup_size_x) {
-        [void]$mirrorFailures.Add("max workgroup size X is below 256")
-    }
-    if ([uint64]$device.limits.max_compute_work_group_invocations -lt $requirements.profiles.sample_cloth_scene_1.minimum_workgroup_invocations) {
-        [void]$sampleClothFailures.Add("max workgroup invocations is below 512")
-    }
-    if ([uint64]$device.limits.max_compute_work_group_size[0] -lt $requirements.profiles.sample_cloth_scene_1.minimum_workgroup_size_x) {
-        [void]$sampleClothFailures.Add("max workgroup size X is below 512")
+    if (-not $subgroup32Available) {
+        [void]$failures.Add("compute shaders cannot provide CUDA-visible subgroup size 32")
     }
 
     $nativeFtz = [bool]$device.float_controls.denorm_flush_to_zero_float32
@@ -194,44 +192,40 @@ foreach ($device in $capabilities.devices) {
         vendor_id = [string]$device.vendor_id
         device_id = [string]$device.device_id
         api_version = [string]$device.api_version
-        common_gate_pass = ($commonFailures.Count -eq 0)
+        invariant_gate_pass = ($failures.Count -eq 0)
         native_float32_ftz = $nativeFtz
         software_ftz_required = (-not $nativeFtz)
-        common_failures = @($commonFailures)
-        profiles = [ordered]@{
-            mirrors_edge_captured = [ordered]@{
-                pass = ($mirrorFailures.Count -eq 0)
-                failures = @($mirrorFailures)
-            }
-            sample_cloth_scene_1 = [ordered]@{
-                pass = ($sampleClothFailures.Count -eq 0)
-                failures = @($sampleClothFailures)
-            }
+        subgroup_size_32_available = $subgroup32Available
+        failures = @($failures)
+        runtime_limits = [ordered]@{
+            max_compute_work_group_invocations = [uint64]$device.limits.max_compute_work_group_invocations
+            max_compute_work_group_size = @($device.limits.max_compute_work_group_size)
+            max_compute_work_group_count = @($device.limits.max_compute_work_group_count)
+            max_compute_shared_memory_size = [uint64]$device.limits.max_compute_shared_memory_size
+            max_per_stage_storage_buffers = [uint64]$device.limits.max_per_stage_storage_buffers
+            max_descriptor_set_storage_buffers = [uint64]$device.limits.max_descriptor_set_storage_buffers
+            max_storage_buffer_range = [uint64]$device.limits.max_storage_buffer_range
+            max_memory_allocation_size = [uint64]$device.limits.max_memory_allocation_size
+            max_buffer_size = [uint64]$device.limits.max_buffer_size
         }
     }
 }
 
-$eligibleCounts = [ordered]@{
-    mirrors_edge_captured = @(
-        $deviceReports |
-            Where-Object { $_.profiles.mirrors_edge_captured.pass }
-    ).Count
-    sample_cloth_scene_1 = @(
-        $deviceReports |
-            Where-Object { $_.profiles.sample_cloth_scene_1.pass }
-    ).Count
-}
+$eligibleDeviceCount = @(
+    $deviceReports | Where-Object { $_.invariant_gate_pass }
+).Count
 $report = [ordered]@{
-    schema_version = 3
+    schema_version = 4
     probe_pointer_bits = [int]$capabilities.pointer_bits
     vulkan_header_version = [string]$capabilities.vulkan_header_version
     loader_api_version = [string]$capabilities.loader_api_version
     dependency_source = "CMake FetchContent with pinned commits"
     capabilities_sha256 = (Get-FileHash -LiteralPath $capabilityPath -Algorithm SHA256).Hash.ToLowerInvariant()
     requirements = $requirements
-    eligible_device_counts = $eligibleCounts
+    eligible_device_count = $eligibleDeviceCount
     devices = $deviceReports
     limitations = @(
+        "Invariant preflight does not certify an unknown launch; block dimensions, grid dimensions, descriptors, shared storage, ranges, and allocations are checked from the selected module and launch.",
         "Hardware preflight does not prove arbitrary caller-sized allocations; optional execution probes exercise a 32 MiB fixture.",
         "Hardware preflight does not execute SPIR-V or validate software FTZ.",
         "AMD game integration still requires the deferred non-NVIDIA NVAPI gate."
@@ -255,15 +249,11 @@ Write-Host ""
 Write-Host "pxvk Vulkan hardware preflight"
 foreach ($device in $deviceReports) {
     $ftz = if ($device.software_ftz_required) { "software FTZ required" } else { "native f32 FTZ" }
-    Write-Host ("DEVICE {0} ({1}, {2})" -f $device.name, $device.vendor_id, $ftz)
-    foreach ($profileName in @("mirrors_edge_captured", "sample_cloth_scene_1")) {
-        $profile = $device.profiles.$profileName
-        if ($profile.pass) {
-            Write-Host ("  PASS  {0}" -f $profileName)
-        }
-        else {
-            Write-Host ("  FAIL  {0}: {1}" -f $profileName, ($profile.failures -join "; "))
-        }
+    if ($device.invariant_gate_pass) {
+        Write-Host ("PASS  {0} ({1}, {2}, subgroup size 32 available)" -f $device.name, $device.vendor_id, $ftz)
+    }
+    else {
+        Write-Host ("FAIL  {0} ({1}): {2}" -f $device.name, $device.vendor_id, ($device.failures -join "; "))
     }
 }
 Write-Host "Capabilities: $capabilityPath"
@@ -285,6 +275,6 @@ else {
     Write-Host "This checks cross-vendor hardware eligibility only; use -RunOracle for semantic execution."
 }
 
-if ($eligibleCounts.mirrors_edge_captured -eq 0) {
+if ($eligibleDeviceCount -eq 0) {
     exit 1
 }
