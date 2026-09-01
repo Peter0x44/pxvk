@@ -41,10 +41,10 @@ The `Module` column uses the stable semantic numbering from the corpus report.
 | `0013` | `fatbin_0010.ptx` | `KernelFluidCalcHashPacked` | 52 B | 0 | 0 | Exact fixture | Focused fixture and four-kernel fluid fixture |
 | `0013` | `fatbin_0010.ptx` | `KernelReorderPosVelAndFindCellStartPacked` | 76 B | 0 | 260 B | Exact fixture | Focused fixture and four-kernel fluid fixture |
 | `0014` | `fatbin_0011.ptx` | `KernelFluidSimpleParticle` | 44 B | 10,756 B | 0 | Not translated | — |
-| `0015` | `fatbin_0007.ptx` | `PxgCudaFluidCollisionBoxShapesBatch` | 20 B | 6,752 B | 0 | Not translated | — |
+| `0015` | `fatbin_0007.ptx` | `PxgCudaFluidCollisionBoxShapesBatch` | 20 B | 6,752 B | 0 | Exact fixture | Captured two-work-unit zero-box fixture |
 | `0016` | `fatbin_0013.ptx` | `KernelFluidForce` | 100 B | 0 | 0 | Exact fixture | Focused fixture and four-kernel fluid fixture |
 
-Eleven of sixteen launched entries have exact native/Vulkan fixtures. Five
+Twelve of sixteen launched entries have exact native/Vulkan fixtures. Four
 remain. Module `0006` contains only collision constants. Module `0017` contains
 resolved deformable self-collision entries, but none launched in the captured
 routes, so they are outside this ledger and the initial compatibility target.

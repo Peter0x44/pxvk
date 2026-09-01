@@ -205,6 +205,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $constraintsEntry = "_Z38PxgCudaFluidCollisionConstraintsBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi"
     $dynamicResponseEntry = "_Z42PxgCudaFluidCollisionDynamicResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi"
     $staticResponseEntry = "_Z41PxgCudaFluidCollisionStaticResponseBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK16PxgFluidWorkUnitEPi"
+    $boxesEntry = "_Z36PxgCudaFluidCollisionBoxShapesBatchD11PxgGpuArrayIK32PxgFluidCollisionShapeStartAddrsES_IK16PxgFluidWorkUnitEPi"
     $trianglesEntry = "_Z36PxgCudaFluidCollisionTrianglesBatchD11PxgGpuArrayIK26PxgFluidWorkUnitStartAddrsES_IK29PxgFluidCollisionWorkUnitMeshEPi"
 
     $calcHashPtx = Resolve-PtxForEntry $CapturedPtxDir $calcHashEntry
@@ -217,6 +218,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $constraintsPtx = Resolve-PtxForEntry $CapturedPtxDir $constraintsEntry
     $dynamicResponsePtx = Resolve-PtxForEntry $CapturedPtxDir $dynamicResponseEntry
     $staticResponsePtx = Resolve-PtxForEntry $CapturedPtxDir $staticResponseEntry
+    $boxesPtx = Resolve-PtxForEntry $CapturedPtxDir $boxesEntry
     $trianglesPtx = Resolve-PtxForEntry $CapturedPtxDir $trianglesEntry
 
     Write-Host "Compiling local captured PhysX kernels and running available fixtures..."
@@ -226,6 +228,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $fluidConstraintsManifest = Join-Path $resultDir "fluid-constraints-manifest.json"
     $fluidDynamicResponseManifest = Join-Path $resultDir "fluid-dynamic-response-manifest.json"
     $fluidStaticResponseManifest = Join-Path $resultDir "fluid-static-response-manifest.json"
+    $fluidBoxesManifest = Join-Path $resultDir "fluid-boxes-manifest.json"
     $fluidTrianglesManifest = Join-Path $resultDir "fluid-triangles-manifest.json"
     $deformableUpdateManifest = Join-Path $resultDir "deformable-update-manifest.json"
     $deformableSolverManifest = Join-Path $resultDir "deformable-solver-manifest.json"
@@ -237,6 +240,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     $constraintsSpirv = Join-Path $resultDir "fluid-constraints.spv"
     $dynamicResponseSpirv = Join-Path $resultDir "fluid-dynamic-response.spv"
     $staticResponseSpirv = Join-Path $resultDir "fluid-static-response.spv"
+    $boxesSpirv = Join-Path $resultDir "fluid-boxes.spv"
     $trianglesSpirv = Join-Path $resultDir "fluid-triangles.spv"
     $deformableUpdateSpirv = Join-Path $resultDir "deformable-update.spv"
     $deformableSolverSpirv = Join-Path $resultDir "deformable-solver.spv"
@@ -251,6 +255,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
     Invoke-Checked $frontend @($constraintsPtx, $fluidConstraintsManifest)
     Invoke-Checked $frontend @($dynamicResponsePtx, $fluidDynamicResponseManifest)
     Invoke-Checked $frontend @($staticResponsePtx, $fluidStaticResponseManifest)
+    Invoke-Checked $frontend @($boxesPtx, $fluidBoxesManifest)
     Invoke-Checked $frontend @($trianglesPtx, $fluidTrianglesManifest)
     Invoke-Checked $frontend @($deformableUpdatePtx, $deformableUpdateManifest)
     Invoke-Checked $frontend @($deformableSolverPtx, $deformableSolverManifest)
@@ -280,6 +285,10 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         $fluidStaticResponseManifest, $staticResponseSpirv
     )
     Invoke-Checked $emitter @(
+        "--entry", $boxesEntry, "64", "0",
+        $fluidBoxesManifest, $boxesSpirv
+    )
+    Invoke-Checked $emitter @(
         "--entry", $trianglesEntry, "64", "0",
         $fluidTrianglesManifest, $trianglesSpirv
     )
@@ -303,6 +312,7 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         $constraintsSpirv,
         $dynamicResponseSpirv,
         $staticResponseSpirv,
+        $boxesSpirv,
         $trianglesSpirv,
         $deformableUpdateSpirv,
         $deformableSolverSpirv,
@@ -343,6 +353,11 @@ if (-not [string]::IsNullOrWhiteSpace($CapturedPtxDir)) {
         (Join-Path $resultDir "fluid-static-response.json"),
         "--fluid-static-response-fixture",
         $staticResponseSpirv
+    )
+    Invoke-Checked $memorySmoke @(
+        (Join-Path $resultDir "fluid-boxes.json"),
+        "--fluid-boxes-fixture",
+        $boxesSpirv
     )
     Invoke-Checked $memorySmoke @(
         (Join-Path $resultDir "fluid-triangles.json"),

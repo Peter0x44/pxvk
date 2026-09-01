@@ -14,11 +14,11 @@ standalone JSON report; `tools/build-reference-bundle.py` stores it at
 
 The original native report had SHA-256
 `38fc7ef4be8863cc55b0a5408cbeab5e20f6f81de852a9b7818339897cc88011`.
-Ten native runner reports are stored in the deterministic reference bundle:
+Eleven native runner reports are stored in the deterministic reference bundle:
 the semantic oracle, four-kernel fluid pipeline, focused fluid constraints,
-dynamic response, static response, and triangles, all three focused deformable
-workloads, and the ordered deformable step. The bundle has SHA-256
-`1159964774799ef7c5bec4f4d56641ba6ef25769876ac03ad43858068a0b3e5f`.
+dynamic response, static response, boxes, and triangles, all three focused
+deformable workloads, and the ordered deformable step. The bundle has SHA-256
+`82345746e422a1d47ea187b045b7207f26813b0bb69393f5ea1175feadb5ca4b`.
 
 ## Environment
 
@@ -121,6 +121,24 @@ guards remain intact. The native report SHA-256 is
 `a9c53cf29be39d08e4eecb6096280be43672cfbc5a218ca906b1e9ac56ad82e9`;
 the report is supplied as `--cuda-fluid-triangles`. This focused fixture does
 not cover a non-empty triangle-contact record.
+
+The focused box-collision report uses the extracted box module:
+
+```powershell
+.\build\cuda-physx-fixture\Release\cuda-fluid-boxes-fixture.exe `
+  .\local-ptx\fatbin_0007.ptx `
+  .\native-fluid-boxes.json
+```
+
+It launches `PxgCudaFluidCollisionBoxShapesBatch` with the trace-observed
+two-work-unit grid, one particle, and zero boxes. Both workgroups cross five
+shared-memory barriers and copy their 80-byte shape-start records and parameter
+blocks; the active workgroup also loads position and old position before the
+empty-shape exit. Both vectors and every guard remain intact. The native report
+SHA-256 is
+`2ff6c3f8215d59d39cfc0ef9b6041615aad883b755be724cf08a82faca93d121`;
+the report is supplied as `--cuda-fluid-boxes`. This fixture does not cover a
+box-contact record.
 
 The focused deformable report uses the extracted PhysX module on the native
 NVIDIA reference system:

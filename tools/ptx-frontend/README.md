@@ -175,6 +175,13 @@ particle/source pairing and matches native CUDA exactly on Intel and NVIDIA
 Vulkan adapters. Alternate flags, tangential damping, distance clamping, and
 plane projection remain uncovered.
 
+`PxgCudaFluidCollisionBoxShapesBatch` needs no additional instruction lowering
+beyond the existing collision surface. Its 1,288 instructions lower to a
+deterministic 61,420-word module with local size 64 and 6,752 bytes of static
+shared memory. The trace-shaped two-work-unit zero-box fixture crosses five
+barriers and matches native CUDA exactly on Intel and NVIDIA Vulkan adapters.
+Box-contact geometry remains uncovered.
+
 Validate and execute the module:
 
 ```powershell
@@ -288,7 +295,7 @@ The frontend does not yet provide:
 - general type inference beyond declared register banks and the 147 finite
   opcode contracts;
 - reachability or dead-code elimination;
-- SPIR-V emission beyond the project oracle and the eleven launched entries
+- SPIR-V emission beyond the project oracle and the twelve launched entries
   marked **Exact fixture** in
   [`../../docs/research/kernel-status.md`](../../docs/research/kernel-status.md);
 - shader caching;
