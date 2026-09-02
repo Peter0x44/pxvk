@@ -492,6 +492,11 @@ private:
             declaration.push_back(consume());
         }
         expect_text(";");
+        for (const Token &token : declaration) {
+            if (token.text == "=") {
+                fail(token, "module variable initializers are not supported");
+            }
+        }
         ModuleVariable variable;
         variable.external = std::any_of(
             declaration.begin(), declaration.end(),
@@ -1592,13 +1597,15 @@ Module parse_source(const std::string &source)
     return Parser(tokenize(source)).parse_module();
 }
 
-bool expect_parse_failure(const std::string &source)
+bool expect_parse_failure(
+    const std::string &source,
+    std::string_view expected_message = {})
 {
     try {
         (void)parse_source(source);
         return false;
-    } catch (const ParseError &) {
-        return true;
+    } catch (const ParseError &error) {
+        return expected_message.empty() || error.what() == expected_message;
     }
 }
 
@@ -1654,7 +1661,14 @@ int self_test()
     const std::string unsupported_opcode =
         ".version 4.1\n.target sm_52\n.address_size 32\n"
         ".visible .entry bad() { atom.global.add.u32 %r1, [%r2], %r3; }\n";
-    if (!expect_parse_failure(missing_semicolon) || !expect_parse_failure(unsupported_opcode)) {
+    const std::string module_initializer =
+        ".version 4.1\n.target sm_52\n.address_size 32\n"
+        ".const .align 4 .u32 initialized[2] = {1, 2};\n";
+    if (!expect_parse_failure(missing_semicolon) ||
+        !expect_parse_failure(unsupported_opcode) ||
+        !expect_parse_failure(
+            module_initializer,
+            "module variable initializers are not supported")) {
         std::cerr << "invalid parser self-test unexpectedly succeeded\n";
         return 1;
     }

@@ -334,8 +334,9 @@ Relevant limitations to avoid copying blindly:
 
 - release parsing can recover from invalid directives and compile a partial
   module; pxvk should report deterministic diagnostics for its finite corpus;
-- 32-bit conversion assumes global/constant byte arrays with immediate
-  initializers, which happens to match all seven corpus globals;
+- 32-bit conversion assumes global/constant byte arrays normalized to immediate
+  initializer bytes, including parser-synthesized zeros when PTX has no `=`;
+  this internal representation happens to cover all seven corpus globals;
 - the HIP emitter's address spaces and intrinsics are backend-specific;
 - helper functions encode AMD approximation and texture-object behavior;
 - LLVM's incomplete constrained-FP support forced ZLUDA-specific workarounds;
