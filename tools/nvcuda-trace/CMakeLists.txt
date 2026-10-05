@@ -23,6 +23,7 @@ add_library(
     SHARED
     src/launch_params.c
     src/nvcuda_trace.c
+    src/capture.c
 )
 target_include_directories(
     nvcuda

@@ -22,6 +22,7 @@
 #undef cuMemsetD8
 
 #include "launch_params.h"
+#include "capture.h"
 
 #include <stdarg.h>
 #include <stdbool.h>
@@ -115,6 +116,24 @@ static void append_log_unlocked(const char *message, size_t length)
     }
     WriteFile(g_log_file, message, (DWORD)length, &written, NULL);
 }
+
+static void trace_log(const char *format, ...);
+
+static int api_log_enabled(void)
+{
+    static int value = -1;
+    if (value < 0) value = GetEnvironmentVariableA("PXVK_API_LOG", NULL, 0) != 0;
+    return value;
+}
+
+static unsigned int api_frame(void)
+{
+    char text[32];
+    DWORD length = GetEnvironmentVariableA("PXVK_FRAME", text, sizeof(text));
+    return length == 0 || length >= sizeof(text) ? 0u : (unsigned int)strtoul(text, NULL, 10);
+}
+
+#define API_LOG(...) do { if (api_log_enabled()) { char api_buffer_[256]; snprintf(api_buffer_, sizeof(api_buffer_), __VA_ARGS__); trace_log("api f=%u %s", api_frame(), api_buffer_); } } while (0)
 
 static void trace_log(const char *format, ...)
 {
@@ -351,6 +370,22 @@ static FARPROC WINAPI traced_get_proc_address(HMODULE module, LPCSTR name)
     return result;
 }
 
+static FARPROC resolve_symbol(const char *name);
+
+static int capture_sync(void)
+{
+    typedef CUresult(CUDAAPI *function_type)(void);
+    function_type fn = (function_type)resolve_symbol("cuCtxSynchronize");
+    return fn != NULL ? (int)fn() : -1;
+}
+
+static int capture_dtoh(void *destination, uint32_t source, uint32_t bytes)
+{
+    typedef CUresult(CUDAAPI *function_type)(void *, CUdeviceptr, size_t);
+    function_type fn = (function_type)resolve_symbol("cuMemcpyDtoH_v2");
+    return fn != NULL ? (int)fn(destination, (CUdeviceptr)source, bytes) : -1;
+}
+
 static BOOL CALLBACK initialize_once(PINIT_ONCE once, PVOID parameter, PVOID *context)
 {
     unsigned int patched_modules;
@@ -367,6 +402,7 @@ static BOOL CALLBACK initialize_once(PINIT_ONCE once, PVOID parameter, PVOID *co
         trace_log("init error=load_real_driver win32=%lu", (unsigned long)GetLastError());
         return FALSE;
     }
+    capture_initialize(g_output_directory, capture_sync, capture_dtoh);
     patched_modules = install_get_proc_address_hooks();
     trace_log("trace_start pid=%lu pointer_bits=%u getproc_hooks=%u",
               (unsigned long)GetCurrentProcessId(),
@@ -674,6 +710,7 @@ static CUresult CUDAAPI traced_cudart_get_module_from_cubin(
 
     capture_fatbin(wrapper, ordinal);
     result = g_real_cudart_get_module(module, wrapper);
+    if (result == CUDA_SUCCESS && module != NULL) capture_note_module(*module, ordinal);
     trace_log("cudart_get_module ordinal=%u module=%p result=%d", ordinal,
               module != NULL ? (void *)*module : NULL, (int)result);
     return result;
@@ -775,6 +812,7 @@ PXVK_EXPORT CUresult CUDAAPI cuModuleGetFunction(
         CUresult result = real_function(function, module, name);
         if (result == CUDA_SUCCESS && function != NULL) {
             remember_function(*function, name);
+            capture_note_function(*function, module, name);
         }
         trace_log("cuModuleGetFunction module=%p function=%p name=%s result=%d",
                   (void *)module,
@@ -815,6 +853,7 @@ PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
         char capture_status[64];
         size_t parameter_size;
         CUresult result;
+        unsigned int capture_token;
         lookup_function_name(function, function_name, sizeof(function_name));
         capture_launch_parameters(function,
                                   kernel_parameters,
@@ -822,6 +861,19 @@ PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
                                   capture_status,
                                   sizeof(capture_status),
                                   &parameter_size);
+        {
+            pxvk_launch_params launch;
+            const void *buffer = NULL;
+            size_t buffer_size = 0;
+            const unsigned int grid[3] = {grid_x, grid_y, grid_z};
+            const unsigned int block[3] = {block_x, block_y, block_z};
+            if (extra != NULL &&
+                pxvk_parse_launch_extra(extra, read_current_process, NULL, &launch) == PXVK_LAUNCH_PARAMS_OK) {
+                buffer = launch.buffer;
+                buffer_size = launch.size;
+            }
+            capture_token = capture_launch_begin(function, grid, block, shared_memory_bytes, buffer, buffer_size);
+        }
         result = real_function(function,
                                grid_x,
                                grid_y,
@@ -833,6 +885,7 @@ PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
                                stream,
                                kernel_parameters,
                                extra);
+        capture_launch_end(capture_token);
         InterlockedIncrement(&g_launch_calls);
         trace_log("cuLaunchKernel function=%p name=%s grid=%u,%u,%u block=%u,%u,%u "
                   "shared=%u stream=%p params=%s param_bytes=%lu result=%d",
@@ -874,6 +927,7 @@ PXVK_EXPORT CUresult CUDAAPI cuMemAlloc_v2(CUdeviceptr *pointer, size_t size)
     RESOLVE_OR_RETURN(function_type, real_function, "cuMemAlloc_v2");
     {
         CUresult result = real_function(pointer, size);
+        if (result == CUDA_SUCCESS && pointer != NULL) capture_note_alloc((uint32_t)*pointer, (uint32_t)size);
         trace_log("cuMemAlloc_v2 pointer=%08lx bytes=%lu result=%d",
                   pointer != NULL ? (unsigned long)*pointer : 0,
                   (unsigned long)size,
@@ -899,6 +953,7 @@ PXVK_EXPORT CUresult CUDAAPI cuMemFree_v2(CUdeviceptr pointer)
     RESOLVE_OR_RETURN(function_type, real_function, "cuMemFree_v2");
     {
         CUresult result = real_function(pointer);
+        if (result == CUDA_SUCCESS) capture_note_free((uint32_t)pointer);
         trace_log("cuMemFree_v2 pointer=%08lx result=%d", (unsigned long)pointer, (int)result);
         return result;
     }
@@ -914,6 +969,7 @@ PXVK_EXPORT CUresult CUDAAPI cuMemcpyHtoDAsync_v2(
     RESOLVE_OR_RETURN(function_type, real_function, "cuMemcpyHtoDAsync_v2");
     InterlockedIncrement(&g_host_to_device_calls);
     InterlockedExchangeAdd64(&g_host_to_device_bytes, (LONG64)size);
+    API_LOG("htod_async dst=%08lx bytes=%lu", (unsigned long)destination, (unsigned long)size);
     return real_function(destination, source, size, stream);
 }
 
@@ -927,6 +983,7 @@ PXVK_EXPORT CUresult CUDAAPI cuMemcpyDtoHAsync_v2(
     RESOLVE_OR_RETURN(function_type, real_function, "cuMemcpyDtoHAsync_v2");
     InterlockedIncrement(&g_device_to_host_calls);
     InterlockedExchangeAdd64(&g_device_to_host_bytes, (LONG64)size);
+    API_LOG("dtoh_async src=%08lx bytes=%lu", (unsigned long)source, (unsigned long)size);
     return real_function(destination, source, size, stream);
 }
 
@@ -940,6 +997,7 @@ PXVK_EXPORT CUresult CUDAAPI cuMemcpyDtoDAsync_v2(
     RESOLVE_OR_RETURN(function_type, real_function, "cuMemcpyDtoDAsync_v2");
     InterlockedIncrement(&g_device_to_device_calls);
     InterlockedExchangeAdd64(&g_device_to_device_bytes, (LONG64)size);
+    API_LOG("dtod_async dst=%08lx src=%08lx bytes=%lu", (unsigned long)destination, (unsigned long)source, (unsigned long)size);
     return real_function(destination, source, size, stream);
 }
 
@@ -948,6 +1006,7 @@ PXVK_EXPORT CUresult CUDAAPI cuMemsetD8_v2(CUdeviceptr destination, unsigned cha
     typedef CUresult(CUDAAPI *function_type)(CUdeviceptr, unsigned char, size_t);
     RESOLVE_OR_RETURN(function_type, real_function, "cuMemsetD8_v2");
     InterlockedIncrement(&g_memset_calls);
+    API_LOG("memset dst=%08lx value=%u bytes=%lu", (unsigned long)destination, (unsigned)value, (unsigned long)count);
     return real_function(destination, value, count);
 }
 
@@ -956,6 +1015,7 @@ PXVK_EXPORT CUresult CUDAAPI cuCtxSynchronize(void)
     typedef CUresult(CUDAAPI *function_type)(void);
     RESOLVE_OR_RETURN(function_type, real_function, "cuCtxSynchronize");
     InterlockedIncrement(&g_context_sync_calls);
+    API_LOG("sync");
     return real_function();
 }
 
@@ -995,6 +1055,8 @@ PXVK_EXPORT CUresult CUDAAPI cuTexRefSetAddress_v2(
     typedef CUresult(CUDAAPI *function_type)(size_t *, CUtexref, CUdeviceptr, size_t);
     RESOLVE_OR_RETURN(function_type, real_function, "cuTexRefSetAddress_v2");
     InterlockedIncrement(&g_texture_calls);
+    API_LOG("texbind ref=%p ptr=%08lx bytes=%lu", (void *)texture, (unsigned long)pointer, (unsigned long)size);
+    capture_note_texref_address(texture, (uint32_t)pointer, (uint32_t)size);
     return real_function(byte_offset, texture, pointer, size);
 }
 
@@ -1006,6 +1068,7 @@ PXVK_EXPORT CUresult CUDAAPI cuTexRefSetFormat(
     typedef CUresult(CUDAAPI *function_type)(CUtexref, CUarray_format, int);
     RESOLVE_OR_RETURN(function_type, real_function, "cuTexRefSetFormat");
     InterlockedIncrement(&g_texture_calls);
+    capture_note_texref_format(texture, (int)format, packed_components);
     return real_function(texture, format, packed_components);
 }
 
@@ -1096,22 +1159,32 @@ DEFINE_FORWARDER_3(cuDeviceGetAttribute,
 DEFINE_FORWARDER_1(cuCtxGetCurrent, CUcontext *, context)
 DEFINE_FORWARDER_1(cuCtxGetDevice, CUdevice *, device)
 DEFINE_FORWARDER_2(cuCtxGetApiVersion, CUcontext, context, unsigned int *, version)
-DEFINE_FORWARDER_4(cuModuleGetGlobal_v2,
-                   CUdeviceptr *,
-                   pointer,
-                   size_t *,
-                   bytes,
-                   CUmodule,
-                   module,
-                   const char *,
-                   name)
-DEFINE_FORWARDER_3(cuModuleGetTexRef,
-                   CUtexref *,
-                   texture,
-                   CUmodule,
-                   module,
-                   const char *,
-                   name)
+PXVK_EXPORT CUresult CUDAAPI cuModuleGetGlobal_v2(
+    CUdeviceptr *pointer, size_t *bytes, CUmodule module, const char *name)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUdeviceptr *, size_t *, CUmodule, const char *);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuModuleGetGlobal_v2");
+    {
+        size_t size = 0;
+        CUresult result = real_function(pointer, &size, module, name);
+        if (bytes != NULL) *bytes = size;
+        if (result == CUDA_SUCCESS && pointer != NULL && name != NULL)
+            capture_note_global(module, name, (uint32_t)*pointer, (uint32_t)size);
+        return result;
+    }
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuModuleGetTexRef(CUtexref *texture, CUmodule module, const char *name)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUtexref *, CUmodule, const char *);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuModuleGetTexRef");
+    {
+        CUresult result = real_function(texture, module, name);
+        if (result == CUDA_SUCCESS && texture != NULL && name != NULL)
+            capture_note_texref(*texture, module, name);
+        return result;
+    }
+}
 DEFINE_FORWARDER_3(cuMemGetAddressRange_v2,
                    CUdeviceptr *,
                    base,
@@ -1267,4 +1340,88 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
         g_log_file = INVALID_HANDLE_VALUE;
     }
     return TRUE;
+}
+
+/* Logged forwarders for synchronization-relevant APIs (PXVK_API_LOG). */
+PXVK_EXPORT CUresult CUDAAPI cuMemcpyHtoD_v2(CUdeviceptr d, const void *s, size_t n)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUdeviceptr, const void *, size_t);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuMemcpyHtoD_v2");
+    API_LOG("htod dst=%08lx bytes=%lu", (unsigned long)d, (unsigned long)n);
+    return real_function(d, s, n);
+}
+PXVK_EXPORT CUresult CUDAAPI cuMemcpyDtoH_v2(void *d, CUdeviceptr s, size_t n)
+{
+    typedef CUresult(CUDAAPI *function_type)(void *, CUdeviceptr, size_t);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuMemcpyDtoH_v2");
+    API_LOG("dtoh src=%08lx bytes=%lu", (unsigned long)s, (unsigned long)n);
+    return real_function(d, s, n);
+}
+PXVK_EXPORT CUresult CUDAAPI cuMemcpyDtoD_v2(CUdeviceptr d, CUdeviceptr s, size_t n)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUdeviceptr, CUdeviceptr, size_t);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuMemcpyDtoD_v2");
+    API_LOG("dtod dst=%08lx src=%08lx bytes=%lu", (unsigned long)d, (unsigned long)s, (unsigned long)n);
+    return real_function(d, s, n);
+}
+PXVK_EXPORT CUresult CUDAAPI cuEventRecord(CUevent e, CUstream st)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUevent, CUstream);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuEventRecord");
+    API_LOG("event_record %p stream=%p", (void *)e, (void *)st);
+    return real_function(e, st);
+}
+PXVK_EXPORT CUresult CUDAAPI cuEventQuery(CUevent e)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUevent);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuEventQuery");
+    {
+        CUresult r = real_function(e);
+        API_LOG("event_query %p result=%d", (void *)e, (int)r);
+        return r;
+    }
+}
+PXVK_EXPORT CUresult CUDAAPI cuEventSynchronize(CUevent e)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUevent);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuEventSynchronize");
+    API_LOG("event_sync %p", (void *)e);
+    return real_function(e);
+}
+PXVK_EXPORT CUresult CUDAAPI cuStreamSynchronize(CUstream st)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUstream);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuStreamSynchronize");
+    API_LOG("stream_sync %p", (void *)st);
+    return real_function(st);
+}
+PXVK_EXPORT CUresult CUDAAPI cuStreamQuery(CUstream st)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUstream);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuStreamQuery");
+    {
+        CUresult r = real_function(st);
+        API_LOG("stream_query %p result=%d", (void *)st, (int)r);
+        return r;
+    }
+}
+PXVK_EXPORT CUresult CUDAAPI cuStreamCreate(CUstream *st, unsigned int flags)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUstream *, unsigned int);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuStreamCreate");
+    {
+        CUresult r = real_function(st, flags);
+        API_LOG("stream_create %p flags=%u result=%d", st ? (void *)*st : NULL, flags, (int)r);
+        return r;
+    }
+}
+PXVK_EXPORT CUresult CUDAAPI cuEventCreate(CUevent *e, unsigned int flags)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUevent *, unsigned int);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuEventCreate");
+    {
+        CUresult r = real_function(e, flags);
+        API_LOG("event_create %p flags=%u result=%d", e ? (void *)*e : NULL, flags, (int)r);
+        return r;
+    }
 }
