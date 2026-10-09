@@ -83,6 +83,7 @@ public:
         collect_symbols();
         layout_shared_and_local();
         decide_float_mode();
+        if (!native_ftz_) analyze_flushed();
         analyze_provenance();
         if (!options_.no_contraction) plan_contractions();
 
@@ -101,6 +102,7 @@ public:
             c.merge = b_.id();
         }
         cfg_ = &cfg;
+        find_transparent_blocks(tree);
 
         b_.label(b_.id());
         // Module-global addresses come from the launch block, so pipelines do
@@ -244,6 +246,61 @@ private:
             if (!s.inst.has("ftz")) all_ftz = false;
         }
         native_ftz_ = options_.native_ftz && any_float && all_ftz;
+    }
+
+    // Emulated .ftz flushes every input and output. Most inputs are outputs
+    // of other .ftz instructions, so find registers whose every definition
+    // already holds a non-denormal value and skip their input flushes. This
+    // is a greatest fixpoint so values carried around loops by mov qualify.
+    static bool denormal_bits(std::uint32_t bits) { return (bits & 0x7f800000u) == 0 && (bits & 0x7fffffffu) != 0; }
+
+    bool flush_safe(const Operand &o) const
+    {
+        if (o.kind == Operand::Kind::reg) return flushed_.count(o.name) != 0;
+        if (o.kind == Operand::Kind::imm) return !denormal_bits(static_cast<std::uint32_t>(o.imm));
+        if (o.kind == Operand::Kind::fimm) return o.fwidth == 32 && !denormal_bits(static_cast<std::uint32_t>(o.fbits));
+        return false;
+    }
+
+    void analyze_flushed()
+    {
+        static const std::set<std::string> flushing = {"add", "sub", "mul", "mad", "fma", "div", "rcp", "sqrt",
+                                                       "rsqrt", "sin", "cos", "lg2", "ex2", "abs", "neg", "min",
+                                                       "max"};
+        for (const Statement &s : f_.body)
+            if (!s.is_label && !s.inst.operands.empty() && s.inst.operands[0].kind == Operand::Kind::reg)
+                flushed_.insert(s.inst.operands[0].name);
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (const Statement &s : f_.body) {
+                if (s.is_label) continue;
+                const Instruction &in = s.inst;
+                if (in.operands.empty() || in.op == "st" || in.op == "bra" || in.op == "red" || in.op == "bar" ||
+                    in.op == "ret" || in.op == "membar")
+                    continue;
+                const Operand &dst = in.operands[0];
+                bool safe = false;
+                if (dst.kind == Operand::Kind::reg) {
+                    if (flushing.count(in.op)) {
+                        safe = in.has("f32") && in.has("ftz");
+                    } else if (in.op == "cvt" && in.mods.size() >= 2) {
+                        // float destination from an integer source, or .ftz
+                        const std::string &d = in.mods[in.mods.size() - 2], &src = in.mods.back();
+                        safe = d == "f32" && (src[0] == 's' || src[0] == 'u' || in.has("ftz"));
+                    } else if (in.op == "mov" && in.operands.size() == 2) {
+                        safe = flush_safe(in.operands[1]);
+                    } else if (in.op == "selp" && in.operands.size() == 4) {
+                        safe = flush_safe(in.operands[1]) && flush_safe(in.operands[2]);
+                    }
+                }
+                if (!safe) {
+                    if (dst.kind == Operand::Kind::reg) changed |= flushed_.erase(dst.name) != 0;
+                    for (const Operand &e : dst.elems)
+                        if (e.kind == Operand::Kind::reg) changed |= flushed_.erase(e.name) != 0;
+                }
+            }
+        }
     }
 
     // ---- contraction ---------------------------------------------------------
@@ -673,18 +730,46 @@ private:
         return v;
     }
 
-    // Byte address (u32) of a memory operand within its state space.
-    std::uint32_t address(const Operand &o, int line)
+    // A byte address within a state space, kept as a u32 value plus a
+    // constant offset. PTX accesses are naturally aligned, so an aligned
+    // offset means the base is aligned too and the element index can be
+    // (base >> k) + offset / size: drivers then share the base computation
+    // between neighbouring accesses and fold the offset into the access.
+    // The split is exact as long as base itself does not wrap below the
+    // start of its space; for the heap that holds for |offset| < 64 KiB
+    // because the runtime never allocates its first 64 KiB (kHeapReserve).
+    struct Address {
+        std::uint32_t base = 0;
+        std::uint32_t offset = 0;
+    };
+
+    static Address offset_by(Address a, std::uint32_t bytes)
+    {
+        a.offset += bytes;
+        return a;
+    }
+
+    std::uint32_t byte_address(const Address &a) { return add_offset(a.base, a.offset); }
+
+    std::uint32_t element_index(const Address &a, std::uint32_t shift)
+    {
+        const std::int32_t offset = static_cast<std::int32_t>(a.offset);
+        if ((a.offset & ((1u << shift) - 1u)) != 0 || offset <= -65536 || offset >= 65536)
+            return b_.value(SpvOpShiftRightLogical, b_.t_u32(), {byte_address(a), b_.u32(shift)});
+        const std::uint32_t index = b_.value(SpvOpShiftRightLogical, b_.t_u32(), {a.base, b_.u32(shift)});
+        return add_offset(index, static_cast<std::uint32_t>(offset / (1 << shift)));
+    }
+
+    Address address(const Operand &o, int line)
     {
         if (o.kind != Operand::Kind::address) throw Error("expected a memory operand", line);
-        std::uint32_t base = 0;
+        const std::uint32_t offset = static_cast<std::uint32_t>(o.imm);
         switch (o.base) {
-        case Operand::Base::none: return b_.u32(static_cast<std::uint32_t>(o.imm));
-        case Operand::Base::reg: base = read_reg(o.name, Type{'u', 32}, line); break;
-        case Operand::Base::symbol: base = symbol_address(o.name, line); break;
+        case Operand::Base::none: return {b_.u32(offset), 0};
+        case Operand::Base::reg: return {read_reg(o.name, Type{'u', 32}, line), offset};
+        case Operand::Base::symbol: return {symbol_address(o.name, line), offset};
         }
-        if (o.imm == 0) return base;
-        return b_.value(SpvOpIAdd, b_.t_u32(), {base, b_.u32(static_cast<std::uint32_t>(o.imm))});
+        throw Error("bad memory operand", line);
     }
 
     // ---- interface variables ----------------------------------------------------
@@ -714,13 +799,13 @@ private:
         return heap_base_;
     }
 
-    std::uint32_t heap_pointer(int words, std::uint32_t byte_address)
+    std::uint32_t heap_pointer(int words, const Address &address)
     {
         const std::uint32_t var = heap_view(words);
         const int index = words == 1 ? 0 : words == 2 ? 1 : 2;
-        const std::uint32_t offset = b_.value(SpvOpISub, b_.t_u32(), {byte_address, heap_base()});
-        const std::uint32_t shift = words == 1 ? 2u : words == 2 ? 3u : 4u;
-        const std::uint32_t element = b_.value(SpvOpShiftRightLogical, b_.t_u32(), {offset, b_.u32(shift)});
+        // The heap base is aligned far beyond any access size.
+        const Address relative{b_.value(SpvOpISub, b_.t_u32(), {address.base, heap_base()}), address.offset};
+        const std::uint32_t element = element_index(relative, words == 1 ? 2u : words == 2 ? 3u : 4u);
         return b_.value(SpvOpAccessChain,
                         b_.t_ptr(SpvStorageClassStorageBuffer, heap_element_[index]),
                         {var, b_.u32(0), element});
@@ -791,9 +876,10 @@ private:
     }
 
     // ---- word-level memory primitives ----------------------------------------
-    std::uint32_t word_pointer(Space space, std::uint32_t byte_address)
+    std::uint32_t word_pointer(Space space, const Address &address)
     {
-        const std::uint32_t index = b_.value(SpvOpShiftRightLogical, b_.t_u32(), {byte_address, b_.u32(2)});
+        if (space != Space::shared && space != Space::local) return heap_pointer(1, address);
+        const std::uint32_t index = element_index(address, 2);
         switch (space) {
         case Space::shared:
             if (options_.shared_in_storage) {
@@ -807,7 +893,7 @@ private:
             return b_.value(SpvOpAccessChain, b_.t_ptr(SpvStorageClassFunction, b_.t_u32()),
                             {local_array(), index});
         default:
-            return heap_pointer(1, byte_address);
+            return heap_pointer(1, address);
         }
     }
 
@@ -831,7 +917,7 @@ private:
     }
 
     // Loads `count` consecutive 32-bit words starting at an aligned address.
-    std::vector<std::uint32_t> load_words(Space space, std::uint32_t address, int count, bool is_volatile)
+    std::vector<std::uint32_t> load_words(Space space, const Address &address, int count, bool is_volatile)
     {
         std::vector<std::uint32_t> words;
         if (space == Space::global && (count == 2 || count == 4) && !is_volatile) {
@@ -842,11 +928,11 @@ private:
             return words;
         }
         for (int i = 0; i < count; ++i)
-            words.push_back(load_pointer(b_.t_u32(), word_pointer(space, add_offset(address, 4u * i)), is_volatile));
+            words.push_back(load_pointer(b_.t_u32(), word_pointer(space, offset_by(address, 4u * i)), is_volatile));
         return words;
     }
 
-    void store_words(Space space, std::uint32_t address, const std::vector<std::uint32_t> &words, bool is_volatile)
+    void store_words(Space space, const Address &address, const std::vector<std::uint32_t> &words, bool is_volatile)
     {
         const int count = static_cast<int>(words.size());
         if (space == Space::global && (count == 2 || count == 4) && !is_volatile) {
@@ -859,16 +945,16 @@ private:
             return;
         }
         for (int i = 0; i < count; ++i)
-            store_pointer(word_pointer(space, add_offset(address, 4u * i)), words[i], is_volatile);
+            store_pointer(word_pointer(space, offset_by(address, 4u * i)), words[i], is_volatile);
     }
 
     // Read-modify-write of a sub-word value. Global and shared memory use
     // atomics so neighbouring bytes written by other invocations survive.
-    void store_subword(Space space, std::uint32_t address, std::uint32_t value, int bits)
+    void store_subword(Space space, const Address &address, std::uint32_t value, int bits)
     {
         const std::uint32_t u32 = b_.t_u32();
         const std::uint32_t shift = b_.value(SpvOpShiftLeftLogical, u32,
-            {b_.value(SpvOpBitwiseAnd, u32, {address, b_.u32(3)}), b_.u32(3)});
+            {b_.value(SpvOpBitwiseAnd, u32, {byte_address(address), b_.u32(3)}), b_.u32(3)});
         const std::uint32_t mask = b_.value(SpvOpShiftLeftLogical, u32, {b_.u32((1u << bits) - 1u), shift});
         const std::uint32_t bits_in = b_.value(SpvOpShiftLeftLogical, u32, {mask_bits(value, bits), shift});
         const std::uint32_t pointer = word_pointer(space, address);
@@ -1019,13 +1105,13 @@ private:
         const bool is_volatile = in.has("volatile");
         const Space space = access_space(in, in.operands[1]);
         note_space(space, is_volatile);
-        const std::uint32_t addr = address(in.operands[1], in.line);
+        const Address addr = address(in.operands[1], in.line);
         const int total = type.bits / 8 * count;
         std::vector<std::uint32_t> elems;
         if (total < 4) {
             const std::uint32_t word = load_pointer(b_.t_u32(), word_pointer(space, addr), is_volatile);
             for (int i = 0; i < count; ++i)
-                elems.push_back(extract_subword(word, add_offset(addr, static_cast<std::uint32_t>(i * type.bits / 8)),
+                elems.push_back(extract_subword(word, byte_address(offset_by(addr, static_cast<std::uint32_t>(i * type.bits / 8))),
                                                 type.bits, type.kind == 's'));
         } else {
             elems = words_to_elements(load_words(space, addr, total / 4, is_volatile), type, count);
@@ -1041,14 +1127,14 @@ private:
         const Space space = access_space(in, in.operands[0]);
         if (space == Space::param) throw Error("st.param is only valid in device functions", in.line);
         note_space(space, is_volatile);
-        const std::uint32_t addr = address(in.operands[0], in.line);
+        const Address addr = address(in.operands[0], in.line);
         const std::vector<std::uint32_t> elems = read_elements(in.operands[1], type, in.line);
         const int total = type.bits / 8 * count;
         const bool warp_sync = space == Space::shared && is_volatile;
         if (warp_sync) subgroup_barrier();
         if (total < 4) {
             for (int i = 0; i < count; ++i)
-                store_subword(space, add_offset(addr, static_cast<std::uint32_t>(i * type.bits / 8)), elems[i], type.bits);
+                store_subword(space, offset_by(addr, static_cast<std::uint32_t>(i * type.bits / 8)), elems[i], type.bits);
         } else {
             store_words(space, addr, elements_to_words(elems, type), is_volatile);
         }
@@ -1100,7 +1186,7 @@ private:
             // outside the bound texture memory.
             const std::uint32_t at = b_.value(SpvOpSelect, u32,
                 {present, add_offset(element, 4u * c), element});
-            const std::uint32_t word = load_pointer(u32, heap_pointer(1, at), false);
+            const std::uint32_t word = load_pointer(u32, heap_pointer(1, Address{at, 0}), false);
             values[c] = b_.value(SpvOpSelect, u32, {present, word, b_.u32(0)});
         }
         const Operand &dst = in.operands[0];
@@ -1113,10 +1199,11 @@ private:
     // ---- floating point -------------------------------------------------------
     std::uint32_t flush(std::uint32_t value)
     {
+        // |x| < 2^-126 (false for NaN) selects the signed zero.
         const std::uint32_t u32 = b_.t_u32();
+        const std::uint32_t magnitude = b_.ext(b_.t_f32(), GLSLstd450FAbs, {value});
+        const std::uint32_t denormal = b_.value(SpvOpFOrdLessThan, b_.t_bool(), {magnitude, b_.f32_bits(0x00800000u)});
         const std::uint32_t bits = b_.value(SpvOpBitcast, u32, {value});
-        const std::uint32_t exponent = b_.value(SpvOpBitwiseAnd, u32, {bits, b_.u32(0x7f800000u)});
-        const std::uint32_t denormal = b_.value(SpvOpIEqual, b_.t_bool(), {exponent, b_.u32(0)});
         const std::uint32_t sign = b_.value(SpvOpBitwiseAnd, u32, {bits, b_.u32(0x80000000u)});
         const std::uint32_t result = b_.value(SpvOpSelect, u32, {denormal, sign, bits});
         return b_.value(SpvOpBitcast, b_.t_f32(), {result});
@@ -1125,7 +1212,7 @@ private:
     std::uint32_t fin(const Instruction &in, std::size_t index)
     {
         const std::uint32_t v = operand(in.operands[index], Type{'f', 32}, in.line);
-        return in.has("ftz") && !native_ftz_ ? flush(v) : v;
+        return in.has("ftz") && !native_ftz_ && !flush_safe(in.operands[index]) ? flush(v) : v;
     }
 
     void fout(const Instruction &in, std::uint32_t value)
@@ -1614,7 +1701,47 @@ private:
     struct Construct {
         std::uint32_t header = 0, body = 0, cont = 0, merge = 0;
         bool needs_ladder = false;
+        bool transparent = false; // block emitted inline, without a loop wrapper
     };
+
+    // A block construct only needs a breakable (loop) wrapper when some
+    // branch to it is not in tail position, i.e. is not the last action on
+    // its path through if-arms to the end of the block's body. Branches in
+    // tail position reach the block's end by simply falling through, so such
+    // blocks are emitted inline. Most PTX if/else joins are like this, and
+    // drivers compile plain selections much better than one-shot loops.
+    void count_branches(const StructNode &node, int tail, std::vector<int> &total, std::vector<int> &tails)
+    {
+        switch (node.kind) {
+        case StructNode::Kind::seq:
+            for (std::size_t i = 0; i < node.children.size(); ++i)
+                count_branches(node.children[i], i + 1 == node.children.size() ? tail : -1, total, tails);
+            break;
+        case StructNode::Kind::branch_if:
+            for (const StructNode &arm : node.children) count_branches(arm, tail, total, tails);
+            break;
+        case StructNode::Kind::block:
+            count_branches(node.children[0], node.construct, total, tails);
+            break;
+        case StructNode::Kind::loop:
+            count_branches(node.children[0], -1, total, tails);
+            break;
+        case StructNode::Kind::br:
+            ++total[node.construct];
+            if (node.construct == tail) ++tails[node.construct];
+            break;
+        default:
+            break;
+        }
+    }
+
+    void find_transparent_blocks(const Structured &tree)
+    {
+        std::vector<int> total(constructs_.size(), 0), tails(constructs_.size(), 0);
+        count_branches(tree.root, -1, total, tails);
+        for (std::size_t i = 0; i < constructs_.size(); ++i)
+            constructs_[i].transparent = !is_loop_[i] && total[i] == tails[i];
+    }
 
     std::uint32_t pending()
     {
@@ -1661,6 +1788,11 @@ private:
             break;
         }
         case StructNode::Kind::block:
+            if (constructs_[node.construct].transparent) {
+                emit(node.children[0]);
+                break;
+            }
+            [[fallthrough]];
         case StructNode::Kind::loop: {
             Construct &c = constructs_[node.construct];
             stack_.push_back(node.construct);
@@ -1691,6 +1823,8 @@ private:
 
     void emit_br(int target)
     {
+        // A tail branch to a transparent block: falling through reaches it.
+        if (constructs_[target].transparent) return;
         const int innermost = stack_.back();
         if (target == innermost) {
             b_.branch(construct_target(target));
@@ -1758,6 +1892,7 @@ private:
     KernelInfo info_;
     std::uint32_t main_ = 0;
     bool native_ftz_ = false;
+    std::set<std::string> flushed_; // registers that never hold a denormal (emulated ftz)
     std::map<std::string, ParamSlot> params_;
     std::map<std::string, std::uint32_t> symbol_spec_, texture_index_, shared_offset_, local_offset_;
     std::map<std::string, std::uint32_t> symbol_constants_;

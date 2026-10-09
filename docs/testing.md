@@ -36,7 +36,25 @@ Replay options: `--verbose` (show wrong words), `--time N` (GPU timing),
 `--storage-shared` (force storage-backed shared memory), `--ptx FILE`
 (override the module PTX, e.g. with hand-inserted probes storing to a
 `.global pxvk_debug[]` symbol, which replay maps to a scratch area and
-prints).
+prints), `--spirv-filter CMD` (run `CMD in.spv -o out.spv` on every kernel,
+e.g. `spirv-opt -O`, for code-generation experiments) and
+`--force-native-ftz` (skip `.ftz` emulation even where the driver lacks
+it; results are then not exact, but it bounds the emulation's cost).
+
+## Kernel performance
+
+Replay with `--time N` is the quickest loop for kernel code generation:
+launches such as the cloth `UberSolver` run as one or a few workgroups and
+are latency-bound, so instruction count on the dependency chain matters.
+
+- `PXVK_PIPELINE_STATS=1` prints the driver's statistics for every pipeline
+  (`VK_KHR_pipeline_executable_properties`; on NVIDIA register count and
+  binary size).
+- `pxvk-nativeinfo module.ptx` prints the native driver's function
+  attributes (registers, local memory) and writes the native JIT cubin to
+  `module.ptx.cubin`; `nvdisasm -c` from the CUDA toolkit disassembles it.
+- In-game, `PXVK_PROFILE=1` (pxvk) and `PXVK_TRACE_TIMING=1` (tracer, native)
+  log per-kernel GPU time per 500 launches.
 
 The pxvk runtime writes captures in the same format (`PXVK_CAPTURE_DIR` +
 `PXVK_CAPTURE_FRAMES`), and `tools/capture-diff.py` compares native and

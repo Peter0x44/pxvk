@@ -50,7 +50,12 @@ struct Cuda {
 
     bool load()
     {
-        dll = LoadLibraryA("nvcuda.dll");
+        // The real driver from the system directory, never pxvk's nvcuda.dll
+        // that sits next to the tools in the build directory.
+        char path[MAX_PATH];
+        const UINT length = GetSystemDirectoryA(path, MAX_PATH - 16);
+        lstrcpyA(path + length, "\\nvcuda.dll");
+        dll = LoadLibraryA(path);
         if (!dll) return false;
         auto get = [&](auto &fn, const char *name) {
             fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(

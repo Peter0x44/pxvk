@@ -132,21 +132,25 @@ int main(int argc, char **argv)
 {
     std::string device_selector;
     bool native_ftz = true;
+    bool force_native_ftz = false; // timing experiments: skip FTZ emulation even if unsupported
     bool verbose = false;
     bool no_contraction = false;
     bool force_storage_shared = false;
     int timing_runs = 0;
     fs::path dir, ptx_override;
+    std::string spirv_filter; // command run as "<filter> in.spv out.spv" on every kernel (experiments)
     std::vector<unsigned> wanted;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--device" && i + 1 < argc) device_selector = argv[++i];
         else if (arg == "--no-native-ftz") native_ftz = false;
+        else if (arg == "--force-native-ftz") force_native_ftz = true;
         else if (arg == "--no-contract") no_contraction = true;
         else if (arg == "--storage-shared") force_storage_shared = true;
         else if (arg == "--verbose") verbose = true;
         else if (arg == "--time" && i + 1 < argc) timing_runs = std::atoi(argv[++i]);
         else if (arg == "--ptx" && i + 1 < argc) ptx_override = argv[++i];
+        else if (arg == "--spirv-filter" && i + 1 < argc) spirv_filter = argv[++i];
         else if (dir.empty()) dir = arg;
         else wanted.push_back(static_cast<unsigned>(std::stoul(arg)));
     }
@@ -166,7 +170,7 @@ int main(int argc, char **argv)
                 caps.name.c_str(), caps.subgroup_size, caps.native_ftz, caps.subgroup_control,
                 static_cast<unsigned long long>(caps.max_heap_bytes >> 20));
     pxvk::ptx::CompileOptions options;
-    options.native_ftz = native_ftz && caps.native_ftz;
+    options.native_ftz = force_native_ftz || (native_ftz && caps.native_ftz);
     options.preserve_nan = caps.preserve_nan;
     options.no_contraction = no_contraction;
     device.set_timing(timing_runs > 0);
@@ -227,7 +231,23 @@ int main(int argc, char **argv)
             variant.shared_in_storage = true;
             kernels[c.kernel] = pxvk::ptx::compile_kernel(cache->module, c.kernel, variant);
         }
-        const auto &kernel = kernels[c.kernel];
+        auto &kernel = kernels[c.kernel];
+        if (!shaders.count(c.kernel) && !spirv_filter.empty()) {
+            const fs::path in = fs::temp_directory_path() / "pxvk-filter-in.spv";
+            const fs::path out = fs::temp_directory_path() / "pxvk-filter-out.spv";
+            std::ofstream(in, std::ios::binary)
+                .write(reinterpret_cast<const char *>(kernel.spirv.data()), kernel.spirv.size() * 4);
+            fs::remove(out);
+            const std::string command = spirv_filter + " \"" + in.string() + "\" -o \"" + out.string() + "\"";
+            if (std::system(("\"" + command + "\"").c_str()) != 0 || !fs::exists(out)) { // cmd.exe strips outer quotes
+                fail("spirv filter failed");
+                continue;
+            }
+            std::ifstream file(out, std::ios::binary);
+            std::vector<char> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            kernel.spirv.assign(bytes.size() / 4, 0);
+            std::memcpy(kernel.spirv.data(), bytes.data(), bytes.size() / 4 * 4);
+        }
         if (!shaders.count(c.kernel)) {
             shaders[c.kernel] = device.create_shader(kernel.spirv, kernel.info.launch_block_bytes,
                                                      kernel.info.warp_synchronous, storage, error);

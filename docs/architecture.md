@@ -24,10 +24,13 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
   unsupported code in unlaunched kernels never blocks module loading.
 - `cfg.cpp` builds basic blocks and structurizes the CFG with the dominator
   tree algorithm from Ramsey's "Beyond Relooper": loop headers become loop
-  constructs, merge nodes become the continuation of a block construct. Every
-  construct is emitted as a SPIR-V loop (blocks run once); branches that leave
-  several constructs at once use a small "pending target" dispatch at each
-  merge. Barriers therefore stay in structured, uniform control flow.
+  constructs, merge nodes become the continuation of a block construct.
+  Conditionals are SPIR-V selections. A block construct that some branch
+  must break out of is emitted as a run-once SPIR-V loop; one whose branches
+  are all in tail position (typical if/else joins) is emitted inline, since
+  drivers compile plain selections better. Branches that leave several
+  constructs at once use a small "pending target" dispatch at each merge.
+  Barriers therefore stay in structured, uniform control flow.
 - `compiler.cpp` lowers each instruction. Notable semantics:
   - PTX registers are function variables (drivers promote them to SSA).
   - Generic loads/stores are resolved to global/shared/local by register
@@ -39,9 +42,18 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     `pxvk-opcheck` and is what makes results bit-exact with native.
   - `div.full`/`div.approx` are `a * rcp(b)` with the hardware's operand
     scaling; `min`/`max` use `NMin`/`NMax`; `cvt` to integer saturates and
-    maps NaN to 0; `.ftz` uses the Vulkan float-controls execution mode where
-    available and is emulated otherwise; `SignedZeroInfNanPreserve` is
-    requested so unordered comparisons work on all drivers.
+    maps NaN to 0; `SignedZeroInfNanPreserve` is requested so unordered
+    comparisons work on all drivers.
+  - `.ftz` uses the Vulkan float-controls execution mode where available
+    (Intel). NVIDIA's Vulkan driver supports neither flushing nor preserving
+    fp32 denormals, and in practice preserves them, so `.ftz` is emulated by
+    flushing results and inputs. A dataflow pass skips input flushes for
+    registers that can never hold a denormal (results of other `.ftz`
+    instructions, int-to-float conversions, normal immediates, and moves or
+    selects of those), which removes most of them.
+  - Memory operands keep their constant offset separate: an aligned access
+    indexes as `(base >> k) + offset / size`, so drivers share the base
+    computation between neighbouring accesses.
   - Warp-synchronous code (volatile shared stores) is bracketed by subgroup
     barriers and the pipeline requests full 32-wide subgroups.
 

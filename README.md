@@ -59,6 +59,7 @@ Environment variables:
 | `PXVK_DUMP_SPIRV` | directory to write every compiled kernel's SPIR-V |
 | `PXVK_CACHE_DIR` | pipeline cache directory (default `%LOCALAPPDATA%\pxvk`; `off` disables) |
 | `PXVK_PROFILE` | per-kernel GPU timing and fence-wait/pipeline-creation times in the log |
+| `PXVK_PIPELINE_STATS` | print the driver's register count/binary size for each pipeline (stderr) |
 | `PXVK_CAPTURE_DIR`, `PXVK_CAPTURE_FRAMES` | capture launches for differential testing |
 
 Captured PhysX PTX and capture files are proprietary; keep them local

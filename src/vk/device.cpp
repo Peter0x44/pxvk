@@ -80,6 +80,7 @@ struct Device::Impl {
     Stats stats;
 
     bool timing = false;
+    bool pipeline_stats = false; // PXVK_PIPELINE_STATS: print driver statistics per pipeline
     VkQueryPool queries = VK_NULL_HANDLE;
     std::uint32_t timed = 0;
     std::vector<double> times;
@@ -282,6 +283,36 @@ struct Device::Impl {
         return bucket / 4;
     }
 
+    void print_pipeline_stats(VkPipeline pipeline, const DispatchShape &shape)
+    {
+        VkPipelineInfoKHR pipeline_info{VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR};
+        pipeline_info.pipeline = pipeline;
+        std::uint32_t count = 0;
+        vkGetPipelineExecutablePropertiesKHR(device, &pipeline_info, &count, nullptr);
+        std::vector<VkPipelineExecutablePropertiesKHR> executables(count, {VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR});
+        vkGetPipelineExecutablePropertiesKHR(device, &pipeline_info, &count, executables.data());
+        for (std::uint32_t i = 0; i < count; ++i) {
+            std::fprintf(stderr, "pipeline stats (block %ux%ux%u) %s:", shape.block[0], shape.block[1], shape.block[2],
+                         executables[i].name);
+            VkPipelineExecutableInfoKHR executable{VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR};
+            executable.pipeline = pipeline;
+            executable.executableIndex = i;
+            std::uint32_t n = 0;
+            vkGetPipelineExecutableStatisticsKHR(device, &executable, &n, nullptr);
+            std::vector<VkPipelineExecutableStatisticKHR> list(n, {VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR});
+            vkGetPipelineExecutableStatisticsKHR(device, &executable, &n, list.data());
+            for (const auto &stat : list) {
+                switch (stat.format) {
+                case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR: std::fprintf(stderr, " %s=%u", stat.name, stat.value.b32); break;
+                case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR: std::fprintf(stderr, " %s=%lld", stat.name, static_cast<long long>(stat.value.i64)); break;
+                case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR: std::fprintf(stderr, " %s=%llu", stat.name, static_cast<unsigned long long>(stat.value.u64)); break;
+                default: std::fprintf(stderr, " %s=%g", stat.name, stat.value.f64); break;
+                }
+            }
+            std::fprintf(stderr, "\n");
+        }
+    }
+
     VkPipeline pipeline(Shader &shader, const DispatchShape &shape, std::string &error)
     {
         const std::uint32_t words = shared_words(shader, shape.shared_bytes);
@@ -323,6 +354,7 @@ struct Device::Impl {
             if (shape.block[0] % 32 == 0)
                 info.stage.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT;
         }
+        if (pipeline_stats) info.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
         VkPipeline result = VK_NULL_HANDLE;
         LARGE_INTEGER create_start, create_end, frequency;
         QueryPerformanceCounter(&create_start);
@@ -335,6 +367,7 @@ struct Device::Impl {
             return VK_NULL_HANDLE;
         }
         ++stats.pipelines;
+        if (pipeline_stats) print_pipeline_stats(result, shape);
         shader.pipelines.emplace(std::move(key), result);
         return result;
     }
@@ -550,6 +583,15 @@ bool Device::initialize(int index, std::string &error)
         if (!api13) enabled_extensions.push_back(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME);
     }
     if (float_controls && !api12) enabled_extensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
+    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enable_executable_info{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
+    if (std::getenv("PXVK_PIPELINE_STATS") && has_extension(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)) {
+        d.pipeline_stats = true;
+        enable_executable_info.pipelineExecutableInfo = VK_TRUE;
+        enable_executable_info.pNext = enable.pNext;
+        enable.pNext = &enable_executable_info;
+        enabled_extensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+    }
     VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     device_info.pNext = &enable;
     device_info.queueCreateInfoCount = 1;

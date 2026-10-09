@@ -12,7 +12,12 @@
 
 int main(int argc, char **argv)
 {
-    HMODULE dll = LoadLibraryA("nvcuda.dll");
+    // The real driver from the system directory, never pxvk's nvcuda.dll
+    // that sits next to the tools in the build directory.
+    char path[MAX_PATH];
+    const UINT length = GetSystemDirectoryA(path, MAX_PATH - 16);
+    lstrcpyA(path + length, "\\nvcuda.dll");
+    HMODULE dll = LoadLibraryA(path);
     if (!dll) return 2;
     auto get = [&](const char *name) { return reinterpret_cast<void *>(GetProcAddress(dll, name)); };
     auto cuInit = reinterpret_cast<int(__stdcall *)(unsigned)>(get("cuInit"));
@@ -22,6 +27,11 @@ int main(int argc, char **argv)
     auto cuModuleLoadData = reinterpret_cast<int(__stdcall *)(void **, const void *)>(get("cuModuleLoadData"));
     auto cuModuleGetFunction = reinterpret_cast<int(__stdcall *)(void **, void *, const char *)>(get("cuModuleGetFunction"));
     auto cuFuncGetAttribute = reinterpret_cast<int(__stdcall *)(int *, int, void *)>(get("cuFuncGetAttribute"));
+    auto cuLinkCreate = reinterpret_cast<int(__stdcall *)(unsigned, void *, void *, void **)>(get("cuLinkCreate_v2"));
+    auto cuLinkAddData = reinterpret_cast<int(__stdcall *)(void *, int, void *, size_t, const char *, unsigned, void *,
+                                                           void *)>(get("cuLinkAddData_v2"));
+    auto cuLinkComplete = reinterpret_cast<int(__stdcall *)(void *, void **, size_t *)>(get("cuLinkComplete"));
+    auto cuLinkDestroy = reinterpret_cast<int(__stdcall *)(void *)>(get("cuLinkDestroy"));
     int device = 0;
     void *context = nullptr;
     if (cuInit(0) || cuDeviceGet(&device, 0) || cuCtxCreate(&context, 0, device)) return 3;
@@ -36,6 +46,21 @@ int main(int argc, char **argv)
         std::stringstream text;
         text << in.rdbuf();
         const std::string ptx = text.str();
+        {
+            // The JIT-compiled cubin, for nvdisasm (CU_JIT_INPUT_PTX = 1).
+            void *link = nullptr, *cubin = nullptr;
+            size_t cubin_size = 0;
+            if (cuLinkCreate(0, nullptr, nullptr, &link) == 0) {
+                if (cuLinkAddData(link, 1, const_cast<char *>(ptx.c_str()), ptx.size() + 1, "module", 0, nullptr,
+                                  nullptr) == 0 &&
+                    cuLinkComplete(link, &cubin, &cubin_size) == 0) {
+                    const std::string out = std::string(argv[i]) + ".cubin";
+                    std::ofstream(out, std::ios::binary).write(static_cast<const char *>(cubin), cubin_size);
+                    std::printf("%s: wrote %s (%u bytes)\n", argv[i], out.c_str(), static_cast<unsigned>(cubin_size));
+                }
+                cuLinkDestroy(link);
+            }
+        }
         void *module = nullptr;
         if (cuModuleLoadData(&module, ptx.c_str()) != 0) {
             std::printf("%s: load failed\n", argv[i]);
