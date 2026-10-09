@@ -281,20 +281,22 @@ int main(int argc, char **argv)
             }
             std::memcpy(launch.data() + kernel.info.texture_table_offset + t * 16, entry, 16);
         }
-        std::vector<std::uint32_t> symbols;
         bool missing = false;
-        for (const auto &name : kernel.info.symbols) {
+        for (std::size_t i = 0; i < kernel.info.symbols.size(); ++i) {
+            const auto &name = kernel.info.symbols[i];
+            std::uint32_t address = 0;
             if (name == "pxvk_debug") {
-                symbols.push_back(static_cast<std::uint32_t>(debug_address));
-                continue;
+                address = static_cast<std::uint32_t>(debug_address);
+            } else {
+                const auto found = c.globals.find(name);
+                if (found == c.globals.end()) {
+                    fail("no captured address for symbol " + name);
+                    missing = true;
+                    break;
+                }
+                address = found->second.first;
             }
-            const auto found = c.globals.find(name);
-            if (found == c.globals.end()) {
-                fail("no captured address for symbol " + name);
-                missing = true;
-                break;
-            }
-            symbols.push_back(found->second.first);
+            std::memcpy(launch.data() + kernel.info.symbol_table_offset + 4 * i, &address, 4);
         }
         if (missing) continue;
 
@@ -302,7 +304,7 @@ int main(int argc, char **argv)
         std::copy(std::begin(c.grid), std::end(c.grid), shape.grid);
         std::copy(std::begin(c.block), std::end(c.block), shape.block);
         shape.shared_bytes = kernel.info.static_shared_bytes + c.shared;
-        if (!device.dispatch(shader, shape, symbols, launch.data(), launch.size(), error)) {
+        if (!device.dispatch(shader, shape, launch.data(), launch.size(), error)) {
             fail(error);
             continue;
         }
@@ -366,7 +368,7 @@ int main(int argc, char **argv)
             double best = 1e30;
             for (int run = 0; run < timing_runs; ++run) {
                 for (const auto &r : before) device.upload(r.address - lo, r.bytes.data(), r.bytes.size(), error);
-                device.dispatch(shader, shape, symbols, launch.data(), launch.size(), error);
+                device.dispatch(shader, shape, launch.data(), launch.size(), error);
                 device.synchronize(error);
                 for (double t : device.last_dispatch_times()) best = std::min(best, t);
             }

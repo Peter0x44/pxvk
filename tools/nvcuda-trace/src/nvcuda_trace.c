@@ -823,6 +823,81 @@ PXVK_EXPORT CUresult CUDAAPI cuModuleGetFunction(
     }
 }
 
+/* PXVK_TRACE_TIMING: per-kernel GPU time from CUDA events around each launch
+ * (serializes launches; for profiling comparisons only). */
+typedef struct pxvk_kernel_time {
+    char name[PXVK_FUNCTION_NAME_CAPACITY];
+    unsigned long long count;
+    double total_ms;
+    struct pxvk_kernel_time *next;
+} pxvk_kernel_time;
+static pxvk_kernel_time *g_kernel_times;
+static unsigned long long g_timed_launches;
+
+static int timing_enabled(void)
+{
+    static int value = -1;
+    if (value < 0) value = GetEnvironmentVariableA("PXVK_TRACE_TIMING", NULL, 0) != 0;
+    return value;
+}
+
+static void dump_kernel_times(void)
+{
+    for (pxvk_kernel_time *k = g_kernel_times; k != NULL; k = k->next) {
+        trace_log("profile %-60.60s count=%llu total=%.2fms avg=%.4fms", k->name, k->count, k->total_ms,
+                  k->total_ms / (double)k->count);
+        k->count = 0;
+        k->total_ms = 0;
+    }
+}
+
+static void *g_timing_start, *g_timing_end;
+
+/* Events are created per launch: PhysX destroys and recreates its context on
+ * scene changes, which invalidates longer-lived events. */
+static void timing_begin(void)
+{
+    typedef CUresult(CUDAAPI *create_fn)(CUevent *, unsigned int);
+    typedef CUresult(CUDAAPI *record_fn)(CUevent, CUstream);
+    create_fn create;
+    if (!timing_enabled()) return;
+    create = (create_fn)resolve_symbol("cuEventCreate");
+    create((CUevent *)&g_timing_start, 0);
+    create((CUevent *)&g_timing_end, 0);
+    ((record_fn)resolve_symbol("cuEventRecord"))((CUevent)g_timing_start, NULL);
+}
+
+static void timing_end(const char *name)
+{
+    typedef CUresult(CUDAAPI *record_fn)(CUevent, CUstream);
+    typedef CUresult(CUDAAPI *sync_fn)(CUevent);
+    typedef CUresult(CUDAAPI *elapsed_fn)(float *, CUevent, CUevent);
+    float ms = 0;
+    pxvk_kernel_time *k;
+    if (!timing_enabled()) return;
+    ((record_fn)resolve_symbol("cuEventRecord"))((CUevent)g_timing_end, NULL);
+    ((sync_fn)resolve_symbol("cuEventSynchronize"))((CUevent)g_timing_end);
+    ((elapsed_fn)resolve_symbol("cuEventElapsedTime"))(&ms, (CUevent)g_timing_start, (CUevent)g_timing_end);
+    for (k = g_kernel_times; k != NULL; k = k->next)
+        if (strcmp(k->name, name) == 0) break;
+    if (k == NULL) {
+        k = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*k));
+        if (k == NULL) return;
+        strncpy(k->name, name, sizeof(k->name) - 1);
+        k->next = g_kernel_times;
+        g_kernel_times = k;
+    }
+    ++k->count;
+    k->total_ms += ms;
+    {
+        typedef CUresult(CUDAAPI *destroy_fn)(CUevent);
+        destroy_fn destroy = (destroy_fn)resolve_symbol("cuEventDestroy_v2");
+        destroy((CUevent)g_timing_start);
+        destroy((CUevent)g_timing_end);
+    }
+    if (++g_timed_launches % 500 == 0) dump_kernel_times();
+}
+
 PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
     CUfunction function,
     unsigned int grid_x,
@@ -874,6 +949,7 @@ PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
             }
             capture_token = capture_launch_begin(function, grid, block, shared_memory_bytes, buffer, buffer_size);
         }
+        timing_begin();
         result = real_function(function,
                                grid_x,
                                grid_y,
@@ -885,6 +961,7 @@ PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
                                stream,
                                kernel_parameters,
                                extra);
+        timing_end(function_name);
         capture_launch_end(capture_token);
         InterlockedIncrement(&g_launch_calls);
         trace_log("cuLaunchKernel function=%p name=%s grid=%u,%u,%u block=%u,%u,%u "

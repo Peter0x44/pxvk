@@ -15,7 +15,9 @@ Status (PhysX 2.8 SDK samples, RTX 3070 Laptop + Intel UHD):
 - Replaying 202 real kernel launches captured from native runs: 196 bit-exact
   on the 3070, the rest within a few ULP.
 - `SampleCloth` (9 scenes) and `SampleParticleFluid` run on NVIDIA and Intel
-  through the JIT runtime, at 0.7–1.2× native CUDA speed on the 3070.
+  through the JIT runtime. On the 3070 steady-state frame rates are within a
+  few percent of native CUDA or faster, and with a warm pipeline cache
+  startup and scene switches are faster than native.
 
 See [`docs/architecture.md`](docs/architecture.md) for the design and
 [`docs/testing.md`](docs/testing.md) for the testing tools.
@@ -55,6 +57,8 @@ Environment variables:
 | `PXVK_API_LOG` | also log every copy/sync/launch/texture call (with `PXVK_LOG`) |
 | `PXVK_SYNC` | wait for the GPU after every operation (debugging) |
 | `PXVK_DUMP_SPIRV` | directory to write every compiled kernel's SPIR-V |
+| `PXVK_CACHE_DIR` | pipeline cache directory (default `%LOCALAPPDATA%\pxvk`; `off` disables) |
+| `PXVK_PROFILE` | per-kernel GPU timing and fence-wait/pipeline-creation times in the log |
 | `PXVK_CAPTURE_DIR`, `PXVK_CAPTURE_FRAMES` | capture launches for differential testing |
 
 Captured PhysX PTX and capture files are proprietary; keep them local

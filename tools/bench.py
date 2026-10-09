@@ -8,7 +8,8 @@ with the launch-capture tracer (tools/nvcuda-trace).
 
   bench.py run NAME --mode native|pxvk|capture [--frames N] [--keys 300:2,...]
                [--capture 100,299] [--exe SampleCloth.exe]
-  bench.py sweep NAME --mode native|pxvk          all 9 SampleCloth scenes
+  bench.py sweep NAME --mode native|pxvk [--scenes N] [--per-scene K]
+                                                   scenes 1..N (keys), 300 frames each
   bench.py compare DIR_A DIR_B [frame ...]         pixel differences
 
 Common options: --stage DIR (sample directory), --build DIR (pxvk build with
@@ -25,8 +26,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCENE_FRAMES = 300
-SCENE_KEYS = ",".join(f"{SCENE_FRAMES * i}:{i + 1}" for i in range(1, 9))
-SCENE_CAPTURES = ",".join(str(SCENE_FRAMES * (i + 1) - 1) for i in range(9))
+
+
+def scene_keys(scenes):
+    return ",".join(f"{SCENE_FRAMES * i}:{i + 1}" for i in range(1, scenes))
+
+
+def scene_captures(scenes, per_scene):
+    # per_scene evenly spaced captures inside each scene, the last on its final frame
+    step = SCENE_FRAMES // per_scene
+    return ",".join(str(SCENE_FRAMES * i + step * (k + 1) - 1) for i in range(scenes) for k in range(per_scene))
 
 
 def run(args, name, frames, keys="", captures="", extra_env=None):
@@ -71,11 +80,11 @@ def run(args, name, frames, keys="", captures="", extra_env=None):
     return out, summary
 
 
-def scene_fps(out):
+def scene_fps(out, scenes):
     rows = [line.split(",") for line in (out / "frames.csv").read_text().splitlines()[1:] if line]
     ms = [float(r[1]) for r in rows]
     fps = []
-    for scene in range(9):
+    for scene in range(scenes):
         segment = ms[scene * SCENE_FRAMES + SCENE_FRAMES // 2:(scene + 1) * SCENE_FRAMES]
         fps.append(round(1000 * len(segment) / sum(segment)) if segment else 0)
     return fps
@@ -115,6 +124,8 @@ def main():
         p.add_argument("--device", default="")
         p.add_argument("--dt-us", type=int, default=20000)
         p.add_argument("--timeout", type=int, default=900)
+        p.add_argument("--scenes", type=int, default=9, help="sweep: number of scenes (keys 1..N)")
+        p.add_argument("--per-scene", type=int, default=1, help="sweep: frame captures per scene")
     p = sub.add_parser("compare")
     p.add_argument("a")
     p.add_argument("b")
@@ -125,8 +136,9 @@ def main():
         out, summary = run(args, args.name, args.frames, args.keys, args.capture)
         print(" ".join(f"{k}={v}" for k, v in summary.items()))
     elif args.command == "sweep":
-        out, summary = run(args, args.name, SCENE_FRAMES * 9, SCENE_KEYS, SCENE_CAPTURES)
-        print(f"exit={summary['exit']} fps " + " ".join(f"s{i + 1}:{f}" for i, f in enumerate(scene_fps(out))))
+        out, summary = run(args, args.name, SCENE_FRAMES * args.scenes, scene_keys(args.scenes),
+                           scene_captures(args.scenes, args.per_scene))
+        print(f"exit={summary['exit']} fps " + " ".join(f"s{i + 1}:{f}" for i, f in enumerate(scene_fps(out, args.scenes))))
     else:
         a, b = Path(args.a), Path(args.b)
         frames = args.frames or [int(p.stem.split("_")[1]) for p in sorted(a.glob("frame_*.bmp"))]

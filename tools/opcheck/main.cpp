@@ -333,7 +333,7 @@ int main(int argc, char **argv)
             shape.grid[0] = static_cast<std::uint32_t>(count / 256);
             shape.block[0] = 256;
             if (!shader || !device.upload(0, input.data(), bytes, error) ||
-                !device.dispatch(shader, shape, {}, launch.data(), launch.size(), error) ||
+                !device.dispatch(shader, shape, launch.data(), launch.size(), error) ||
                 !device.download(vulkan.data(), bytes, bytes, error))
                 throw std::runtime_error(error);
         } catch (const std::exception &e) {

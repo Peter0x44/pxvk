@@ -103,6 +103,10 @@ public:
         cfg_ = &cfg;
 
         b_.label(b_.id());
+        // Module-global addresses come from the launch block, so pipelines do
+        // not depend on where a module instance's globals were allocated.
+        for (const auto &entry : symbol_spec_)
+            symbol_constants_[entry.first] = launch_word(info_.symbol_table_offset + 4u * entry.second);
         if (options_.shared_in_storage && (info_.static_shared_bytes != 0 || info_.uses_dynamic_shared)) {
             // Linear workgroup index times the per-group stride (spec 3).
             const std::uint32_t u32 = b_.t_u32();
@@ -166,8 +170,10 @@ private:
             }
         }
         info_.texture_table_offset = (info_.param_bytes + 15u) / 16u * 16u;
-        info_.launch_block_bytes = info_.texture_table_offset +
-                                   static_cast<std::uint32_t>(info_.textures.size()) * kTextureEntryBytes;
+        info_.symbol_table_offset = info_.texture_table_offset +
+                                    static_cast<std::uint32_t>(info_.textures.size()) * kTextureEntryBytes;
+        info_.launch_block_bytes = info_.symbol_table_offset +
+                                   static_cast<std::uint32_t>(info_.symbols.size()) * 4u;
         if (info_.launch_block_bytes == 0) info_.launch_block_bytes = 16;
     }
 
@@ -611,13 +617,7 @@ private:
     {
         if (auto it = shared_offset_.find(name); it != shared_offset_.end()) return b_.u32(it->second);
         if (auto it = local_offset_.find(name); it != local_offset_.end()) return b_.u32(it->second);
-        if (auto it = symbol_spec_.find(name); it != symbol_spec_.end()) {
-            auto cached = symbol_constants_.find(name);
-            if (cached != symbol_constants_.end()) return cached->second;
-            const std::uint32_t c = b_.spec_u32(kSpecSymbolBase + it->second, 0);
-            symbol_constants_[name] = c;
-            return c;
-        }
+        if (auto it = symbol_constants_.find(name); it != symbol_constants_.end()) return it->second;
         throw Error("unknown symbol " + name, line);
     }
 

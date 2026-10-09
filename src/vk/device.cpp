@@ -1,3 +1,6 @@
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include "device.h"
 
 #include <volk.h>
@@ -5,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <map>
 
@@ -17,7 +21,6 @@ constexpr VkDeviceSize kLaunchRingBytes = 1u << 20;
 constexpr VkDeviceSize kStagingInitialBytes = 16u << 20;
 constexpr std::uint32_t kMaxTimedDispatches = 4096;
 constexpr std::uint32_t kSpecHeapBase = 4;
-constexpr std::uint32_t kSpecSymbolBase = 16;
 
 struct Buffer {
     VkBuffer buffer = VK_NULL_HANDLE;
@@ -80,6 +83,8 @@ struct Device::Impl {
     VkQueryPool queries = VK_NULL_HANDLE;
     std::uint32_t timed = 0;
     std::vector<double> times;
+    std::vector<const char *> timed_labels;
+    std::map<std::string, KernelTime> profile;
 
     // ---- buffers ------------------------------------------------------------
     int find_memory(std::uint32_t bits, VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred) const
@@ -174,6 +179,7 @@ struct Device::Impl {
         recording = true;
         commands = 0;
         timed = 0;
+        timed_labels.clear();
     }
 
     // Serializes every command against all previous ones (CUDA stream order).
@@ -211,7 +217,12 @@ struct Device::Impl {
             return false;
         }
         ++stats.submits;
+        LARGE_INTEGER wait_start, wait_end, frequency;
+        QueryPerformanceCounter(&wait_start);
         r = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+        QueryPerformanceCounter(&wait_end);
+        QueryPerformanceFrequency(&frequency);
+        stats.wait_ms += double(wait_end.QuadPart - wait_start.QuadPart) * 1000.0 / double(frequency.QuadPart);
         if (r != VK_SUCCESS) {
             error = vk_error("vkWaitForFences", r);
             return false;
@@ -225,9 +236,13 @@ struct Device::Impl {
             vkGetQueryPoolResults(device, queries, 0, timed * 2, values.size() * 8, values.data(), 8,
                                   VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
             times.clear();
-            for (std::uint32_t i = 0; i < timed; ++i)
+            for (std::uint32_t i = 0; i < timed; ++i) {
                 times.push_back(static_cast<double>(values[2 * i + 1] - values[2 * i]) *
                                 timestamp_period * 1e-6);
+                KernelTime &k = profile[timed_labels[i] ? timed_labels[i] : "?"];
+                ++k.count;
+                k.total_ms += times.back();
+            }
         }
         return true;
     }
@@ -267,12 +282,10 @@ struct Device::Impl {
         return bucket / 4;
     }
 
-    VkPipeline pipeline(Shader &shader, const DispatchShape &shape,
-                        const std::vector<std::uint32_t> &symbols, std::string &error)
+    VkPipeline pipeline(Shader &shader, const DispatchShape &shape, std::string &error)
     {
         const std::uint32_t words = shared_words(shader, shape.shared_bytes);
         std::vector<std::uint32_t> key{shape.block[0], shape.block[1], shape.block[2], words, heap_base};
-        key.insert(key.end(), symbols.begin(), symbols.end());
         auto found = shader.pipelines.find(key);
         if (found != shader.pipelines.end()) return found->second;
 
@@ -287,8 +300,6 @@ struct Device::Impl {
         add(2, shape.block[2]);
         add(3, words);
         add(kSpecHeapBase, heap_base);
-        for (std::size_t i = 0; i < symbols.size(); ++i)
-            add(kSpecSymbolBase + static_cast<std::uint32_t>(i), symbols[i]);
         VkSpecializationInfo spec{};
         spec.mapEntryCount = static_cast<std::uint32_t>(entries.size());
         spec.pMapEntries = entries.data();
@@ -313,7 +324,12 @@ struct Device::Impl {
                 info.stage.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT;
         }
         VkPipeline result = VK_NULL_HANDLE;
+        LARGE_INTEGER create_start, create_end, frequency;
+        QueryPerformanceCounter(&create_start);
         const VkResult r = vkCreateComputePipelines(device, pipeline_cache, 1, &info, nullptr, &result);
+        QueryPerformanceCounter(&create_end);
+        QueryPerformanceFrequency(&frequency);
+        stats.pipeline_ms += double(create_end.QuadPart - create_start.QuadPart) * 1000.0 / double(frequency.QuadPart);
         if (r != VK_SUCCESS) {
             error = vk_error("vkCreateComputePipelines", r);
             return VK_NULL_HANDLE;
@@ -440,6 +456,13 @@ bool Device::initialize(int index, std::string &error)
     }
     c.max_shared_bytes = props.limits.maxComputeSharedMemorySize;
     c.max_heap_bytes = props.limits.maxStorageBufferRange;
+    {
+        static const char digits[] = "0123456789abcdef";
+        for (unsigned char byte : props.pipelineCacheUUID) {
+            c.pipeline_cache_uuid.push_back(digits[byte >> 4]);
+            c.pipeline_cache_uuid.push_back(digits[byte & 15]);
+        }
+    }
 
     std::uint32_t extension_count = 0;
     vkEnumerateDeviceExtensionProperties(d.physical, nullptr, &extension_count, nullptr);
@@ -864,9 +887,8 @@ Shader *Device::create_shader(const std::vector<std::uint32_t> &spirv, std::uint
     return d.shaders.back().get();
 }
 
-bool Device::dispatch(Shader *shader, const DispatchShape &shape,
-                      const std::vector<std::uint32_t> &symbol_addresses, const void *launch_block,
-                      std::size_t launch_block_bytes, std::string &error)
+bool Device::dispatch(Shader *shader, const DispatchShape &shape, const void *launch_block,
+                      std::size_t launch_block_bytes, std::string &error, const char *label)
 {
     Impl &d = *impl_;
     if (!d.heap.buffer) {
@@ -906,7 +928,7 @@ bool Device::dispatch(Shader *shader, const DispatchShape &shape,
         error = "launch block too large";
         return false;
     }
-    const VkPipeline pipeline = d.pipeline(*shader, shape, symbol_addresses, error);
+    const VkPipeline pipeline = d.pipeline(*shader, shape, error);
     if (!pipeline) return false;
 
     const VkDeviceSize align = std::max<VkDeviceSize>(d.limits.minUniformBufferOffsetAlignment, 16);
@@ -936,6 +958,7 @@ bool Device::dispatch(Shader *shader, const DispatchShape &shape,
     vkCmdDispatch(d.cmd, shape.grid[0], shape.grid[1], shape.grid[2]);
     if (time_this) {
         vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, d.queries, d.timed * 2 + 1);
+        d.timed_labels.push_back(label);
         ++d.timed;
     }
     ++d.stats.dispatches;
@@ -944,8 +967,53 @@ bool Device::dispatch(Shader *shader, const DispatchShape &shape,
 
 bool Device::synchronize(std::string &error) { return impl_->submit_and_wait(error); }
 
+void Device::load_pipeline_cache(const std::string &path)
+{
+    Impl &d = *impl_;
+    FILE *file = std::fopen(path.c_str(), "rb");
+    if (!file) return;
+    std::vector<char> data;
+    char chunk[65536];
+    for (std::size_t n; (n = std::fread(chunk, 1, sizeof(chunk), file)) > 0;) data.insert(data.end(), chunk, chunk + n);
+    std::fclose(file);
+    VkPipelineCacheCreateInfo info{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+    info.initialDataSize = data.size();
+    info.pInitialData = data.data();
+    VkPipelineCache cache = VK_NULL_HANDLE;
+    if (vkCreatePipelineCache(d.device, &info, nullptr, &cache) == VK_SUCCESS) {
+        vkDestroyPipelineCache(d.device, d.pipeline_cache, nullptr);
+        d.pipeline_cache = cache;
+    }
+}
+
+bool Device::save_pipeline_cache(const std::string &path)
+{
+    Impl &d = *impl_;
+    std::size_t size = 0;
+    if (vkGetPipelineCacheData(d.device, d.pipeline_cache, &size, nullptr) != VK_SUCCESS || size == 0) return false;
+    std::vector<char> data(size);
+    if (vkGetPipelineCacheData(d.device, d.pipeline_cache, &size, data.data()) != VK_SUCCESS) return false;
+    const std::string temporary = path + ".tmp" + std::to_string(GetCurrentProcessId());
+    FILE *file = std::fopen(temporary.c_str(), "wb");
+    if (!file) return false;
+    const bool written = std::fwrite(data.data(), 1, size, file) == size;
+    std::fclose(file);
+    if (!written || !MoveFileExA(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        DeleteFileA(temporary.c_str());
+        return false;
+    }
+    return true;
+}
+
 void Device::set_timing(bool enabled) { impl_->timing = enabled; }
 
 const std::vector<double> &Device::last_dispatch_times() const { return impl_->times; }
+
+std::vector<std::pair<std::string, KernelTime>> Device::take_profile()
+{
+    std::vector<std::pair<std::string, KernelTime>> out(impl_->profile.begin(), impl_->profile.end());
+    impl_->profile.clear();
+    return out;
+}
 
 } // namespace pxvk::vk

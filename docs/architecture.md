@@ -84,8 +84,27 @@ checked heap load using the binding table in the launch block.
 - Pinned host memory (`cuMemHostAlloc`) is host-visible cached Vulkan memory,
   so asynchronous device-to-host copies are recorded GPU copies with no extra
   memcpy.
-- Pipelines are created per (kernel, block size, shared bucket, global
-  addresses) and use a pipeline cache.
+- Pipelines are created per (kernel, block size, shared-memory bucket).
+  Module-global addresses travel in the launch block rather than in
+  specialization constants, so the pipelines do not depend on where a module
+  instance's globals live.
+
+## Compilation caches
+
+Driver pipeline compilation dominates startup: the cloth solver alone takes
+~300 ms per pipeline on NVIDIA. PhysX also unloads and re-registers all of its
+modules on every scene change. Two caches remove this:
+
+- Compiled kernels and their Vulkan shaders are cached for the process, keyed
+  by PTX content hash, entry name and shared-memory variant. Re-registered
+  modules reuse them, and their pipelines too.
+- The `VkPipelineCache` persists in `%LOCALAPPDATA%\pxvk\pipelines-<driver
+  cache UUID>.bin` (`PXVK_CACHE_DIR` overrides it, `off` disables it). It is
+  written atomically about a second after new pipelines appear, so later runs
+  start with no compilation at all.
+
+With a warm cache, SampleCloth starts and switches scenes faster than native
+CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
 
 ## Runtime (`src/runtime`)
 

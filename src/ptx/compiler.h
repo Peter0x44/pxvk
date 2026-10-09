@@ -12,11 +12,12 @@
 //                bytes [texture_table_offset, ...) per texref: {address,
 //                                                   element count,
 //                                                   components, 0}
+//                bytes [symbol_table_offset, ...)  u32 CUDA address of each
+//                                                   KernelInfo::symbols entry
 // Specialization constants:
 //   0,1,2  workgroup size x/y/z (%ntid)
 //   3      shared memory size in 32-bit words (static + dynamic)
 //   4      heap base: CUDA address of heap byte 0
-//   16+i   CUDA address of module symbol KernelInfo::symbols[i]
 #pragma once
 
 #include "ptx.h"
@@ -30,7 +31,6 @@ namespace pxvk::ptx {
 constexpr std::uint32_t kSpecWorkgroupX = 0;
 constexpr std::uint32_t kSpecSharedWords = 3;
 constexpr std::uint32_t kSpecHeapBase = 4;
-constexpr std::uint32_t kSpecSymbolBase = 16;
 constexpr std::uint32_t kBindingHeap = 0;
 constexpr std::uint32_t kBindingHeap2 = 1;
 constexpr std::uint32_t kBindingHeap4 = 2;
@@ -62,6 +62,7 @@ struct KernelInfo {
     std::uint32_t param_bytes = 0;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> params; // offset, size per parameter
     std::uint32_t texture_table_offset = 0;
+    std::uint32_t symbol_table_offset = 0;
     std::uint32_t launch_block_bytes = 0;
     std::uint32_t static_shared_bytes = 0;
     bool uses_dynamic_shared = false;

@@ -88,15 +88,19 @@ struct TexRef {
     int components = 1;
 };
 
+// A compiled kernel variant. Entries live in State::kernels, keyed by PTX
+// content, so modules that are unloaded and registered again (PhysX does
+// this on every scene change) reuse kernels, shaders and pipelines.
+struct CompiledVariant {
+    ptx::CompiledKernel kernel;
+    vk::Shader *shader = nullptr;
+    std::string error;
+};
+
 struct Function {
     Module *module = nullptr;
     std::string name;
-    struct Variant {
-        bool tried = false;
-        ptx::CompiledKernel kernel;
-        vk::Shader *shader = nullptr;
-        std::string error;
-    } variants[2]; // [0] Workgroup shared memory, [1] storage-backed
+    CompiledVariant *variants[2] = {nullptr, nullptr}; // [0] Workgroup shared, [1] storage-backed
     std::uint64_t launches = 0;
 };
 
@@ -141,6 +145,12 @@ struct State {
     ptx::CompileOptions options;
     std::string dump_directory;
     bool sync_everything = false; // PXVK_SYNC=1: wait after every operation (debugging)
+    bool profile = false;         // PXVK_PROFILE=1: per-kernel GPU timing in the stats log
+    std::uint64_t syncs = 0;
+    std::uint64_t last_stats_launches = 0;
+    std::string pipeline_cache_path;      // empty: no persistent cache
+    std::uint64_t saved_pipelines = 0;    // pipeline count at the last save
+    DWORD pipelines_changed_at = 0;
 
     // Device-memory allocator: first fit over freed blocks, else bump.
     std::map<std::uint32_t, std::uint32_t> free_blocks; // address -> size
@@ -149,6 +159,7 @@ struct State {
     std::uint64_t heap_limit = 0;
 
     std::vector<std::unique_ptr<Module>> modules;
+    std::map<std::string, std::unique_ptr<CompiledVariant>> kernels; // ptx hash + entry + variant
     std::set<Module *> live_modules;
     std::set<Function *> functions;
     std::set<TexRef *> texrefs;
@@ -224,6 +235,19 @@ CUresult initialize(State &s)
     s.heap_limit = std::min<std::uint64_t>(s.heap_limit, 0xF0000000u);
     s.dump_directory = env("PXVK_DUMP_SPIRV");
     s.sync_everything = !env("PXVK_SYNC").empty();
+    s.profile = !env("PXVK_PROFILE").empty();
+    // Persistent pipeline cache: %LOCALAPPDATA%\pxvk (PXVK_CACHE_DIR
+    // overrides, "off" disables), one file per driver cache identity.
+    std::string cache_dir = env("PXVK_CACHE_DIR");
+    if (cache_dir.empty() && !env("LOCALAPPDATA").empty()) {
+        cache_dir = env("LOCALAPPDATA") + "\\pxvk";
+        CreateDirectoryA(cache_dir.c_str(), nullptr);
+    }
+    if (!cache_dir.empty() && cache_dir != "off") {
+        s.pipeline_cache_path = cache_dir + "\\pipelines-" + caps.pipeline_cache_uuid + ".bin";
+        s.device.load_pipeline_cache(s.pipeline_cache_path);
+    }
+    s.device.set_timing(s.profile);
     s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d subgroup_control=%d preserve_nan=%d shared=%u heap_limit=%lluMiB",
                 caps.name.c_str(), caps.vendor_id, caps.subgroup_size, caps.native_ftz, caps.subgroup_control,
                 caps.preserve_nan, caps.max_shared_bytes, static_cast<unsigned long long>(s.heap_limit >> 20));
@@ -422,40 +446,55 @@ void dump_spirv(State &s, const Function &f, int variant, const std::vector<std:
     }
 }
 
-Function::Variant *variant(State &s, Function &f, int which)
+CompiledVariant *variant(State &s, Function &f, int which)
 {
-    Function::Variant &v = f.variants[which];
-    if (!v.tried) {
-        v.tried = true;
-        const DWORD start = GetTickCount();
-        try {
-            ptx::CompileOptions options = s.options;
-            options.shared_in_storage = which == 1;
-            v.kernel = ptx::compile_kernel(f.module->ast, f.name, options);
-            dump_spirv(s, f, which, v.kernel.spirv);
-            v.shader = s.device.create_shader(v.kernel.spirv, v.kernel.info.launch_block_bytes,
-                                              v.kernel.info.warp_synchronous, which == 1, v.error);
-        } catch (const std::exception &e) {
-            v.error = e.what();
+    CompiledVariant *&slot = f.variants[which];
+    if (!slot) {
+        char key_prefix[32];
+        std::snprintf(key_prefix, sizeof(key_prefix), "%016llx:%d:", static_cast<unsigned long long>(f.module->ptx_hash),
+                      which);
+        auto &entry = s.kernels[key_prefix + f.name];
+        if (!entry) {
+            entry = std::make_unique<CompiledVariant>();
+            const DWORD start = GetTickCount();
+            try {
+                ptx::CompileOptions options = s.options;
+                options.shared_in_storage = which == 1;
+                entry->kernel = ptx::compile_kernel(f.module->ast, f.name, options);
+                dump_spirv(s, f, which, entry->kernel.spirv);
+                entry->shader = s.device.create_shader(entry->kernel.spirv, entry->kernel.info.launch_block_bytes,
+                                                       entry->kernel.info.warp_synchronous, which == 1, entry->error);
+            } catch (const std::exception &e) {
+                entry->error = e.what();
+            }
+            s.log.write("compile %s variant=%d words=%u time=%lums%s%s", f.name.c_str(), which,
+                        static_cast<unsigned>(entry->kernel.spirv.size()), GetTickCount() - start,
+                        entry->error.empty() ? "" : " error=", entry->error.c_str());
         }
-        s.log.write("compile %s variant=%d words=%u time=%lums%s%s", f.name.c_str(), which,
-                    static_cast<unsigned>(v.kernel.spirv.size()), GetTickCount() - start,
-                    v.error.empty() ? "" : " error=", v.error.c_str());
+        slot = entry.get();
     }
-    return v.shader ? &v : nullptr;
+    return slot->shader ? slot : nullptr;
 }
 
 void log_stats(State &s)
 {
     const DWORD now = GetTickCount();
     if (s.last_stats == 0) s.last_stats = now;
-    if (now - s.last_stats < 5000) return;
+    if (now - s.last_stats < 5000 && !(s.profile && s.launches - s.last_stats_launches >= 500)) return;
+    s.last_stats_launches = s.launches;
     const auto &st = s.device.stats();
-    s.log.write("stats launches=%llu submits=%llu dispatches=%llu pipelines=%llu up=%lluKiB down=%lluKiB",
-                static_cast<unsigned long long>(s.launches), static_cast<unsigned long long>(st.submits),
-                static_cast<unsigned long long>(st.dispatches), static_cast<unsigned long long>(st.pipelines),
+    s.log.write("stats launches=%llu syncs=%llu submits=%llu pipelines=%llu up=%lluKiB down=%lluKiB "
+                "wait=%.1fms pipeline_create=%.1fms",
+                static_cast<unsigned long long>(s.launches), static_cast<unsigned long long>(s.syncs),
+                static_cast<unsigned long long>(st.submits), static_cast<unsigned long long>(st.pipelines),
                 static_cast<unsigned long long>(st.upload_bytes >> 10),
-                static_cast<unsigned long long>(st.download_bytes >> 10));
+                static_cast<unsigned long long>(st.download_bytes >> 10), st.wait_ms, st.pipeline_ms);
+    if (s.profile) {
+        for (const auto &k : s.device.take_profile())
+            s.log.write("profile %-60.60s count=%llu total=%.2fms avg=%.4fms", k.first.c_str(),
+                        static_cast<unsigned long long>(k.second.count), k.second.total_ms,
+                        k.second.total_ms / double(k.second.count));
+    }
     s.last_stats = now;
 }
 
@@ -568,9 +607,24 @@ CUresult copy_dtod(State &s, CUdeviceptr dst, CUdeviceptr src, std::size_t bytes
     return s.device.copy(dst, src, bytes, error) ? CUDA_SUCCESS : failure(s, "memcpy DtoD", error);
 }
 
+void save_pipeline_cache(State &s)
+{
+    // Save shortly after new pipelines appear, not on every one: PhysX
+    // creates several in a burst at scene start.
+    const std::uint64_t pipelines = s.device.stats().pipelines;
+    if (s.pipeline_cache_path.empty() || pipelines == s.saved_pipelines) return;
+    const DWORD now = GetTickCount();
+    if (s.pipelines_changed_at == 0) s.pipelines_changed_at = now;
+    if (now - s.pipelines_changed_at < 1000) return;
+    if (s.device.save_pipeline_cache(s.pipeline_cache_path)) s.saved_pipelines = pipelines;
+    s.pipelines_changed_at = 0;
+}
+
 CUresult synchronize(State &s)
 {
     API_LOG("sync");
+    ++s.syncs;
+    save_pipeline_cache(s);
     std::string error;
     log_stats(s);
     return s.device.synchronize(error) ? CUDA_SUCCESS : failure(s, "synchronize", error);
@@ -1226,7 +1280,7 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuFuncGetAttribute(int *output, CUfunction_att
     LOCK;
     Function *f = function_of(s, handle);
     if (!f) return CUDA_ERROR_INVALID_HANDLE;
-    Function::Variant *v = variant(s, *f, 0);
+    CompiledVariant *v = variant(s, *f, 0);
     if (!v) return CUDA_ERROR_INVALID_PTX;
     const ptx::KernelInfo &info = v->kernel.info;
     switch (attribute) {
@@ -1273,7 +1327,7 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuLaunchKernel(CUfunction handle, unsigned int
     REQUIRE;
     Function *f = function_of(s, handle);
     if (!f) return CUDA_ERROR_INVALID_HANDLE;
-    Function::Variant *normal = variant(s, *f, 0);
+    CompiledVariant *normal = variant(s, *f, 0);
     if (!normal) return CUDA_ERROR_INVALID_PTX;
     const ptx::KernelInfo &info = normal->kernel.info;
 
@@ -1307,11 +1361,10 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuLaunchKernel(CUfunction handle, unsigned int
         }
         std::memcpy(block.data() + info.texture_table_offset + t * ptx::kTextureEntryBytes, entry, sizeof(entry));
     }
-    std::vector<std::uint32_t> symbols;
-    symbols.reserve(info.symbols.size());
-    for (const auto &name : info.symbols) {
-        const auto found = f->module->globals.find(name);
-        symbols.push_back(found != f->module->globals.end() ? found->second.first : 0);
+    for (std::size_t i = 0; i < info.symbols.size(); ++i) {
+        const auto found = f->module->globals.find(info.symbols[i]);
+        const std::uint32_t address = found != f->module->globals.end() ? found->second.first : 0;
+        std::memcpy(block.data() + info.symbol_table_offset + 4 * i, &address, 4);
     }
 
     vk::DispatchShape shape;
@@ -1323,7 +1376,7 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuLaunchKernel(CUfunction handle, unsigned int
     shape.block[2] = block_z;
     shape.shared_bytes = info.static_shared_bytes + shared_bytes;
     if (shape.shared_bytes > 49152) return CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES;
-    Function::Variant *v = normal;
+    CompiledVariant *v = normal;
     if (shape.shared_bytes > s.device.caps().max_shared_bytes) {
         v = variant(s, *f, 1);
         if (!v) return CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES;
@@ -1331,7 +1384,7 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuLaunchKernel(CUfunction handle, unsigned int
     const std::uint32_t grid_dims[3] = {grid_x, grid_y, grid_z}, block_dims[3] = {block_x, block_y, block_z};
     const unsigned capture = capture_begin(s, *f, grid_dims, block_dims, shared_bytes, block.data(), info.param_bytes);
     std::string error;
-    if (!s.device.dispatch(v->shader, shape, symbols, block.data(), block.size(), error)) {
+    if (!s.device.dispatch(v->shader, shape, block.data(), block.size(), error, f->name.c_str())) {
         s.log.write("launch %s grid=%ux%ux%u block=%ux%ux%u shared=%u failed: %s", f->name.c_str(), grid_x, grid_y,
                     grid_z, block_x, block_y, block_z, shared_bytes, error.c_str());
         return CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES;

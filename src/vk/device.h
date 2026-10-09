@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pxvk::vk {
@@ -32,6 +33,7 @@ struct Capabilities {
     std::uint32_t max_shared_bytes = 0;
     std::uint64_t max_heap_bytes = 0;
     std::uint64_t device_local_bytes = 0;
+    std::string pipeline_cache_uuid; // hex; identifies compatible pipeline caches
 };
 
 struct Shader;
@@ -46,6 +48,14 @@ struct DispatchShape {
 struct Stats {
     std::uint64_t submits = 0, dispatches = 0, uploads = 0, downloads = 0, pipelines = 0;
     std::uint64_t upload_bytes = 0, download_bytes = 0;
+    double wait_ms = 0;           // host time blocked on fences
+    double pipeline_ms = 0;       // host time creating pipelines
+};
+
+// GPU time per dispatch label, accumulated while timing is enabled.
+struct KernelTime {
+    std::uint64_t count = 0;
+    double total_ms = 0;
 };
 
 class Device {
@@ -96,11 +106,17 @@ public:
 
     Shader *create_shader(const std::vector<std::uint32_t> &spirv, std::uint32_t launch_block_bytes,
                           bool warp_synchronous, bool shared_in_storage, std::string &error);
-    bool dispatch(Shader *shader, const DispatchShape &shape,
-                  const std::vector<std::uint32_t> &symbol_addresses, const void *launch_block,
-                  std::size_t launch_block_bytes, std::string &error);
+    // `label` (kept by pointer, must outlive the device) names the dispatch
+    // in GPU timing profiles.
+    bool dispatch(Shader *shader, const DispatchShape &shape, const void *launch_block,
+                  std::size_t launch_block_bytes, std::string &error, const char *label = nullptr);
 
     bool synchronize(std::string &error);
+
+    // Persistent VkPipelineCache. load() must run before the first pipeline
+    // is created; incompatible or corrupt data is ignored by the driver.
+    void load_pipeline_cache(const std::string &path);
+    bool save_pipeline_cache(const std::string &path);
     const Stats &stats() const;
 
     // Optional GPU timing of each dispatch (for profiling tools).
@@ -108,6 +124,8 @@ public:
     // Durations in milliseconds of the dispatches of the last completed
     // batch, in issue order.
     const std::vector<double> &last_dispatch_times() const;
+    // Accumulated GPU time per label since the last call (timing mode).
+    std::vector<std::pair<std::string, KernelTime>> take_profile();
 
 private:
     struct Impl;
