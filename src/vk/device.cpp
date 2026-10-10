@@ -384,6 +384,12 @@ struct Device::Impl {
         if (shader.warp_synchronous && caps.subgroup_control) {
             // Warp-synchronous PTX needs 32-lane subgroups that are fully
             // populated, exactly like a CUDA warp.
+            const std::uint64_t threads = std::uint64_t{shape.block[0]} * shape.block[1] * shape.block[2];
+            if (threads > 32ull * caps.max_workgroup_subgroups) {
+                error = "block of " + std::to_string(threads) + " threads exceeds the device's " +
+                        std::to_string(caps.max_workgroup_subgroups) + " subgroups per workgroup";
+                return VK_NULL_HANDLE;
+            }
             subgroup.requiredSubgroupSize = 32;
             info.stage.pNext = &subgroup;
             if (shape.block[0] % 32 == 0)
@@ -595,6 +601,7 @@ bool Device::initialize(int index, std::string &error)
     if (indexing_ext) *feature_tail = &indexing_features;
     vkGetPhysicalDeviceFeatures2(d.physical, &features2);
     c.int64 = features2.features.shaderInt64;
+    c.max_workgroup_subgroups = subgroup_ext ? subgroup_props.maxComputeWorkgroupSubgroups : 0;
     c.subgroup_control = subgroup_ext && subgroup_features.subgroupSizeControl &&
                          subgroup_features.computeFullSubgroups &&
                          (subgroup_props.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
@@ -625,9 +632,15 @@ bool Device::initialize(int index, std::string &error)
         if (windows >= 2) {
             c.heap_window_shift = shift;
             c.heap_windows = static_cast<std::uint32_t>(windows);
-            c.max_heap_bytes = std::min<std::uint64_t>(windows << shift, maintenance3.maxMemoryAllocationSize);
+            c.max_heap_bytes = windows << shift;
         }
     }
+    // One allocation, leaving headroom for the application's own rendering;
+    // 32-bit device pointers end at 4 GiB, minus space for the guard region.
+    c.max_heap_bytes = std::min<std::uint64_t>({c.max_heap_bytes, c.device_local_bytes * 3 / 4, 0xF0000000u});
+    if (maintenance3.maxMemoryAllocationSize)
+        c.max_heap_bytes = std::min<std::uint64_t>(c.max_heap_bytes, maintenance3.maxMemoryAllocationSize);
+    c.max_heap_bytes &= ~std::uint64_t{3}; // vkCmdFillBuffer sizes are multiples of 4
 
     std::uint32_t family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(d.physical, &family_count, nullptr);
@@ -806,13 +819,13 @@ bool Device::ensure_heap(std::uint64_t bytes, std::string &error)
     Impl &d = *impl_;
     if (bytes <= d.heap.size) return true;
     if (bytes > d.caps.max_heap_bytes) {
-        error = "CUDA heap exceeds the device's maxStorageBufferRange";
+        error = "CUDA heap exceeds the device's heap limit";
         return false;
     }
     // Grow geometrically so repeated allocations do not copy repeatedly.
     VkDeviceSize size = std::max<VkDeviceSize>(d.heap.size * 2, 64u << 20);
     while (size < bytes) size *= 2;
-    size = std::min<VkDeviceSize>(size, d.caps.max_heap_bytes);
+    size = std::max<VkDeviceSize>(std::min<VkDeviceSize>(size, d.caps.max_heap_bytes), (bytes + 3) & ~VkDeviceSize{3});
     if (!d.submit_and_wait(error)) return false;
     Buffer grown;
     if (!d.create_buffer(size,
@@ -824,12 +837,15 @@ bool Device::ensure_heap(std::uint64_t bytes, std::string &error)
     if (d.heap.buffer) {
         VkBufferCopy region{0, 0, d.heap.size};
         vkCmdCopyBuffer(d.cmd, d.heap.buffer, grown.buffer, 1, &region);
-        vkCmdFillBuffer(d.cmd, grown.buffer, d.heap.size, size - d.heap.size, 0);
+        vkCmdFillBuffer(d.cmd, grown.buffer, d.heap.size, VK_WHOLE_SIZE, 0);
     } else {
-        vkCmdFillBuffer(d.cmd, grown.buffer, 0, size, 0);
+        vkCmdFillBuffer(d.cmd, grown.buffer, 0, VK_WHOLE_SIZE, 0);
     }
     d.commands = 1;
-    if (!d.submit_and_wait(error)) return false;
+    if (!d.submit_and_wait(error)) {
+        d.destroy(grown);
+        return false;
+    }
     d.destroy(d.heap);
     d.heap = grown;
     d.update_descriptors();

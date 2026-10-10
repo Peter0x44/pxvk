@@ -27,6 +27,7 @@ struct Capabilities {
     bool preserve_nan = false;     // fp32 SignedZeroInfNanPreserve execution mode
     bool subgroup_control = false; // can require a subgroup size of 32
     std::uint32_t subgroup_size = 0;
+    std::uint32_t max_workgroup_subgroups = 0; // with subgroup_control, at the required size of 32
     std::uint32_t min_subgroup_size = 0; // smallest size compute may run with (no size control)
     // Compute may run with subgroups narrower than a CUDA warp and cannot be
     // forced to 32: warp-synchronous code must be emulated (lavapipe: 8).
@@ -35,6 +36,8 @@ struct Capabilities {
     std::uint32_t max_workgroup_size[3] = {0, 0, 0};
     std::uint32_t max_workgroup_count[3] = {0, 0, 0};
     std::uint32_t max_shared_bytes = 0;
+    // Largest CUDA heap pxvk allocates: the storage-buffer range (or the
+    // split windows), at most 3/4 of device-local memory, one allocation.
     std::uint64_t max_heap_bytes = 0;
     // Split heap (ptx::CompileOptions::heap_window_shift): used only when
     // maxStorageBufferRange is below 512 MiB (lavapipe, most mobile drivers).

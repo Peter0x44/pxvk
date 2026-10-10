@@ -177,6 +177,7 @@ struct State {
     std::string pipeline_cache_path;      // empty: no persistent cache
     std::uint64_t saved_pipelines = 0;    // pipeline count at the last save
     DWORD pipelines_changed_at = 0;
+    bool pending_host_copies = false; // async DtoH into pinned memory recorded since the last sync
 
     // Device-memory allocator: first fit over freed blocks, else bump.
     std::map<std::uint32_t, std::uint32_t> free_blocks; // address -> size
@@ -258,9 +259,7 @@ CUresult initialize(State &s)
     s.options.int64 = caps.int64;
     s.options.heap_window_shift = caps.heap_window_shift;
     s.options.heap_windows = caps.heap_windows;
-    // Leave headroom on the device for the application's own rendering.
-    s.heap_limit = std::min<std::uint64_t>(caps.max_heap_bytes, caps.device_local_bytes * 3 / 4);
-    s.heap_limit = std::min<std::uint64_t>(s.heap_limit, 0xF0000000u);
+    s.heap_limit = caps.max_heap_bytes;
     s.dump_directory = env("PXVK_DUMP_SPIRV");
     if (!s.dump_directory.empty()) make_directories(s.dump_directory);
     s.sync_everything = env_flag("PXVK_SYNC");
@@ -388,6 +387,12 @@ CUresult load_ptx(State &s, const std::string &text, CUmodule *output)
     }
     module->ptx_hash = fnv1a(text);
     std::string error;
+    // A load that fails partway gives back what it already took.
+    auto abandon = [&](CUresult r) {
+        for (auto &g : module->globals) release(s, g.second.first);
+        for (auto &t : module->texrefs) s.texrefs.erase(t.second.get());
+        return r;
+    };
     for (const auto &v : module->ast.vars) {
         if (v.space == ptx::Space::tex) {
             auto ref = std::make_unique<TexRef>();
@@ -403,11 +408,12 @@ CUresult load_ptx(State &s, const std::string &text, CUmodule *output)
         if (size == 0) continue;
         std::uint32_t address = 0;
         const CUresult r = allocate(s, static_cast<std::size_t>(size), std::max<std::uint32_t>(v.align, 16), address);
-        if (r != CUDA_SUCCESS) return r;
+        if (r != CUDA_SUCCESS) return abandon(r);
+        module->globals[v.name] = {address, static_cast<std::uint32_t>(size)};
         std::vector<std::uint8_t> init(static_cast<std::size_t>(size), 0);
         std::memcpy(init.data(), v.init.data(), std::min(init.size(), v.init.size()));
-        if (!s.device.upload(address, init.data(), init.size(), error)) return failure(s, "module global", error);
-        module->globals[v.name] = {address, static_cast<std::uint32_t>(size)};
+        if (!s.device.upload(address, init.data(), init.size(), error))
+            return abandon(failure(s, "module global", error));
     }
     std::size_t entries = 0;
     for (const auto &f : module->ast.functions) entries += f.is_entry;
@@ -648,6 +654,12 @@ CUresult copy_htod(State &s, CUdeviceptr dst, const void *src, std::size_t bytes
     // batch submission would copy data written after the call.
     (void)async;
     std::string error;
+    // Stream order: an earlier async DtoH into this pinned memory must land
+    // before its bytes are read here.
+    if (s.pending_host_copies && pinned(s, src, bytes)) {
+        if (!s.device.synchronize(error)) return failure(s, "sync", error);
+        s.pending_host_copies = false;
+    }
     if (!s.device.upload(dst, src, bytes, error)) return failure(s, "memcpy HtoD", error);
     return s.sync_everything && !s.device.synchronize(error) ? failure(s, "sync", error) : CUDA_SUCCESS;
 }
@@ -663,6 +675,7 @@ CUresult copy_dtoh(State &s, void *dst, CUdeviceptr src, std::size_t bytes, bool
         ? s.device.copy_to_host(region->buffer, static_cast<char *>(dst) - region->pointer, src, bytes, error)
         : s.device.download(dst, src, bytes, error);
     if (!ok) return failure(s, "memcpy DtoH", error);
+    if (region) s.pending_host_copies = true;
     return s.sync_everything && !s.device.synchronize(error) ? failure(s, "sync", error) : CUDA_SUCCESS;
 }
 
@@ -671,7 +684,8 @@ CUresult copy_dtod(State &s, CUdeviceptr dst, CUdeviceptr src, std::size_t bytes
     if (bytes == 0) return CUDA_SUCCESS;
     if (!valid_range(s, dst, bytes) || !valid_range(s, src, bytes)) return CUDA_ERROR_INVALID_VALUE;
     std::string error;
-    return s.device.copy(dst, src, bytes, error) ? CUDA_SUCCESS : failure(s, "memcpy DtoD", error);
+    if (!s.device.copy(dst, src, bytes, error)) return failure(s, "memcpy DtoD", error);
+    return s.sync_everything && !s.device.synchronize(error) ? failure(s, "sync", error) : CUDA_SUCCESS;
 }
 
 void save_pipeline_cache(State &s)
@@ -683,7 +697,11 @@ void save_pipeline_cache(State &s)
     const DWORD now = GetTickCount();
     if (s.pipelines_changed_at == 0) s.pipelines_changed_at = now;
     if (now - s.pipelines_changed_at < 1000) return;
-    if (s.device.save_pipeline_cache(s.pipeline_cache_path)) s.saved_pipelines = pipelines;
+    // A failed save (read-only directory, file held open) is retried only
+    // once more pipelines appear, not every second.
+    if (!s.device.save_pipeline_cache(s.pipeline_cache_path))
+        s.log.write("pipeline cache save failed: %s", s.pipeline_cache_path.c_str());
+    s.saved_pipelines = pipelines;
     s.pipelines_changed_at = 0;
 }
 
@@ -694,7 +712,9 @@ CUresult synchronize(State &s)
     save_pipeline_cache(s);
     std::string error;
     log_stats(s);
-    return s.device.synchronize(error) ? CUDA_SUCCESS : failure(s, "synchronize", error);
+    if (!s.device.synchronize(error)) return failure(s, "synchronize", error);
+    s.pending_host_copies = false;
+    return CUDA_SUCCESS;
 }
 
 // ---- private export tables ----------------------------------------------------------
@@ -1281,7 +1301,8 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD8_v2(CUdeviceptr destination, unsigne
     if (bytes == 0) return CUDA_SUCCESS;
     if (!valid_range(s, destination, bytes)) return CUDA_ERROR_INVALID_VALUE;
     std::string error;
-    return s.device.fill(destination, value, bytes, error) ? CUDA_SUCCESS : failure(s, "memset", error);
+    if (!s.device.fill(destination, value, bytes, error)) return failure(s, "memset", error);
+    return s.sync_everything && !s.device.synchronize(error) ? failure(s, "sync", error) : CUDA_SUCCESS;
 }
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD8(CUdeviceptr d, unsigned char v, size_t n) { return cuMemsetD8_v2(d, v, n); }
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD8Async(CUdeviceptr d, unsigned char v, size_t n, CUstream) { return cuMemsetD8_v2(d, v, n); }
@@ -1695,7 +1716,8 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH) {
         g_module = module;
-        DisableThreadLibraryCalls(module);
+        // No DisableThreadLibraryCalls: the statically linked CRT frees
+        // thread_local state (the context stack) on thread detach.
         pxvk::runtime::install_driver_redirect(module);
     } else if (reason == DLL_PROCESS_DETACH) {
         pxvk::runtime::remove_driver_redirect();
