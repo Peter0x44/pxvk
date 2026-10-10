@@ -128,7 +128,10 @@ checked heap load using the binding table in the launch block.
 
 - CUDA device memory is one device-local storage buffer. Device pointers are
   byte offsets into it (the first 64 KiB are reserved so null stays invalid).
-  The buffer grows on demand, preserving contents.
+  The buffer grows on demand, preserving contents: it doubles, but the old
+  buffer stays allocated during the copy, so where the doubled size does not
+  fit beside it (small device-local heaps) growth retries with just the size
+  needed, rounded up to 16 MiB.
 - Every operation (upload, fill, copy, dispatch) is recorded into one command
   batch, serialized with full memory barriers, which reproduces CUDA
   default-stream ordering. The batch is submitted only when the host must see

@@ -827,12 +827,19 @@ bool Device::ensure_heap(std::uint64_t bytes, std::string &error)
     while (size < bytes) size *= 2;
     size = std::max<VkDeviceSize>(std::min<VkDeviceSize>(size, d.caps.max_heap_bytes), (bytes + 3) & ~VkDeviceSize{3});
     if (!d.submit_and_wait(error)) return false;
+    // The old heap stays allocated while it is copied, so growth briefly
+    // needs both. Where the doubled size does not fit next to it (small
+    // device-local heaps, e.g. integrated GPUs), retry with what is needed.
+    const VkDeviceSize needed = std::min<VkDeviceSize>((bytes + (16u << 20) - 1) & ~VkDeviceSize((16u << 20) - 1),
+                                                       d.caps.max_heap_bytes);
+    const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                     VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     Buffer grown;
-    if (!d.create_buffer(size,
-                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-                             VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, grown, error))
-        return false;
+    if (!d.create_buffer(size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, grown, error)) {
+        if (needed >= size) return false;
+        size = needed;
+        if (!d.create_buffer(size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, grown, error)) return false;
+    }
     d.begin();
     if (d.heap.buffer) {
         VkBufferCopy region{0, 0, d.heap.size};
