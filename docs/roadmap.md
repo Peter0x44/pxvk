@@ -114,7 +114,9 @@ remaining Adreno limits before testing on a phone.
 ### 10. More games
 
 Alice: Madness Returns and Mafia II Classic. Trace them natively first: new
-PTX modules or API usage would show up there.
+PTX modules or API usage would show up there. `docs/compatibility.md` lists
+the 32-bit GPU PhysX games and runtimes: supporting `mul24` and 64-bit
+integer atomics would let every 2.7.x/2.8.x runtime compile.
 
 ### 11. Smaller launch captures
 

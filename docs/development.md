@@ -42,6 +42,7 @@ run the GPU tests.
 | [`environment.md`](environment.md) | every environment variable |
 | [`mirrors-edge.md`](mirrors-edge.md) | Mirror's Edge setup, scenes and workloads |
 | [`install.md`](install.md) | installing, running and reporting (for testers) |
+| [`compatibility.md`](compatibility.md) | PhysX runtimes, games and what pxvk runs |
 | [`roadmap.md`](roadmap.md) | open work |
 | [`charter.md`](charter.md) | goal and scope |
 
