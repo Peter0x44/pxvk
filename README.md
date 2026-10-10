@@ -74,7 +74,10 @@ How pxvk works, building it, and the testing tools are in
 pxvk is licensed under either of [MIT](LICENSE-MIT) or
 [Apache-2.0](LICENSE-APACHE), at your option.
 
-pxvk is heavily inspired by [ZLUDA](https://github.com/vosen/ZLUDA), which
-runs CUDA applications on non-NVIDIA GPUs. Its handling of the CUDA runtime's
-private interfaces and its NVAPI implementation informed pxvk's. PhysX and
-CUDA are trademarks of NVIDIA; pxvk is not affiliated with NVIDIA.
+Major credit to [ZLUDA](https://github.com/vosen/ZLUDA), which runs CUDA
+applications on non-NVIDIA GPUs. It was the main inspiration for pxvk and is
+the prior art much of it builds on, from running PhysX through a replacement
+CUDA driver to the CUDA runtime's private interfaces and the NVAPI
+implementation.
+
+PhysX and CUDA are trademarks of NVIDIA; pxvk is not affiliated with NVIDIA.
