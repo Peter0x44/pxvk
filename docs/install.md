@@ -111,6 +111,26 @@ C:\pxvk\pxvk-launch.exe "C:\...\Bin\win32\SampleCloth.exe"
 PhysX. The rigid-body samples and `SampleSoftBody` do not use CUDA in this
 SDK version, so they run on the CPU and pxvk only logs its `init` line.
 
+## FluidMark
+
+[Geeks3D FluidMark 1.5.4](https://www.geeks3d.com/20130308/fluidmark-1-5-1-physx-benchmark-fluid-sph-simulation-opengl-download/)
+is a quick, repeatable test: a 60-second PhysX fluid benchmark with a score.
+It is 32-bit and uses PhysX 2.8.4 from the PhysX System Software (its own
+bundled `PhysXCore.dll` only serves its startup GPU check).
+
+```powershell
+$env:PXVK_LOG = "C:\temp\pxvk.log"
+C:\pxvk\pxvk-launch.exe "C:\Program Files (x86)\Geeks3D\Benchmarks\FluidMark\FluidMark.exe" /preset_720 /log_score /noscore /nogui
+```
+
+`/preset_720` runs fullscreen at 1280×720 with 30,000 particles. The results
+are in `FluidMark_0001.txt` next to the program: `found 1 PhysX GPU(s)` and
+`PhysX hardware detected` confirm GPU PhysX, and `PhysX Avg SPS` is the
+simulation rate. For a comparison on the same machine, run it once without
+pxvk-launch (native CUDA on NVIDIA, CPU PhysX elsewhere), or set
+`physx_cpu="1"` in `startup_options.xml` for CPU PhysX (set it back to `0`
+afterwards). Scores vary by several percent between runs; compare averages.
+
 ## Mirror's Edge (GOG)
 
 The game ships an obsolete PhysX runtime that reports hardware PhysX as

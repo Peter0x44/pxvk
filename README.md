@@ -31,6 +31,11 @@ Tested on two laptops: RTX 3070 Laptop + Intel UHD, and AMD Radeon 8060S
   and collision kernels) with no errors. On the 8060S, PhysX keeps up with
   the game's 62 fps cap, and GPU waits take about 0.6 ms per frame. Visual
   validation against native is still to do.
+- Geeks3D FluidMark 1.5.4 (PhysX 2.8.4, whose 17 modules are different
+  PTX from the 2.8 samples) runs on pxvk with no errors. 720 preset, mean
+  of 10 interleaved runs on the RTX 3070 laptop: 283 simulation steps/s on
+  pxvk vs 269 on native CUDA, 132 on the Intel UHD iGPU through pxvk, and
+  39 with CPU PhysX on its i7-11800H.
 - Machines without an NVIDIA driver work: `pxvk-nvapi.dll` answers the NVAPI
   queries that PhysX uses to select hardware PhysX.
 

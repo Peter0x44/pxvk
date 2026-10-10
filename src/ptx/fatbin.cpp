@@ -8,7 +8,10 @@ namespace pxvk::fatbin {
 namespace {
 
 constexpr std::uint32_t kMagic = 0xBA55ED50u;
+// Entry header versions: 0x101 (CUDA 5+), 0x100 (CUDA 4.x; longer headers
+// that append the source file name, and no compression).
 constexpr std::uint16_t kFileVersion = 0x101;
+constexpr std::uint16_t kFileVersionCuda4 = 0x100;
 constexpr std::uint16_t kKindPtx = 1;
 constexpr std::uint64_t kFlagLz4 = 0x2000;
 constexpr std::uint64_t kFlagZstd = 0x8000;
@@ -101,9 +104,11 @@ std::vector<PtxPayload> extract_ptx(const void *data, std::size_t size)
     while (offset + sizeof(FileHeader) <= total) {
         FileHeader file;
         std::memcpy(&file, bytes + offset, sizeof(file));
+        const bool cuda4 = file.version == kFileVersionCuda4;
+        if (cuda4) file.compressed_size = 0, file.flags = 0;
         const std::size_t stored = std::max(file.payload_size, file.compressed_size);
         const std::size_t payload = offset + file.header_size;
-        if (file.version != kFileVersion || file.header_size < sizeof(FileHeader) ||
+        if ((file.version != kFileVersion && !cuda4) || file.header_size < sizeof(FileHeader) ||
             payload + stored > total)
             throw std::runtime_error("invalid fatbin file header");
         if (file.kind == kKindPtx) {

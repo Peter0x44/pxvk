@@ -421,7 +421,17 @@ CUresult load_fatbin(State &s, const void *container, CUmodule *output)
             [](const fatbin::PtxPayload &a, const fatbin::PtxPayload &b) { return a.sm_version < b.sm_version; });
         return load_ptx(s, best->text, output);
     } catch (const std::exception &e) {
-        s.log.write("fatbin decode failed: %s", e.what());
+        // Name the binary that registered it and dump its header, so new
+        // container formats can be identified from a user's log.
+        char owner[MAX_PATH] = "?";
+        HMODULE module = nullptr;
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               static_cast<const char *>(container), &module))
+            GetModuleFileNameA(module, owner, MAX_PATH);
+        char header[3 * 32 + 1] = "";
+        const auto *bytes = static_cast<const unsigned char *>(container);
+        for (int i = 0; i < 32; ++i) std::snprintf(header + 3 * i, 4, "%02x ", bytes[i]);
+        s.log.write("fatbin decode failed: %s (from %s, header %s)", e.what(), owner, header);
         return CUDA_ERROR_INVALID_IMAGE;
     }
 }
