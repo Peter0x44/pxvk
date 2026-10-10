@@ -232,7 +232,7 @@ bool api_log_enabled()
     static const bool enabled = env_flag("PXVK_API_LOG");
     return enabled;
 }
-#define API_LOG(...)                                                                     do {                                                                                     if (api_log_enabled()) {                                                                 char api_buffer_[256];                                                               std::snprintf(api_buffer_, sizeof(api_buffer_), __VA_ARGS__);                        state().log.write("api f=%s %s", env("PXVK_FRAME").c_str(), api_buffer_);         }                                                                                } while (0)
+#define API_LOG(...)                                                                     do {                                                                                     if (api_log_enabled()) {                                                                 char api_buffer_[256];                                                               std::snprintf(api_buffer_, sizeof(api_buffer_), __VA_ARGS__);                        state().log.write("api f=%s t=%lu %s", env("PXVK_FRAME").c_str(), GetCurrentThreadId(), api_buffer_);         }                                                                                } while (0)
 
 CUresult failure(State &s, const char *what, const std::string &error, CUresult code = CUDA_ERROR_UNKNOWN)
 {

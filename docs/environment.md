@@ -29,7 +29,7 @@ The log output of these needs `PXVK_LOG`.
 
 | Variable | Values | Effect |
 |---|---|---|
-| `PXVK_API_LOG` | switch | Also logs every memory copy, synchronization, texture binding and launch, tagged with the harness frame number (`f=`). The log grows quickly. |
+| `PXVK_API_LOG` | switch | Also logs every memory copy, synchronization, texture binding and launch, tagged with the harness frame number (`f=`) and the calling thread (`t=`). The log grows quickly. |
 | `PXVK_PROFILE` | switch | Measures GPU time per kernel with timestamp queries. Every 500 launches (as well as every 5 s) it logs a `stats` line plus a `profile` line per kernel with launch count and total/average time. |
 | `PXVK_SYNC` | switch | Waits for the GPU after every operation instead of batching. Very slow. Use it to tell a synchronization bug from a computation bug. |
 | `PXVK_DUMP_SPIRV` | folder path | Writes every compiled kernel as `<module hash>_<kernel name hash>_<variant>.spv`. Does not need `PXVK_LOG`. |

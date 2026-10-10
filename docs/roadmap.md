@@ -5,15 +5,22 @@ the current design are listed at the end of `docs/architecture.md`.
 
 ## Correctness
 
-### 1. Rare nondeterminism in SampleCloth scene 2
+### 1. Rare nondeterminism in SampleCloth scene 2 (not reproduced)
 
-Harness runs are normally pixel-identical between runs and identical to
-native. One 9-scene pxvk sweep on the RTX 3070 differed from native by 22% of
-the pixels at frame 599 (scene 2), while other runs of the same build matched
-native exactly; the harness reported no stall breaks. This may be a
-synchronization race, so it comes first. Reproduce it (repeated sweeps; does
-`PXVK_SYNC=1` hide it?), then find the first diverging launch with pxvk
-captures and `tools/capture-diff.py`.
+Seen once: one 9-scene pxvk sweep on the RTX 3070 differed from native by 22%
+of the pixels at frame 599 (scene 2), while other runs of the same build
+matched native exactly. That run came during hours of heavy GPU load that
+ended, minutes later, in a hard GPU/display lock of the laptop.
+
+It did not reproduce in about 50 further runs of scenes 1–2 (alone, two
+instances at once, and with an empty pipeline cache), nor in 640 replays of
+the native scene 2 captures on NVIDIA (all bit-exact) and 240 on Intel (the
+same result every time). The sample takes its time step from the harness's
+virtual clock and waits for PhysX every frame, PhysX issues CUDA calls from
+one thread per scene, and no PhysX kernel uses atomics. Treat it as a
+hardware/driver glitch unless it recurs; then compare `PXVK_API_LOG` logs
+(which record the calling thread) and pxvk captures of a diverging and a
+matching run with `tools/capture-diff.py`.
 
 ### 2. Mirror's Edge against native
 
