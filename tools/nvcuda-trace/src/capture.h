@@ -13,6 +13,8 @@ void capture_note_module(void *module, unsigned int fatbin_ordinal);
 void capture_note_function(void *function, void *module, const char *name);
 void capture_note_alloc(uint32_t base, uint32_t size);
 void capture_note_free(uint32_t base);
+void capture_forget_module(void *module); /* cuModuleUnload */
+void capture_forget_all(void);            /* cuCtxDestroy: every module and allocation */
 void capture_note_global(void *module, const char *name, uint32_t base, uint32_t size);
 void capture_note_texref(void *texref, void *module, const char *name);
 void capture_note_texref_address(void *texref, uint32_t base, uint32_t bytes);

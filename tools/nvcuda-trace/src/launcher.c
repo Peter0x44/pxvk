@@ -195,6 +195,8 @@ int wmain(int argc, wchar_t **argv)
     int target_index = 1;
     const wchar_t *output_directory = NULL;
     wchar_t tracer_path[PXVK_PATH_CAPACITY];
+    wchar_t target_path[MAX_PATH];
+    wchar_t target_directory[MAX_PATH];
     wchar_t *command_line;
     STARTUPINFOW startup_info;
     PROCESS_INFORMATION process_info;
@@ -232,17 +234,31 @@ int wmain(int argc, wchar_t **argv)
         return 5;
     }
 
+    /* Like pxvk-launch: find the target on PATH (".exe" optional) and start
+     * it in its own directory, so native and pxvk runs see the same files. */
+    {
+        wchar_t *file_part = NULL;
+        const DWORD found = SearchPathW(NULL, argv[target_index], L".exe", MAX_PATH, target_path, &file_part);
+        if (found == 0 || found >= MAX_PATH || file_part == NULL) {
+            fwprintf(stderr, L"target not found: %ls\n", argv[target_index]);
+            free(command_line);
+            return 6;
+        }
+        wcsncpy(target_directory, target_path, (size_t)(file_part - target_path));
+        target_directory[file_part - target_path] = L'\0';
+    }
+
     ZeroMemory(&startup_info, sizeof(startup_info));
     startup_info.cb = sizeof(startup_info);
     ZeroMemory(&process_info, sizeof(process_info));
-    if (!CreateProcessW(argv[target_index],
+    if (!CreateProcessW(target_path,
                         command_line,
                         NULL,
                         NULL,
                         FALSE,
                         CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
                         NULL,
-                        NULL,
+                        target_directory,
                         &startup_info,
                         &process_info)) {
         print_last_error(L"CreateProcessW");

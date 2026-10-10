@@ -252,7 +252,7 @@ static bool initialize_output(void)
                              GENERIC_WRITE,
                              FILE_SHARE_READ,
                              NULL,
-                             CREATE_NEW,
+                             CREATE_ALWAYS, /* a reused PID's old folder is overwritten */
                              FILE_ATTRIBUTE_NORMAL,
                              NULL);
     return g_log_file != INVALID_HANDLE_VALUE;
@@ -398,6 +398,10 @@ static int capture_dtoh(void *destination, uint32_t source, uint32_t bytes)
     return fn != NULL ? (int)fn(destination, (CUdeviceptr)source, bytes) : -1;
 }
 
+/* Runs exactly once: a failure is remembered (g_initialized stays false)
+ * rather than retried on every call. */
+static bool g_initialized;
+
 static BOOL CALLBACK initialize_once(PINIT_ONCE once, PVOID parameter, PVOID *context)
 {
     unsigned int patched_modules;
@@ -408,12 +412,13 @@ static BOOL CALLBACK initialize_once(PINIT_ONCE once, PVOID parameter, PVOID *co
     InitializeCriticalSection(&g_lock);
     g_lock_initialized = true;
     if (!initialize_output()) {
-        return FALSE;
+        return TRUE;
     }
     if (!load_real_driver()) {
         trace_log("init error=load_real_driver win32=%lu", (unsigned long)GetLastError());
-        return FALSE;
+        return TRUE;
     }
+    g_initialized = true;
     capture_initialize(g_output_directory, capture_sync, capture_dtoh);
     patched_modules = install_get_proc_address_hooks();
     trace_log("trace_start pid=%lu pointer_bits=%u getproc_hooks=%u",
@@ -425,7 +430,7 @@ static BOOL CALLBACK initialize_once(PINIT_ONCE once, PVOID parameter, PVOID *co
 
 static bool ensure_initialized(void)
 {
-    return InitOnceExecuteOnce(&g_init_once, initialize_once, NULL, NULL) != FALSE;
+    return InitOnceExecuteOnce(&g_init_once, initialize_once, NULL, NULL) != FALSE && g_initialized;
 }
 
 static FARPROC resolve_symbol(const char *name)
@@ -863,51 +868,62 @@ static void dump_kernel_times(void)
     }
 }
 
-static void *g_timing_start, *g_timing_end;
-
-/* Events are created per launch: PhysX destroys and recreates its context on
- * scene changes, which invalidates longer-lived events. */
-static void timing_begin(void)
+/* Events are created per launch (PhysX destroys and recreates its context
+ * on scene changes, which invalidates longer-lived events) and kept by the
+ * launching thread. Returns false when timing is off or failed. */
+static bool timing_begin(CUevent events[2])
 {
     typedef CUresult(CUDAAPI *create_fn)(CUevent *, unsigned int);
     typedef CUresult(CUDAAPI *record_fn)(CUevent, CUstream);
+    typedef CUresult(CUDAAPI *destroy_fn)(CUevent);
     create_fn create;
-    if (!timing_enabled()) return;
+    events[0] = events[1] = NULL;
+    if (!timing_enabled()) return false;
     create = (create_fn)resolve_symbol("cuEventCreate");
-    create((CUevent *)&g_timing_start, 0);
-    create((CUevent *)&g_timing_end, 0);
-    ((record_fn)resolve_symbol("cuEventRecord"))((CUevent)g_timing_start, NULL);
+    if (create == NULL || create(&events[0], 0) != CUDA_SUCCESS) return false;
+    if (create(&events[1], 0) != CUDA_SUCCESS ||
+        ((record_fn)resolve_symbol("cuEventRecord"))(events[0], NULL) != CUDA_SUCCESS) {
+        destroy_fn destroy = (destroy_fn)resolve_symbol("cuEventDestroy_v2");
+        destroy(events[0]);
+        if (events[1] != NULL) destroy(events[1]);
+        return false;
+    }
+    return true;
 }
 
-static void timing_end(const char *name)
+static void timing_end(CUevent events[2], const char *name)
 {
     typedef CUresult(CUDAAPI *record_fn)(CUevent, CUstream);
     typedef CUresult(CUDAAPI *sync_fn)(CUevent);
     typedef CUresult(CUDAAPI *elapsed_fn)(float *, CUevent, CUevent);
+    typedef CUresult(CUDAAPI *destroy_fn)(CUevent);
     float ms = 0;
+    bool measured;
     pxvk_kernel_time *k;
-    if (!timing_enabled()) return;
-    ((record_fn)resolve_symbol("cuEventRecord"))((CUevent)g_timing_end, NULL);
-    ((sync_fn)resolve_symbol("cuEventSynchronize"))((CUevent)g_timing_end);
-    ((elapsed_fn)resolve_symbol("cuEventElapsedTime"))(&ms, (CUevent)g_timing_start, (CUevent)g_timing_end);
+    destroy_fn destroy = (destroy_fn)resolve_symbol("cuEventDestroy_v2");
+    measured = ((record_fn)resolve_symbol("cuEventRecord"))(events[1], NULL) == CUDA_SUCCESS &&
+               ((sync_fn)resolve_symbol("cuEventSynchronize"))(events[1]) == CUDA_SUCCESS &&
+               ((elapsed_fn)resolve_symbol("cuEventElapsedTime"))(&ms, events[0], events[1]) == CUDA_SUCCESS;
+    destroy(events[0]);
+    destroy(events[1]);
+    if (!measured) return;
+    EnterCriticalSection(&g_lock);
     for (k = g_kernel_times; k != NULL; k = k->next)
         if (strcmp(k->name, name) == 0) break;
     if (k == NULL) {
         k = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*k));
-        if (k == NULL) return;
-        strncpy(k->name, name, sizeof(k->name) - 1);
-        k->next = g_kernel_times;
-        g_kernel_times = k;
+        if (k != NULL) {
+            strncpy(k->name, name, sizeof(k->name) - 1);
+            k->next = g_kernel_times;
+            g_kernel_times = k;
+        }
     }
-    ++k->count;
-    k->total_ms += ms;
-    {
-        typedef CUresult(CUDAAPI *destroy_fn)(CUevent);
-        destroy_fn destroy = (destroy_fn)resolve_symbol("cuEventDestroy_v2");
-        destroy((CUevent)g_timing_start);
-        destroy((CUevent)g_timing_end);
+    if (k != NULL) {
+        ++k->count;
+        k->total_ms += ms;
+        if (++g_timed_launches % 500 == 0) dump_kernel_times();
     }
-    if (++g_timed_launches % 500 == 0) dump_kernel_times();
+    LeaveCriticalSection(&g_lock);
 }
 
 PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
@@ -941,6 +957,9 @@ PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
         size_t parameter_size;
         CUresult result;
         unsigned int capture_token;
+        void *parameter_copy = NULL;
+        CUevent timing_events[2];
+        bool timed;
         lookup_function_name(function, function_name, sizeof(function_name));
         capture_launch_parameters(function,
                                   kernel_parameters,
@@ -955,13 +974,17 @@ PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
             const unsigned int grid[3] = {grid_x, grid_y, grid_z};
             const unsigned int block[3] = {block_x, block_y, block_z};
             if (extra != NULL &&
-                pxvk_parse_launch_extra(extra, read_current_process, NULL, &launch) == PXVK_LAUNCH_PARAMS_OK) {
-                buffer = launch.buffer;
-                buffer_size = launch.size;
+                pxvk_parse_launch_extra(extra, read_current_process, NULL, &launch) == PXVK_LAUNCH_PARAMS_OK &&
+                launch.size <= PXVK_MAX_LAUNCH_PARAMETER_BYTES && launch.size != 0 &&
+                (parameter_copy = malloc(launch.size)) != NULL) {
+                if (read_current_process(NULL, launch.buffer, parameter_copy, launch.size)) {
+                    buffer = parameter_copy;
+                    buffer_size = launch.size;
+                }
             }
             capture_token = capture_launch_begin(function, grid, block, shared_memory_bytes, buffer, buffer_size);
         }
-        timing_begin();
+        timed = timing_begin(timing_events);
         result = real_function(function,
                                grid_x,
                                grid_y,
@@ -973,8 +996,9 @@ PXVK_EXPORT CUresult CUDAAPI cuLaunchKernel(
                                stream,
                                kernel_parameters,
                                extra);
-        timing_end(function_name);
+        if (timed) timing_end(timing_events, function_name);
         capture_launch_end(capture_token);
+        free(parameter_copy);
         InterlockedIncrement(&g_launch_calls);
         trace_log("cuLaunchKernel function=%p name=%s grid=%u,%u,%u block=%u,%u,%u "
                   "shared=%u stream=%p params=%s param_bytes=%lu result=%d",
@@ -1307,8 +1331,22 @@ DEFINE_FORWARDER_3(cuCtxCreate_v2,
                    flags,
                    CUdevice,
                    device)
-DEFINE_FORWARDER_1(cuCtxDestroy, CUcontext, context)
-DEFINE_FORWARDER_1(cuCtxDestroy_v2, CUcontext, context)
+/* Destroying a context frees its modules and memory: drop their capture
+ * records so a later module reusing a handle or address does not pick them up. */
+#define DEFINE_CONTEXT_DESTROY(name)                                                      \
+    PXVK_EXPORT CUresult CUDAAPI name(CUcontext context)                                  \
+    {                                                                                     \
+        typedef CUresult(CUDAAPI *function_type)(CUcontext);                              \
+        RESOLVE_OR_RETURN(function_type, real_function, #name);                           \
+        {                                                                                 \
+            CUresult result = real_function(context);                                     \
+            if (result == CUDA_SUCCESS) capture_forget_all();                             \
+            trace_log(#name " context=%p result=%d", (void *)context, (int)result);       \
+            return result;                                                                \
+        }                                                                                 \
+    }
+DEFINE_CONTEXT_DESTROY(cuCtxDestroy)
+DEFINE_CONTEXT_DESTROY(cuCtxDestroy_v2)
 DEFINE_FORWARDER_1(cuCtxPushCurrent, CUcontext, context)
 DEFINE_FORWARDER_1(cuCtxPushCurrent_v2, CUcontext, context)
 DEFINE_FORWARDER_1(cuCtxPopCurrent, CUcontext *, context)
@@ -1325,7 +1363,17 @@ DEFINE_FORWARDER_5(cuModuleLoadDataEx,
                    options,
                    void **,
                    option_values)
-DEFINE_FORWARDER_1(cuModuleUnload, CUmodule, module)
+PXVK_EXPORT CUresult CUDAAPI cuModuleUnload(CUmodule module)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUmodule);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuModuleUnload");
+    {
+        CUresult result = real_function(module);
+        if (result == CUDA_SUCCESS) capture_forget_module(module);
+        trace_log("cuModuleUnload module=%p result=%d", (void *)module, (int)result);
+        return result;
+    }
+}
 DEFINE_FORWARDER_4(cuModuleGetGlobal,
                    CUdeviceptr *,
                    pointer,
@@ -1335,8 +1383,30 @@ DEFINE_FORWARDER_4(cuModuleGetGlobal,
                    module,
                    const char *,
                    name)
-DEFINE_FORWARDER_2(cuMemAlloc, CUdeviceptr *, pointer, size_t, bytes)
-DEFINE_FORWARDER_1(cuMemFree, CUdeviceptr, pointer)
+PXVK_EXPORT CUresult CUDAAPI cuMemAlloc(CUdeviceptr *pointer, size_t size)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUdeviceptr *, size_t);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuMemAlloc");
+    {
+        CUresult result = real_function(pointer, size);
+        if (result == CUDA_SUCCESS && pointer != NULL) capture_note_alloc((uint32_t)*pointer, (uint32_t)size);
+        trace_log("cuMemAlloc pointer=%08lx bytes=%lu result=%d",
+                  pointer != NULL ? (unsigned long)*pointer : 0, (unsigned long)size, (int)result);
+        return result;
+    }
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuMemFree(CUdeviceptr pointer)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUdeviceptr);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuMemFree");
+    {
+        CUresult result = real_function(pointer);
+        if (result == CUDA_SUCCESS) capture_note_free((uint32_t)pointer);
+        trace_log("cuMemFree pointer=%08lx result=%d", (unsigned long)pointer, (int)result);
+        return result;
+    }
+}
 DEFINE_FORWARDER_3(cuMemGetAddressRange,
                    CUdeviceptr *,
                    base,

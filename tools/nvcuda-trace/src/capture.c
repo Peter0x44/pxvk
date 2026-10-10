@@ -21,7 +21,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CAPTURE_MAX_RANGES 64
+#define CAPTURE_MAX_RANGES 1024
+#define CAPTURE_SPEC_BYTES 16384
 #define CAPTURE_PAGE 4096u
 
 typedef struct record {
@@ -67,20 +68,27 @@ static record *upsert(record **list, uintptr_t key)
 
 void capture_initialize(const wchar_t *directory, capture_sync_fn sync, capture_dtoh_fn dtoh)
 {
-    char spec[1024];
+    static char spec[CAPTURE_SPEC_BYTES];
     DWORD length;
     InitializeCriticalSection(&g_capture_lock);
     wcsncpy(g_directory, directory, 1023);
     g_sync = sync;
     g_dtoh = dtoh;
     length = GetEnvironmentVariableA("PXVK_CAPTURE_FRAMES", spec, sizeof(spec));
-    if (length != 0 && length < sizeof(spec)) {
-        for (char *cursor = spec; *cursor != '\0' && g_frame_count < CAPTURE_MAX_RANGES;) {
+    if (length >= sizeof(spec)) {
+        fprintf(stderr, "pxvk-trace: PXVK_CAPTURE_FRAMES longer than %u characters is ignored\n",
+                (unsigned)sizeof(spec) - 1);
+    } else if (length != 0) {
+        char *cursor = spec;
+        while (*cursor != '\0' && g_frame_count < CAPTURE_MAX_RANGES) {
             char *end = NULL;
-            g_frames[g_frame_count++] = (unsigned int)strtoul(cursor, &end, 10);
+            const unsigned long frame = strtoul(cursor, &end, 10);
             if (end == cursor) break;
+            g_frames[g_frame_count++] = (unsigned int)frame;
             cursor = *end == ',' ? end + 1 : end;
         }
+        if (*cursor != '\0')
+            fprintf(stderr, "pxvk-trace: PXVK_CAPTURE_FRAMES: only the first %u frames are used\n", g_frame_count);
         g_capture_enabled = g_frame_count != 0;
     }
     length = GetEnvironmentVariableA("PXVK_CAPTURE_LAUNCHES", spec, sizeof(spec));
@@ -153,6 +161,47 @@ void capture_note_free(uint32_t base)
             break;
         }
     }
+    LeaveCriticalSection(&g_capture_lock);
+}
+
+static void remove_owned(record **list, uintptr_t owner, bool all)
+{
+    for (record **link = list; *link != NULL;) {
+        if (all || (*link)->owner == owner) {
+            record *dead = *link;
+            *link = dead->next;
+            free(dead);
+        } else {
+            link = &(*link)->next;
+        }
+    }
+}
+
+void capture_forget_module(void *module)
+{
+    EnterCriticalSection(&g_capture_lock);
+    remove_owned(&g_globals, (uintptr_t)module, false);
+    remove_owned(&g_texrefs, (uintptr_t)module, false);
+    remove_owned(&g_functions, (uintptr_t)module, false);
+    for (record **link = &g_modules; *link != NULL; link = &(*link)->next) {
+        if ((*link)->key == (uintptr_t)module) {
+            record *dead = *link;
+            *link = dead->next;
+            free(dead);
+            break;
+        }
+    }
+    LeaveCriticalSection(&g_capture_lock);
+}
+
+void capture_forget_all(void)
+{
+    EnterCriticalSection(&g_capture_lock);
+    remove_owned(&g_globals, 0, true);
+    remove_owned(&g_texrefs, 0, true);
+    remove_owned(&g_functions, 0, true);
+    remove_owned(&g_modules, 0, true);
+    remove_owned(&g_allocations, 0, true);
     LeaveCriticalSection(&g_capture_lock);
 }
 
