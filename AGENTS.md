@@ -1,7 +1,9 @@
 # Agent guidance
 
 - Read `docs/charter.md` and `docs/architecture.md` before significant
-  changes; `docs/roadmap.md` lists open work.
+  changes; `docs/development.md` covers building and tools, and
+  `docs/roadmap.md` lists open work. The README is for players: keep it
+  non-technical.
 - Target classic 32-bit GPU PhysX, not general CUDA. Mirror's Edge is the
   first compatibility target. Do not silently broaden scope.
 - Prefer evidence from traces, captures and real PhysX/PTX workloads over

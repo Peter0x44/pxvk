@@ -22,7 +22,7 @@ driver (AMD, Intel or NVIDIA), and an NVIDIA driver is not required.
   | `nvcuda.dll` | the pxvk CUDA driver (PTX compiler and Vulkan backend) |
   | `pxvk-nvapi.dll` | minimal NVAPI so PhysX selects hardware PhysX |
 
-  These are built into `build\x86` (see the README). They depend only on
+  These are built into `build\x86` (see [`development.md`](development.md)). They depend only on
   Windows system DLLs. Do **not** copy `nvcuda.dll` into System32 or into the
   game folder, because it is not loaded from there.
 
