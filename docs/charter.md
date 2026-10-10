@@ -20,7 +20,16 @@ stages are taken on one at a time, in this order:
 3. **Later: 32-bit PhysX 3.x and APEX.** The GPU runtime of the late 32-bit
    titles (likely Assassin's Creed IV, Batman: Arkham Origins), APEX
    Particles/Turbulence and GPU rigid bodies (GRB), plus whatever graphics
-   interop they turn out to need.
+   interop they turn out to need. APEX GPU particles probably write into the
+   game's Direct3D vertex buffers through CUDA graphics interop; native
+   traces of the target games must confirm that first. Intended approach:
+   under DXVK, run pxvk's work on DXVK's own Vulkan device (its interop
+   interfaces, `IDXGIVkInteropDevice` and `ID3D9VkInteropDevice`, expose the
+   device and a submission-queue lock), so registered D3D resources are
+   directly usable Vulkan buffers; exposing a D3D buffer's `VkBuffer` may
+   need a small DXVK addition. Without DXVK, fall back to a host round
+   trip: on unmap, download the data and write it through the D3D API
+   (particle buffers are small).
 4. **Later: 64-bit.** A 64-bit pxvk for 64-bit GPU PhysX games (Batman:
    Arkham Knight, the Metro Redux games, Metro Exodus, ...), which only
    matters on non-NVIDIA hardware. Their PTX uses 64-bit pointers, which
