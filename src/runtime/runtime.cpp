@@ -130,7 +130,8 @@ struct Function {
 };
 
 struct Module {
-    ptx::Module ast;
+    ptx::Module ast; // freed on unload; the shell stays so stale handles stay invalid
+    CUcontext context = nullptr; // destroying it unloads the module, as in CUDA
     std::uint64_t ptx_hash = 0;
     std::map<std::string, std::pair<std::uint32_t, std::uint32_t>> globals; // address, size
     std::map<std::string, std::unique_ptr<TexRef>> texrefs;
@@ -403,10 +404,26 @@ CUresult load_ptx(State &s, const std::string &text, CUmodule *output)
                 static_cast<unsigned long long>(module->ptx_hash), static_cast<unsigned>(text.size()),
                 static_cast<unsigned>(entries), static_cast<unsigned>(module->globals.size()),
                 static_cast<unsigned>(module->texrefs.size()));
+    module->context = current_context();
     *output = reinterpret_cast<CUmodule>(module.get());
     s.live_modules.insert(module.get());
     s.modules.push_back(std::move(module));
     return CUDA_SUCCESS;
+}
+
+// Releases a module's globals and its parsed PTX. The Module, Function and
+// TexRef objects stay allocated (small) because the application may still
+// hold their handles, which must remain safely invalid. Compiled kernels
+// live on in State::kernels, keyed by PTX content, for re-registration.
+void unload_module(State &s, Module *m)
+{
+    for (auto &g : m->globals) release(s, g.second.first);
+    m->globals.clear();
+    for (auto &f : m->functions) s.functions.erase(f.second.get());
+    for (auto &t : m->texrefs) s.texrefs.erase(t.second.get());
+    s.live_modules.erase(m);
+    m->ast = ptx::Module{};
+    s.log.write("module unload hash=%016llx", static_cast<unsigned long long>(m->ptx_hash));
 }
 
 CUresult load_fatbin(State &s, const void *container, CUmodule *output)
@@ -988,6 +1005,13 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuCtxDetach(CUcontext context)
         Context *c = context_of(s, context);
         if (!c) return CUDA_ERROR_INVALID_CONTEXT;
         synchronize(s);
+        // Like CUDA, destroying a context unloads its modules. PhysX relies
+        // on this: it never calls cuModuleUnload, it destroys the context
+        // on every scene change and registers its modules again.
+        std::vector<Module *> owned;
+        for (Module *m : s.live_modules)
+            if (m->context == context) owned.push_back(m);
+        for (Module *m : owned) unload_module(s, m);
         callbacks.swap(c->cls);
         s.contexts.erase(c);
         delete c;
@@ -1077,13 +1101,7 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuModuleUnload(CUmodule handle)
     Module *m = module_of(s, handle);
     if (!m) return CUDA_ERROR_INVALID_HANDLE;
     synchronize(s);
-    for (auto &g : m->globals) release(s, g.second.first);
-    for (auto &f : m->functions) s.functions.erase(f.second.get());
-    for (auto &t : m->texrefs) s.texrefs.erase(t.second.get());
-    s.live_modules.erase(m);
-    // Function objects (and their pipelines) stay allocated: handles may be
-    // cached by the application and must remain safely invalid.
-    s.log.write("module unload hash=%016llx", static_cast<unsigned long long>(m->ptx_hash));
+    unload_module(s, m);
     return CUDA_SUCCESS;
 }
 
