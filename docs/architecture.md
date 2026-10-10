@@ -182,7 +182,7 @@ drivers commonly cap `maxStorageBufferRange` at 128 MiB (see
 - On non-NVIDIA GPUs `rcp`/`rsqrt`/`sqrt` differ from NVIDIA hardware by
   1–2 ULP; iterative solvers amplify this into small numerical drift.
 - Results are not yet fully 1:1 with native on NVIDIA: every instruction
-  variant is bit-exact, but 6 of 202 replayed SampleCloth launches (a few
+  variant is bit-exact, but 6 of 90 replayed SampleCloth launches (a few
   `UberCollision`/`UberSolver` launches) differ by ≤ 4 ULP in a handful of
   words, likely another ptxas contraction pattern. Chaotic scenes amplify
   this: SampleCloth scene 7 visibly diverges from native after ~100 frames,

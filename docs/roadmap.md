@@ -50,7 +50,7 @@ before CUDART runs, or patching the game's PhysX runtime to load pxvk's
 
 ## 5. Exactness on NVIDIA
 
-Six of 202 replayed SampleCloth launches differ from native by ≤ 4 ULP,
+Six of 90 replayed SampleCloth launches differ from native by ≤ 4 ULP,
 which makes SampleCloth scene 7 diverge visibly after ~100 frames;
 SampleParticleFluid scenes 2, 3 and 5 also drift slightly. Players will not
 notice, but exact results keep differential testing simple. Starting points

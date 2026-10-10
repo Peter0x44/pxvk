@@ -88,7 +88,12 @@ pxvk's Vulkan device does on Optimus laptops, so images are comparable.
 
 ## Regression check
 
+The PTX corpus is extracted from a PhysX runtime DLL; this needs no NVIDIA
+GPU. The 2.8.0 core from the PhysX System Software contains the same 17
+modules as the SDK samples and Mirror's Edge:
+
 ```powershell
+python tools\extract-physx-ptx.py "C:\Program Files (x86)\NVIDIA Corporation\PhysX\Engine\v2.8.0\PhysXCore.dll" tmp\extracted-ptx
 python tools\check.py --ptx tmp\extracted-ptx --captures <capture dirs> --device nvidia intel
 ```
 
@@ -108,8 +113,8 @@ Expected results on the reference laptop:
 
 ## Testing on another machine
 
-Clone the repository, build, and copy `tmp/extracted-ptx` and the capture
-directories privately (they are proprietary and not in git). Without an
+Clone the repository, build, extract the PTX corpus as above, and copy the
+capture directories privately (they are proprietary and not in git). Without an
 NVIDIA driver, `check.py` skips opcheck and still compiles the corpus and
 replays the captures, which compares the new GPU against the native NVIDIA
 results recorded in them. Pass the device with `--device <name fragment>`.
