@@ -51,7 +51,7 @@ its old PhysX files renamed so it uses the system PhysX instead; see
 [`docs/install.md`](docs/install.md).
 
 The first time a scene uses PhysX it may stutter for a moment while pxvk
-prepares the effects. This is remembered, so later runs are smooth.
+compiles shaders. They are cached, so later runs are smooth.
 
 ## Checking it works and reporting problems
 
