@@ -27,6 +27,7 @@ struct Capabilities {
     bool preserve_nan = false;     // fp32 SignedZeroInfNanPreserve execution mode
     bool subgroup_control = false; // can require a subgroup size of 32
     std::uint32_t subgroup_size = 0;
+    std::uint32_t min_subgroup_size = 0; // smallest size compute may run with (no size control)
     std::uint32_t max_workgroup_invocations = 0;
     std::uint32_t max_workgroup_size[3] = {0, 0, 0};
     std::uint32_t max_workgroup_count[3] = {0, 0, 0};

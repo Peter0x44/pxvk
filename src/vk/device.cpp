@@ -529,6 +529,7 @@ bool Device::initialize(int index, std::string &error)
     }
     vkGetPhysicalDeviceProperties2(d.physical, &props2);
     c.subgroup_size = subgroup_basic.subgroupSize;
+    c.min_subgroup_size = subgroup_ext ? subgroup_props.minSubgroupSize : subgroup_basic.subgroupSize;
     c.native_ftz = float_controls && float_props.shaderDenormFlushToZeroFloat32;
     c.preserve_nan = float_controls && float_props.shaderSignedZeroInfNanPreserveFloat32;
 
@@ -911,6 +912,14 @@ Shader *Device::create_shader(const std::vector<std::uint32_t> &spirv, std::uint
     Impl &d = *impl_;
     if (launch_block_bytes > kLaunchRange) {
         error = "kernel launch block exceeds 4096 bytes";
+        return nullptr;
+    }
+    // Warp-synchronous PTX relies on 32 lanes running in lockstep. Wider
+    // subgroups (64/128 lanes) contain whole warps; narrower ones that cannot
+    // be forced to 32 would silently compute wrong results.
+    if (warp_synchronous && !d.caps.subgroup_control && d.caps.min_subgroup_size < 32) {
+        error = "warp-synchronous kernel needs 32-lane subgroups, device may use " +
+                std::to_string(d.caps.min_subgroup_size);
         return nullptr;
     }
     auto shader = std::make_unique<Shader>();

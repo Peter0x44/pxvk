@@ -141,8 +141,20 @@ CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
   does not use them.
 - On non-NVIDIA GPUs `rcp`/`rsqrt`/`sqrt` differ from NVIDIA hardware by
   1–2 ULP; iterative solvers amplify this into small numerical drift.
-- A few `UberCollision`/`UberSolver` launches still differ from native by
-  ≤ 4 ULP in a handful of words on NVIDIA (likely another ptxas contraction
-  pattern); chaotic scenes drift visibly after many frames.
+- Results are not yet fully 1:1 with native on NVIDIA: every instruction
+  variant is bit-exact, but 6 of 202 replayed SampleCloth launches (a few
+  `UberCollision`/`UberSolver` launches) differ by ≤ 4 ULP in a handful of
+  words, likely another ptxas contraction pattern. Chaotic scenes amplify
+  this: SampleCloth scene 7 visibly diverges from native after ~100 frames,
+  and SampleParticleFluid scenes 2, 3 and 5 drift slightly (native runs are
+  deterministic). The physics stays plausible. Starting points: replay the
+  "ok" cloth captures with `--verbose`, and diff native vs pxvk captures of
+  fluid scene 2 with `tools/capture-diff.py` (its captured launches replay
+  exactly, so the divergence comes from other frames or non-kernel work).
+- Warp-synchronous kernels need 32-lane (or wider) subgroups; on devices
+  that may run narrower subgroups without size control they fail to load.
+- 64-thread `UberSolver` launches (SampleCloth scenes 5 and 9) still pay
+  30-80% of their GPU time for `.ftz` emulation on NVIDIA; frame rates are
+  above native regardless.
 - Streams and events are serialized on one queue; no host-mapped memory,
   arrays, surfaces or graphics interop (unused by the targets).
