@@ -126,6 +126,7 @@ follows ZLUDA's
 It implements the initialize, driver-version, compute-GPU enumeration
 (including `0x36e39e6b`) and GPU id/handle interfaces, and reports one GPU.
 The enumeration, stereo and other two private ids return "no implementation",
-and the game still selects hardware PhysX. The injected `nvcuda.dll` redirects
+and the game still selects hardware PhysX. On machines without a system
+`nvapi.dll`, the injected `nvcuda.dll` redirects
 only `PhysXDevice.dll`'s and `PhysXCore.dll`'s NVAPI loads to it. The game's
 own NVAPI use is unaffected.

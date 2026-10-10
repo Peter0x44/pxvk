@@ -39,17 +39,19 @@ on NVIDIA machines and CPU PhysX elsewhere.
    (`cudart32_65.dll`), pxvk redirects that runtime's request for
    `System32\nvcuda.dll` to itself.
 3. Before it uses CUDA, PhysX (`PhysXDevice.dll`, `PhysXCore.dll`) asks NVAPI
-   whether a PhysX-capable NVIDIA GPU exists. pxvk redirects those NVAPI
-   loads to `pxvk-nvapi.dll`, which reports one GPU. Without this step, a
-   machine without an NVIDIA driver silently falls back to CPU PhysX.
+   whether a PhysX-capable NVIDIA GPU exists. On a machine without an NVIDIA
+   driver, pxvk redirects those NVAPI loads to `pxvk-nvapi.dll`, which
+   reports one GPU. Without this step, the machine silently falls back to
+   CPU PhysX.
 
 Only these loads are redirected, and only in the process started by the
 launcher. Nothing is installed, no system files are changed and no registry
 keys are written. To stop using pxvk, start the application normally.
 
-On a machine with an NVIDIA driver, pxvk still answers PhysX's NVAPI queries
-when `pxvk-launch.exe` starts the application. The application's own NVAPI use
-(driver version, stereo, ...) still goes to the real NVIDIA driver.
+On a machine with an NVIDIA driver (`nvapi.dll` present in
+`C:\Windows\SysWOW64`), PhysX keeps using the real NVAPI and
+`pxvk-nvapi.dll` is not used. The application's own NVAPI use (driver version,
+stereo, ...) is never redirected.
 
 ## Running an application
 

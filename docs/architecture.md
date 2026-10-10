@@ -124,8 +124,10 @@ CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
   `LoadLibraryA/W/ExW` imports of `PhysXDevice.dll` and `PhysXCore.dll` so
   that their `nvapi.dll` loads return `pxvk-nvapi.dll` from the same folder.
   `PhysXDevice` loads NVAPI with `LOAD_LIBRARY_SEARCH_SYSTEM32`, so an
-  application-local `nvapi.dll` is not found. If `pxvk-nvapi.dll` is absent,
-  NVAPI loads are left alone.
+  application-local `nvapi.dll` is not found. The redirect applies only when
+  the system has no `nvapi.dll` (SysWOW64 for this 32-bit process), so with an
+  NVIDIA driver installed PhysX keeps using the real NVAPI. It also does not
+  apply if `pxvk-nvapi.dll` is absent.
 - `nvapi.cpp` (`pxvk-nvapi.dll`): PhysX picks hardware PhysX only if NVAPI
   reports a PhysX-capable GPU. This exports `nvapi_QueryInterface` with the
   eight interfaces ZLUDA implements (initialize/unload, driver version,
