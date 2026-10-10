@@ -242,4 +242,16 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
   30-80% of their GPU time for `.ftz` emulation on NVIDIA; frame rates are
   above native regardless.
 - Streams and events are serialized on one queue; no host-mapped memory,
-  arrays, surfaces or graphics interop (unused by the targets).
+  arrays, surfaces or graphics interop (unused by the targets). The device
+  still reports `CAN_MAP_HOST_MEMORY` like the NVIDIA card it imitates, and
+  `cuMemHostAlloc` accepts `DEVICEMAP` without providing a device pointer.
+- Events are timestamped when `cuEventRecord` is called, not when the GPU
+  reaches them, because work is batched until a synchronization:
+  `cuEventElapsedTime` measures host time. Use `PXVK_PROFILE` for GPU times.
+- Contexts are simplified to what PhysX does (one context per thread at a
+  time): `cuCtxCreate` replaces the current context instead of pushing it,
+  destroying a context clears it only from the calling thread's stack, and
+  `cuCtxSetCurrent(NULL)` clears rather than pops.
+- One process-wide lock covers every driver call, including GPU waits. A
+  thread killed by `ExitProcess` while inside a call leaves it held, so a
+  CUDA call from DLL detach in that state would hang.

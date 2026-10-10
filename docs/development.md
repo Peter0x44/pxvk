@@ -7,8 +7,10 @@ implementation ([`charter.md`](charter.md)).
 
 ## Building
 
-Requires CMake, Ninja, Python 3 and a 32-bit (i686) MinGW toolchain or MSVC
-Win32. Dependencies are fetched during configuration.
+Requires CMake, Ninja, Python 3 and a 32-bit (i686) MinGW-w64 toolchain
+(w64devkit, or a distribution's `i686-w64-mingw32` cross compiler). MSVC is
+not supported: it cannot undecorate the `__stdcall` driver exports the way
+MinGW's `--kill-at` does. Dependencies are fetched during configuration.
 
 ```powershell
 cmake -S . -B build/x86 -G Ninja -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc `

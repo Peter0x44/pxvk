@@ -138,14 +138,16 @@ static int api_log_enabled(void)
     return value;
 }
 
-static unsigned int api_frame(void)
+/* Same prefix as pxvk's API log: the raw PXVK_FRAME (empty when unset) and
+ * the calling thread. */
+static const char *api_frame(char text[32])
 {
-    char text[32];
-    DWORD length = GetEnvironmentVariableA("PXVK_FRAME", text, sizeof(text));
-    return length == 0 || length >= sizeof(text) ? 0u : (unsigned int)strtoul(text, NULL, 10);
+    DWORD length = GetEnvironmentVariableA("PXVK_FRAME", text, 32);
+    if (length == 0 || length >= 32) text[0] = 0;
+    return text;
 }
 
-#define API_LOG(...) do { if (api_log_enabled()) { char api_buffer_[256]; snprintf(api_buffer_, sizeof(api_buffer_), __VA_ARGS__); trace_log("api f=%u %s", api_frame(), api_buffer_); } } while (0)
+#define API_LOG(...) do { if (api_log_enabled()) { char api_buffer_[256], api_frame_[32]; snprintf(api_buffer_, sizeof(api_buffer_), __VA_ARGS__); trace_log("api f=%s t=%lu %s", api_frame(api_frame_), (unsigned long)GetCurrentThreadId(), api_buffer_); } } while (0)
 
 static void trace_log(const char *format, ...)
 {

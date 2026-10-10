@@ -47,7 +47,7 @@ See [`testing.md`](testing.md). pxvk and the native tracer
 | `PXVK_CAPTURE_LAUNCHES` | tracer only | launch ordinals and ranges, e.g. `100-120,500` | Snapshots these launches by ordinal. Use it for applications without the harness, such as games. pxvk itself selects only by frame. |
 | `PXVK_TRACE_DIR` | tracer | folder path | Tracer output folder. Defaults to `%TEMP%\pxvk-nvcuda-trace`. `pxvk-trace.exe --output DIR` sets it. |
 | `PXVK_TRACE_TIMING` | tracer | switch | Logs native per-kernel GPU times, the counterpart of `PXVK_PROFILE`. |
-| `PXVK_API_LOG` | tracer | switch | Same per-call log as in pxvk, written to the trace folder, for sequence comparison. |
+| `PXVK_API_LOG` | tracer | switch | Per-call log in the trace folder with the same `api f=<frame> t=<thread>` prefix as pxvk's, for sequence comparison. Individual messages are close but not identical (the tracer logs what native CUDA was asked, pxvk what it did). |
 
 ## Benchmark harness (`pxvk-harness.dll`)
 
