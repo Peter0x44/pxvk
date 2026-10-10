@@ -30,6 +30,12 @@ bindings and module globals. Capturing needs an NVIDIA GPU; replaying works
 on any Vulkan device.
 `pxvk-replay` re-executes each capture on Vulkan at the original addresses
 and grades the result (EXACT, ok = within 4 ULP / 1e-3 relative, BAD, FAIL).
+Memory is untyped, so tolerances apply only to words that look like floats:
+words with a zero exponent field (integers below 2^23, such as counts,
+indices and flags) must match exactly, and the 1e-4 absolute tolerance is
+not applied between two tiny values (32-bit device pointers read as such).
+A capture that cannot be replayed (corrupt file, compile error) is a FAIL
+and the remaining captures still run.
 
 ```powershell
 cmake -S tools\nvcuda-trace -B build\nvcuda-trace-mingw -G Ninja -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc
@@ -100,7 +106,9 @@ python tools\check.py --ptx tmp\extracted-ptx --captures <capture dirs> --device
 Builds, compiles and validates every kernel of the PTX corpus (with
 `spirv-val` when it is on `PATH`), runs opcheck and replays the captures. On
 NVIDIA exact semantics are required; on other vendors approximation-unit
-differences are tolerated. The reference capture sets on the development
+differences are tolerated. A tool that crashes, exits with an unexpected
+code, or stops before its summary line (and a `--device` that matches no
+device) makes the check fail. The reference capture sets on the development
 machine are `test-output/bench/capture-all/trace/SampleCloth.exe_*` (all nine
 cloth scenes) and `test-output/bench/fluid-capture/trace/SampleParticleFluid.exe_*`.
 
@@ -108,7 +116,7 @@ Expected results on the reference laptop:
 
 | Captures | RTX 3070 | Intel UHD |
 |---|---|---|
-| SampleCloth (90 launches) | 84 EXACT, 6 ok | 28 EXACT, 56 ok, 6 tolerated BAD |
+| SampleCloth (90 launches) | 84 EXACT, 6 ok | 28 EXACT, 55 ok, 7 tolerated BAD |
 | SampleParticleFluid (112 launches) | 112 EXACT | 104 EXACT, 8 ok |
 
 ## lavapipe (no second GPU needed)
@@ -125,7 +133,7 @@ build\x86\pxvk-replay.exe test-output\bench\fluid-capture\trace\SampleParticleFl
 ```
 
 Expected: the same results as on the Intel UHD (fluid 104 EXACT + 8 ok;
-cloth 28 EXACT, 56 ok, 6 tolerated BAD). `pxvk-replay --emulate-warps`
+cloth 28 EXACT, 55 ok, 7 tolerated BAD). `pxvk-replay --emulate-warps`
 forces warp emulation on any device; on NVIDIA the results must stay
 bit-exact. `pxvk-ptxc --emulate-warps --split-heap` compiles the corpus
 with both fallbacks for `spirv-val`.

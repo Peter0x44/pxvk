@@ -200,13 +200,20 @@ int main(int argc, char **argv)
     std::map<unsigned, std::unique_ptr<ModuleCache>> modules;
     int failures = 0, total = 0;
     for (const fs::path &meta : metas) {
-        const unsigned ordinal = static_cast<unsigned>(std::stoul(meta.stem().string().substr(8)));
+        // Any exception (corrupt capture, compile error, allocation failure)
+        // fails this capture only, so the remaining ones are still graded.
+        unsigned ordinal = 0;
+        std::string short_name = meta.filename().string();
+        bool counted = false;
+        try {
+        ordinal = static_cast<unsigned>(std::stoul(meta.stem().string().substr(8)));
         if (!wanted.empty() && std::find(wanted.begin(), wanted.end(), ordinal) == wanted.end()) continue;
         const Capture c = read_meta(meta);
         fs::path base = meta;
         base.replace_extension("");
         ++total;
-        std::string short_name = c.kernel.substr(0, 48);
+        counted = true;
+        short_name = c.kernel.substr(0, 48);
         auto fail = [&](const std::string &why) {
             std::printf("%06u %-48s FAIL %s\n", ordinal, short_name.c_str(), why.c_str());
             ++failures;
@@ -368,6 +375,20 @@ int main(int argc, char **argv)
             if (e == g) continue;
             ++exact_mismatch;
             if (e == o) ++stray; // native left it untouched
+            // Memory images are untyped, and tolerances only make sense for
+            // floats. Words with a zero exponent field are integers below
+            // 2^23 (counts, indices, flags) or denormals, which PhysX's .ftz
+            // arithmetic never produces: they must match exactly, or an
+            // integer that is off by one would pass as "1 ULP". Signed zeros
+            // are the exception.
+            const auto exponent = [](std::uint32_t v) { return (v >> 23) & 0xffu; };
+            const auto is_zero = [](std::uint32_t v) { return (v & 0x7fffffffu) == 0; };
+            const bool zeros = is_zero(e) && is_zero(g);
+            if (!zeros && ((exponent(e) == 0 && !is_zero(e)) || (exponent(g) == 0 && !is_zero(g)))) {
+                ++wrong;
+                if (wrong_addresses.size() < 6) wrong_addresses.push_back(static_cast<std::uint32_t>(lo + w));
+                continue;
+            }
             const int ulp = ulp_distance(e, g);
             float fe, fg;
             std::memcpy(&fe, &e, 4);
@@ -382,7 +403,15 @@ int main(int argc, char **argv)
             if (ulp <= 4) {
                 ++close;
                 max_ulp = std::max(max_ulp, ulp);
-            } else if (std::isfinite(fe) && std::isfinite(fg) && (rel <= 1e-3 || std::fabs(double(fe) - double(fg)) <= 1e-4)) {
+            } else if (std::isfinite(fe) && std::isfinite(fg) &&
+                       (rel <= 1e-3 ||
+                        // Absolute closeness for float-sized values, and for
+                        // a tiny float against exact zero (solver values
+                        // converging to 0). Not between two tiny nonzero
+                        // values: 32-bit pointers read as such floats, and
+                        // any difference between them is below 1e-4.
+                        (std::fabs(double(fe) - double(fg)) <= 1e-4 &&
+                         ((exponent(e) >= 0x60u && exponent(g) >= 0x60u) || is_zero(e) || is_zero(g))))) {
                 ++near;
                 max_rel = std::max(max_rel, rel);
             } else {
@@ -430,6 +459,12 @@ int main(int argc, char **argv)
             }
         }
         std::fflush(stdout);
+        } catch (const std::exception &e) {
+            if (!counted) ++total;
+            ++failures;
+            std::printf("%06u %-48s FAIL %s\n", ordinal, short_name.c_str(), e.what());
+            std::fflush(stdout);
+        }
     }
     if (total == 0) {
         std::fprintf(stderr, "none of the requested capture ordinals exist in %s\n", dir.string().c_str());

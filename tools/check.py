@@ -40,6 +40,8 @@ def main():
     parser.add_argument("--no-opcheck", action="store_true")
     parser.add_argument("--no-build", action="store_true")
     args = parser.parse_args()
+    if not args.device:
+        args.device = [""]  # a bare --device means the default device, not none
     build = Path(args.build)
     failures = []
 
@@ -68,10 +70,17 @@ def main():
                 target.mkdir()
                 r = subprocess.run([str(build / "pxvk-ptxc.exe"), "-o", str(target), str(module)],
                                    capture_output=True, text=True)
-                for line in r.stdout.splitlines():
-                    if line.startswith("FAIL"):
-                        failures.append(f"{module.name}: {line}")
-                        print(f"  {module.name}: {line}")
+                fail_lines = [line for line in r.stdout.splitlines() if line.startswith("FAIL")]
+                for line in fail_lines:
+                    failures.append(f"{module.name}: {line}")
+                    print(f"  {module.name}: {line}")
+                # pxvk-ptxc returns 1 when an entry failed (reported above);
+                # anything else non-zero, or 1 without a FAIL line, is a parse
+                # error or a crash.
+                if r.returncode not in (0, 1) or (r.returncode == 1 and not fail_lines):
+                    reason = r.stderr.strip() or f"exit code {r.returncode}"
+                    failures.append(f"{module.name}: pxvk-ptxc failed: {reason}")
+                    print(f"  {module.name}: pxvk-ptxc failed: {reason}")
                 for spv in target.glob("*.spv"):
                     compiled += 1
                     if spirv_val and subprocess.run([spirv_val, "--target-env", "vulkan1.1", str(spv)],
@@ -89,6 +98,13 @@ def main():
             if "native CUDA unavailable" in r.stderr:
                 print("  skipped: no native CUDA driver")
                 break
+            # 0: all exact, 1: some variants differ (graded below); anything
+            # else is a setup error (e.g. no such Vulkan device) or a crash.
+            if r.returncode not in (0, 1) or not r.stdout:
+                reason = r.stderr.strip() or f"exit code {r.returncode}"
+                print(f"  {device or 'default'}: pxvk-opcheck failed: {reason}")
+                failures.append(f"opcheck {device}: {reason}")
+                continue
             differing = [l for l in r.stdout.splitlines() if "mismatches" in l or "failed" in l]
             # div.rn (unused by PhysX) is not correctly rounded in Vulkan. On
             # non-NVIDIA hardware the approximation units (rcp/rsqrt/sqrt and
@@ -111,6 +127,11 @@ def main():
                     print("  " + l)
                 failures.append(f"replay {capture} {device}: could not run")
                 continue
+            # A replay that stops early (crash, uncaught exception) has graded
+            # only part of the captures: require its final summary line.
+            if r.returncode not in (0, 1) or not lines[-1].endswith("captures failed"):
+                print(f"  replay ended early (exit code {r.returncode}): {r.stderr.strip()}")
+                failures.append(f"replay {capture} {device}: ended early (exit code {r.returncode})")
             graded = [l.split()[2] for l in lines if len(l.split()) > 2 and l.split()[2] in ("EXACT", "ok", "BAD", "FAIL")]
             print("  " + (lines[0] if lines else "no output"))
             print("  " + ", ".join(f"{g}={graded.count(g)}" for g in ("EXACT", "ok", "BAD", "FAIL")))
