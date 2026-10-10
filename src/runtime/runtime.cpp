@@ -288,6 +288,29 @@ CUresult require(State &s)
 }
 
 // ---- device memory ---------------------------------------------------------------
+// Returns [start, start + size) to the free list, merging it with adjacent
+// free blocks; space that reaches the top of the heap lowers heap_end
+// instead, so later bump allocations can use it.
+void add_free(State &s, std::uint32_t start, std::uint32_t size)
+{
+    auto next = s.free_blocks.find(start + size);
+    if (next != s.free_blocks.end()) {
+        size += next->second;
+        s.free_blocks.erase(next);
+    }
+    auto prev = s.free_blocks.lower_bound(start);
+    if (prev != s.free_blocks.begin()) {
+        --prev;
+        if (prev->first + prev->second == start) {
+            start = prev->first;
+            size += prev->second;
+            s.free_blocks.erase(prev);
+        }
+    }
+    if (std::uint64_t(start) + size == s.heap_end) s.heap_end = start;
+    else s.free_blocks[start] = size;
+}
+
 CUresult allocate(State &s, std::size_t requested, std::uint32_t alignment, std::uint32_t &address)
 {
     const std::uint64_t size = (std::uint64_t(requested) + kAllocationAlignment - 1) & ~std::uint64_t(kAllocationAlignment - 1);
@@ -310,8 +333,9 @@ CUresult allocate(State &s, std::size_t requested, std::uint32_t alignment, std:
     if (start + size > s.heap_limit) return CUDA_ERROR_OUT_OF_MEMORY;
     std::string error;
     if (!s.device.ensure_heap(start + size, error)) return failure(s, "heap", error, CUDA_ERROR_OUT_OF_MEMORY);
-    if (start > s.heap_end) s.free_blocks[s.heap_end] = static_cast<std::uint32_t>(start - s.heap_end);
+    const std::uint32_t gap_start = s.heap_end;
     s.heap_end = static_cast<std::uint32_t>(start + size);
+    if (start > gap_start) add_free(s, gap_start, static_cast<std::uint32_t>(start - gap_start));
     address = static_cast<std::uint32_t>(start);
     s.used[address] = static_cast<std::uint32_t>(size);
     return CUDA_SUCCESS;
@@ -321,23 +345,9 @@ bool release(State &s, std::uint32_t address)
 {
     const auto found = s.used.find(address);
     if (found == s.used.end()) return false;
-    std::uint32_t start = found->first, size = found->second;
+    const std::uint32_t start = found->first, size = found->second;
     s.used.erase(found);
-    auto next = s.free_blocks.find(start + size);
-    if (next != s.free_blocks.end()) {
-        size += next->second;
-        s.free_blocks.erase(next);
-    }
-    auto prev = s.free_blocks.lower_bound(start);
-    if (prev != s.free_blocks.begin()) {
-        --prev;
-        if (prev->first + prev->second == start) {
-            start = prev->first;
-            size += prev->second;
-            s.free_blocks.erase(prev);
-        }
-    }
-    s.free_blocks[start] = size;
+    add_free(s, start, size);
     return true;
 }
 
