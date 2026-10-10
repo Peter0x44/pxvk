@@ -122,6 +122,16 @@ private:
                 while (pos_ < src_.size() &&
                        (std::isdigit(static_cast<unsigned char>(src_[pos_])) || src_[pos_] == '.'))
                     ++pos_;
+                // decimal exponent: 1.5e3, 2E-4
+                std::size_t e = pos_;
+                if (e < src_.size() && (src_[e] == 'e' || src_[e] == 'E')) {
+                    ++e;
+                    if (e < src_.size() && (src_[e] == '+' || src_[e] == '-')) ++e;
+                    if (e < src_.size() && std::isdigit(static_cast<unsigned char>(src_[e]))) {
+                        while (e < src_.size() && std::isdigit(static_cast<unsigned char>(src_[e]))) ++e;
+                        pos_ = e;
+                    }
+                }
             }
             if (pos_ < src_.size() && (src_[pos_] == 'U' || src_[pos_] == 'u')) ++pos_;
             t.kind = Token::Kind::number;
@@ -204,7 +214,9 @@ public:
             } else if (d == "address_size") {
                 next();
                 m.address_size = std::stoi(expect_kind(Token::Kind::number).text);
-            } else if (d == "file" || d == "loc" || d == "section" || d == "pragma") {
+            } else if (d == "section") {
+                skip_section();
+            } else if (d == "file" || d == "loc" || d == "pragma") {
                 skip_line();
             } else {
                 module_declaration(m);
@@ -264,6 +276,22 @@ private:
     {
         const int line = peek().line;
         while (!at_end() && peek().line == line) next();
+    }
+
+    // Skips a .section directive, including a multi-line { ... } body such as
+    // nvcc's DWARF sections.
+    void skip_section()
+    {
+        const int line = peek().line;
+        int depth = 0;
+        while (!at_end() && (depth > 0 || peek().line == line)) {
+            if (is_punct("{")) ++depth;
+            else if (is_punct("}") && --depth == 0) {
+                next();
+                break;
+            }
+            next();
+        }
     }
 
     static std::uint64_t parse_uint(const std::string &text)
@@ -362,6 +390,14 @@ private:
         if (accept("=")) {
             v.has_init = true;
             initializer(v);
+            // name[] = {...}: the omitted dimension comes from the initializer.
+            std::uint64_t known = v.element_bytes();
+            std::uint64_t *unsized = nullptr;
+            for (std::uint64_t &d : v.dims) {
+                if (d == 0 && !unsized) unsized = &d;
+                else known *= d;
+            }
+            if (unsized && known) *unsized = (v.init.size() + known - 1) / known;
         }
         expect(";");
         return v;
@@ -377,12 +413,32 @@ private:
         auto value = [&]() {
             const bool negative = accept("-");
             const std::string text = expect_kind(Token::Kind::number).text;
+            const bool is_float = v.type.kind == 'f';
+            const std::uint64_t sign = width == 8 ? 1ull << 63 : width == 4 ? 1ull << 31 : 1ull << 15;
             std::uint64_t bits = 0;
-            if (text.size() > 2 && (text[1] == 'f' || text[1] == 'F' || text[1] == 'd' || text[1] == 'D'))
+            if (text.size() > 2 && (text[1] == 'f' || text[1] == 'F' || text[1] == 'd' || text[1] == 'D')) {
+                // Hex float: exact bit pattern; negation flips the sign bit.
                 bits = std::stoull(text.substr(2), nullptr, 16);
-            else
+                if (negative) bits ^= sign;
+            } else if (is_float && text.find_first_of(".eE") != std::string::npos &&
+                       text.compare(0, 2, "0x") != 0 && text.compare(0, 2, "0X") != 0) {
+                // Decimal float literal, converted to the variable's width.
+                double d = std::stod(text);
+                if (negative) d = -d;
+                if (width == 8) {
+                    std::memcpy(&bits, &d, 8);
+                } else if (width == 4) {
+                    const float f = static_cast<float>(d);
+                    std::uint32_t u;
+                    std::memcpy(&u, &f, 4);
+                    bits = u;
+                } else {
+                    fail("unsupported .f16 initializer");
+                }
+            } else {
                 bits = parse_uint(text);
-            if (negative) bits = static_cast<std::uint64_t>(-static_cast<std::int64_t>(bits));
+                if (negative) bits = static_cast<std::uint64_t>(-static_cast<std::int64_t>(bits));
+            }
             append(bits);
         };
         int depth = 0;
@@ -421,6 +477,13 @@ private:
             } else break;
         }
         p.type = type_directive();
+        if (accept_directive("ptr")) {
+            // .param .u32 .ptr.global.align 16 name: no layout information
+            while (peek().kind == Token::Kind::directive) {
+                if (accept_directive("align")) number_value();
+                else next();
+            }
+        }
         p.name = expect_kind(Token::Kind::ident).text;
         if (accept("[")) {
             p.array = number_value();

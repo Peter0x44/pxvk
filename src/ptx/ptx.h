@@ -1,8 +1,9 @@
 // PTX abstract syntax tree and parser for the classic PhysX PTX dialect
 // (PTX ISA 1.x-4.x, 32-bit addressing). The parser is deliberately
 // permissive about which instructions appear: semantic checking happens when
-// an entry is compiled, so unsupported code in unlaunched kernels never
-// prevents a module from loading.
+// an entry is compiled, so unsupported instructions in unlaunched kernels do
+// not prevent a module from loading. Unknown syntax (calls, body-level
+// .param, dual-destination setp) still fails the whole module.
 #pragma once
 
 #include <cstdint>

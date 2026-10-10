@@ -56,6 +56,7 @@ std::string lz4_block(const unsigned char *src, std::size_t size, std::size_t ex
             if (pos >= size) throw std::runtime_error("truncated LZ4 length");
             extension = src[pos++];
             base += extension;
+            if (base > expected) throw std::runtime_error("invalid LZ4 length");
         }
         return base;
     };
@@ -100,14 +101,16 @@ std::vector<PtxPayload> extract_ptx(const void *data, std::size_t size)
     Header header;
     std::memcpy(&header, bytes, sizeof(header));
     std::vector<PtxPayload> out;
-    std::size_t offset = header.header_size;
+    // Header fields are untrusted 32-bit values and size_t is 32 bits in the
+    // x86 runtime: do the bounds arithmetic in 64 bits so it cannot wrap.
+    std::uint64_t offset = header.header_size;
     while (offset + sizeof(FileHeader) <= total) {
         FileHeader file;
         std::memcpy(&file, bytes + offset, sizeof(file));
         const bool cuda4 = file.version == kFileVersionCuda4;
         if (cuda4) file.compressed_size = 0, file.flags = 0;
-        const std::size_t stored = std::max(file.payload_size, file.compressed_size);
-        const std::size_t payload = offset + file.header_size;
+        const std::uint64_t stored = std::max<std::uint64_t>(file.payload_size, file.compressed_size);
+        const std::uint64_t payload = offset + file.header_size;
         if ((file.version != kFileVersion && !cuda4) || file.header_size < sizeof(FileHeader) ||
             payload + stored > total)
             throw std::runtime_error("invalid fatbin file header");
@@ -118,10 +121,11 @@ std::vector<PtxPayload> extract_ptx(const void *data, std::size_t size)
             if (file.flags & kFlagLz4) {
                 if (file.uncompressed_size > kMaxBytes || file.compressed_size > stored)
                     throw std::runtime_error("invalid compressed PTX size");
-                ptx.text = lz4_block(bytes + payload, file.compressed_size,
+                ptx.text = lz4_block(bytes + payload, static_cast<std::size_t>(file.compressed_size),
                                      static_cast<std::size_t>(file.uncompressed_size));
             } else {
-                ptx.text.assign(reinterpret_cast<const char *>(bytes + payload), file.payload_size);
+                ptx.text.assign(reinterpret_cast<const char *>(bytes + payload),
+                                static_cast<std::size_t>(file.payload_size));
             }
             while (!ptx.text.empty() && ptx.text.back() == '\0') ptx.text.pop_back();
             if (ptx.text.empty()) throw std::runtime_error("empty PTX payload");

@@ -21,7 +21,10 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
 - `fatbin.cpp` decodes classic fatbin containers (raw or LZ4 PTX payloads).
 - `parser.cpp` parses PTX into an AST. Parsing is permissive about which
   instructions appear; checks happen when an entry is compiled, so
-  unsupported code in unlaunched kernels never blocks module loading.
+  unsupported instructions in unlaunched kernels do not block module
+  loading. Syntax the parser does not know (function calls with
+  parenthesised arguments, body-level `.param`, dual-destination `setp`)
+  still fails the whole module; classic PhysX PTX uses none of it.
 - `cfg.cpp` builds basic blocks and structurizes the CFG with the dominator
   tree algorithm from Ramsey's "Beyond Relooper": loop headers become loop
   constructs, merge nodes become the continuation of a block construct.
@@ -40,10 +43,10 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     such adds, preferring the first source operand; everything else is
     `NoContraction`. This was verified against the NVIDIA JIT with
     `pxvk-opcheck` and is what makes results bit-exact with native.
-  - `div.full`/`div.approx` are `a * rcp(b)` with the hardware's operand
-    scaling; `min`/`max` use `NMin`/`NMax`; `cvt` to integer saturates and
-    maps NaN to 0; `SignedZeroInfNanPreserve` is requested so unordered
-    comparisons work on all drivers.
+  - `div.approx` is `a * rcp(b)`, and `div.full` adds the hardware's
+    operand scaling for |b| > 2^126; `min`/`max` use `NMin`/`NMax`; `cvt`
+    to integer saturates and maps NaN to 0; `SignedZeroInfNanPreserve` is
+    requested so unordered comparisons work on all drivers.
   - `.ftz` uses the Vulkan float-controls execution mode where available
     (Intel). NVIDIA's Vulkan driver supports neither flushing nor preserving
     fp32 denormals, and in practice preserves them, so `.ftz` is emulated by
