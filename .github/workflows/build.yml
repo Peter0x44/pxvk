@@ -10,35 +10,36 @@ on:
 
 jobs:
   windows-x86:
-    # Newest image (ubuntu-latest moves to 26.04 only in November 2026).
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
+    # Arch Linux for a current MinGW GCC (Ubuntu's, even in 26.04, is GCC 13).
+    container: archlinux:latest
     steps:
-      - uses: actions/checkout@v4
-
-      # i686-w64-mingw32 with the posix thread model and msvcrt, like
-      # w64devkit. Every target links with -static (CMakeLists.txt), so the
-      # binaries import only Windows system DLLs; package.py enforces that.
+      # i686-w64-mingw32 with the posix thread model, like w64devkit. Every
+      # target links with -static (CMakeLists.txt), so the binaries import
+      # only Windows system DLLs; package.py enforces that.
       - name: Install toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends g++-mingw-w64-i686-posix gcc-mingw-w64-i686-posix ninja-build
-          i686-w64-mingw32-g++-posix --version | head -1
+          pacman -Syu --noconfirm --needed git cmake ninja python mingw-w64-gcc
+          i686-w64-mingw32-g++ --version | head -1
+
+      - uses: actions/checkout@v4
 
       - name: Configure
         run: >-
           cmake -S . -B build/x86 -G Ninja -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_PROCESSOR=x86
-          -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc-posix
-          -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++-posix
+          -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc
+          -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++
 
       - name: Build
         run: cmake --build build/x86
 
       - name: Package
         id: package
+        shell: bash
         run: |
           name="pxvk-${GITHUB_SHA::7}"
-          python3 tools/package.py --build build/x86 --out dist --name "$name"
+          python tools/package.py --build build/x86 --out dist --name "$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
       # The artifact is the package folder; GitHub serves it as a zip.
