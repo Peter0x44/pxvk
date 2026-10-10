@@ -24,7 +24,7 @@ jobs:
           i686-w64-mingw32-g++ --version | head -1
           i686-w64-mingw32-g++ -v 2>&1 | grep -E "Thread model|with-default-msvcrt" || true
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure
         run: >-
@@ -45,7 +45,7 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
       # The artifact is the package folder; GitHub serves it as a zip.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.package.outputs.name }}
           path: dist/${{ steps.package.outputs.name }}/
