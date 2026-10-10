@@ -20,7 +20,9 @@ Installed by default at `C:\GOG Games\Mirror's Edge`. The tester version of
 these steps, with the required pxvk files and how to check the log, is in
 [`install.md`](install.md).
 
-1. Install the legacy **NVIDIA PhysX System Software** (9.x). It provides the
+1. Install the
+   **[NVIDIA PhysX System Software](https://www.nvidia.com/en-us/drivers/physx/physx-9-26-0703-driver/)**
+   (9.x; not the separate "Legacy" package, which stops at PhysX 2.7). It provides the
    PhysX 2.8 runtime under `Program Files (x86)\NVIDIA Corporation\PhysX`.
    The installer also works without an NVIDIA GPU.
 2. Make the game use that runtime instead of its own obsolete copy, which

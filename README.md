@@ -26,8 +26,11 @@ for now you get the files from the developer, or build them yourself
 ## What you need
 
 - Windows 10 or 11 with an up-to-date graphics driver (AMD, Intel or NVIDIA).
-- The legacy **NVIDIA PhysX System Software** (version 9.x). It installs on
-  any PC, including ones without NVIDIA graphics.
+- **[NVIDIA PhysX System Software](https://www.nvidia.com/en-us/drivers/physx/physx-9-26-0703-driver/)**
+  (9.26.0703 or another 9.x version). It installs on any PC, including ones
+  without NVIDIA graphics. Don't use NVIDIA's separate "PhysX Legacy System
+  Software" download instead: that one only covers games older than PhysX
+  2.8.
 - The three pxvk files, kept together in one folder, for example `C:\pxvk`:
   `pxvk-launch.exe`, `nvcuda.dll` and `pxvk-nvapi.dll`.
 

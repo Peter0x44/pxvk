@@ -9,8 +9,10 @@ driver (AMD, Intel or NVIDIA), and an NVIDIA driver is not required.
 - **Windows 10/11** with a current GPU driver. The application is 32-bit, so
   it uses the GPU driver's 32-bit Vulkan driver. All current AMD, Intel and
   NVIDIA Windows drivers install one.
-- **The legacy NVIDIA PhysX System Software** (version 9.x, for example
-  9.23.1019). It installs the PhysX 2.8 runtime into
+- **[NVIDIA PhysX System Software](https://www.nvidia.com/en-us/drivers/physx/physx-9-26-0703-driver/)**
+  (version 9.x, for example 9.26.0703). Not the separate "PhysX Legacy
+  System Software" download, which only provides PhysX 2.7 and older. It
+  installs the PhysX 2.8 runtime into
   `C:\Program Files (x86)\NVIDIA Corporation\PhysX` and registers it.
   pxvk does not replace this runtime. It provides the CUDA driver that the
   runtime uses. The installer also works on machines without an NVIDIA GPU.
