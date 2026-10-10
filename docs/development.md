@@ -20,6 +20,16 @@ cmake --build build/x86
 `nvcuda.dll`, `pxvk-nvapi.dll`), which depend only on Windows system DLLs,
 and the developer tools below.
 
+`python tools/package.py` turns a build into the tester package
+(`dist/pxvk-<commit>/` and `.zip`): the runtime files, the tester guide
+(`docs/install.md` as `README.md`), `environment.md`, `mirrors-edge.md` and
+`run-mirrors-edge.cmd`. It refuses binaries that import non-system DLLs.
+
+CI (`.github/workflows/build.yml`) builds every push and pull request with
+MSYS2's 32-bit MinGW toolchain and uploads that package as the
+`pxvk-<commit>` artifact on the run's page. CI has no GPU, so it does not
+run the GPU tests.
+
 ## Documentation
 
 | Document | Contents |
@@ -43,6 +53,7 @@ and the developer tools below.
 | `pxvk-run`, `pxvk-harness.dll` | deterministic runs of the GLUT SDK samples (used by `bench.py`) |
 | `tools/nvcuda-trace` | native CUDA proxy that logs calls and captures launches (separate CMake project) |
 | `tools/check.py` | regression check: corpus, opcheck, replays |
+| `tools/package.py` | build the tester package (`dist/pxvk-<commit>.zip`) |
 | `tools/bench.py` | native/pxvk sample runs, frame rates and image comparison |
 | `tools/capture-diff.py` | find the first diverging launch between native and pxvk captures |
 | `tools/extract-physx-ptx.py` | extract the PTX corpus from a PhysX DLL |

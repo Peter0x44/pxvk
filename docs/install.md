@@ -153,6 +153,10 @@ $env:PXVK_LOG = "C:\temp\pxvk.log"
 C:\pxvk\pxvk-launch.exe "C:\GOG Games\Mirror's Edge\Binaries\MirrorsEdge.exe"
 ```
 
+The release package also contains `run-mirrors-edge.cmd`, which does the same
+for the default GOG path and writes `pxvk.log` next to it. Edit the path in
+it if the game is installed elsewhere.
+
 Start it this way, not through GOG Galaxy. The log should show the context,
 17 module loads and a 32 MiB allocation at startup. Kernel launches start once
 a level with PhysX effects is loaded. Smoke and steam appear in most outdoor

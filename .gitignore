@@ -17,3 +17,4 @@ temp/
 # Generated build trees
 /build/
 /test-output/
+/dist/
