@@ -216,6 +216,19 @@ struct Device::Impl {
         vkCmdPipelineBarrier(cmd, stages, stages, 0, 1, &b, 0, nullptr, 0, nullptr);
     }
 
+    // After a failed submission the batch is lost: start the next one from
+    // empty rings (otherwise the next staging allocation can run past the
+    // end of the mapped staging buffer). The command pool is reset when the
+    // batch never reached the GPU, so begin() can record into it again.
+    void abandon_batch(bool reset_pool)
+    {
+        if (reset_pool) vkResetCommandPool(device, pool, 0);
+        staging_head = 0;
+        launch_head = 0;
+        timed = 0;
+        timed_labels.clear();
+    }
+
     bool submit_and_wait(std::string &error)
     {
         if (!recording) return true;
@@ -233,6 +246,7 @@ struct Device::Impl {
         VkResult r = vkQueueSubmit(queue, 1, &submit, fence);
         if (r != VK_SUCCESS) {
             error = vk_error("vkQueueSubmit", r);
+            abandon_batch(true);
             return false;
         }
         ++stats.submits;
@@ -243,7 +257,10 @@ struct Device::Impl {
         QueryPerformanceFrequency(&frequency);
         stats.wait_ms += double(wait_end.QuadPart - wait_start.QuadPart) * 1000.0 / double(frequency.QuadPart);
         if (r != VK_SUCCESS) {
+            // The device is lost; the work may still be pending, so the pool
+            // is not reset, but nothing will write the rings any more.
             error = vk_error("vkWaitForFences", r);
+            abandon_batch(false);
             return false;
         }
         vkResetFences(device, 1, &fence);
@@ -1043,13 +1060,20 @@ bool Device::dispatch(Shader *shader, const DispatchShape &shape, const void *la
         const std::uint64_t groups = std::uint64_t(shape.grid[0]) * shape.grid[1] * shape.grid[2];
         const std::uint64_t needed = groups * d.shared_words(*shader, shape.shared_bytes) * 4;
         if (needed > d.scratch.size) {
-            if (!d.submit_and_wait(error)) return false;
-            VkDeviceSize size = d.scratch.size;
+            VkDeviceSize size = std::max<VkDeviceSize>(d.scratch.size, 64u << 10);
             while (size < needed) size *= 2;
-            d.destroy(d.scratch);
-            if (!d.create_buffer(size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
-                                 d.scratch, error))
+            if (size > d.limits.maxStorageBufferRange) {
+                error = "storage-backed shared memory exceeds maxStorageBufferRange";
                 return false;
+            }
+            if (!d.submit_and_wait(error)) return false;
+            // Create the new buffer first: on failure the old one stays valid.
+            Buffer grown;
+            if (!d.create_buffer(size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
+                                 grown, error))
+                return false;
+            d.destroy(d.scratch);
+            d.scratch = grown;
             d.update_descriptors();
         }
     } else if (shape.shared_bytes > d.caps.max_shared_bytes) {
