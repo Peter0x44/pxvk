@@ -327,6 +327,44 @@ private:
         return !(in.has("rn") || in.has("rz") || in.has("rm") || in.has("rp"));
     }
 
+    // Basic-block index of every instruction as ptxas sees it when it
+    // contracts: dead instructions are removed first, so a branch that only
+    // skipped dead code disappears and does not split the block.
+    std::map<const Instruction *, int> contraction_blocks(
+        const std::map<std::string, std::vector<std::pair<const Instruction *, int>>> &uses) const
+    {
+        auto dead = [&](const Instruction &in) {
+            static const std::set<std::string> effects = {"st", "red", "atom", "bar", "membar", "bra",
+                                                          "call", "ret", "exit", "trap", "brkpt"};
+            if (effects.count(in.op) || in.operands.empty() || in.operands[0].kind != Operand::Kind::reg) return false;
+            const auto found = uses.find(in.operands[0].name);
+            return found == uses.end() || found->second.empty();
+        };
+        std::vector<const Statement *> live;
+        for (const Statement &s : f_.body)
+            if (s.is_label || !dead(s.inst)) live.push_back(&s);
+        std::set<const Statement *> joined; // empty branches and their labels
+        for (std::size_t i = 0; i + 1 < live.size(); ++i) {
+            const Statement &s = *live[i], &next = *live[i + 1];
+            if (!s.is_label && s.inst.op == "bra" && !s.inst.operands.empty() && next.is_label &&
+                s.inst.operands[0].name == next.label) {
+                joined.insert(&s);
+                joined.insert(&next);
+            }
+        }
+        std::map<const Instruction *, int> block_of;
+        int block = 0;
+        for (const Statement &s : f_.body) {
+            if (s.is_label) {
+                if (!joined.count(&s)) ++block;
+                continue;
+            }
+            block_of[&s.inst] = block;
+            if (!joined.count(&s) && (s.inst.op == "bra" || s.inst.op == "ret" || s.inst.op == "exit")) ++block;
+        }
+        return block_of;
+    }
+
     void plan_contractions()
     {
         std::map<std::string, int> defs;
@@ -352,6 +390,7 @@ private:
             }
             if (!in.guard.empty()) uses[in.guard].push_back({&in, -1});
         }
+        const std::map<const Instruction *, int> block_of = contraction_blocks(uses);
         // Product registers that can be folded into adds: the mul result
         // itself, or the result of a neg applied to it (ptxas folds that too).
         std::map<std::string, Fusion> candidates;
@@ -360,7 +399,7 @@ private:
             if (list.empty() || defs[reg] != 1) return false;
             for (const auto &[user, index] : list) {
                 if ((user->op != "add" && user->op != "sub") || !contractible(*user) || index < 1 ||
-                    user->has("ftz") != mul.has("ftz") ||
+                    block_of.at(user) != block_of.at(&mul) || user->has("ftz") != mul.has("ftz") ||
                     (user->operands[1].kind == Operand::Kind::reg && user->operands[2].kind == Operand::Kind::reg &&
                      user->operands[1].name == user->operands[2].name))
                     return false;
@@ -391,6 +430,10 @@ private:
                      user->operands[1].name == user->operands[2].name))
                     ok = false;
             }
+            // ptxas contracts within a basic block only: a product with a
+            // use in another block stays a separate multiply for every use.
+            for (const auto &[user, index] : list)
+                if (block_of.at(user) != block_of.at(&mul)) ok = false;
             if (!ok) continue;
             candidates[product] = {&mul, 0, false};
             for (const std::string &n : negations) candidates[n] = {&mul, 0, true};

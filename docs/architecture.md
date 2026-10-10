@@ -40,9 +40,12 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     provenance (PhysX only forms generic pointers to global memory).
   - FMA contraction mirrors ptxas: a `mul` without rounding modifier is fused
     into every `add`/`sub` (optionally through a `neg`) when all its uses are
-    such adds, preferring the first source operand; everything else is
-    `NoContraction`. This was verified against the NVIDIA JIT with
-    `pxvk-opcheck` and is what makes results bit-exact with native.
+    such adds in the mul's own basic block, preferring the first source
+    operand; everything else is `NoContraction`. Blocks are counted after
+    dead code is removed, so a branch over only dead instructions does not
+    split one. This was verified against the NVIDIA JIT with `pxvk-opcheck`
+    (including branch variants) and the UberCollision captures, and is what
+    makes results bit-exact with native.
   - `div.approx` is `a * rcp(b)`, and `div.full` adds the hardware's
     operand scaling for |b| > 2^126; `min`/`max` use `NMin`/`NMax`; `cvt`
     to integer saturates and maps NaN to 0; `SignedZeroInfNanPreserve` is
@@ -226,13 +229,16 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
 - On non-NVIDIA GPUs `rcp`/`rsqrt`/`sqrt` differ from NVIDIA hardware by
   1–2 ULP; iterative solvers amplify this into small numerical drift.
 - Results are not yet fully 1:1 with native on NVIDIA: every instruction
-  variant is bit-exact, but 6 of 90 replayed SampleCloth launches (a few
-  `UberCollision`/`UberSolver` launches) differ by ≤ 4 ULP in a handful of
-  words, likely another ptxas contraction pattern. Chaotic scenes amplify
+  variant is bit-exact, but 2 of 90 replayed SampleCloth launches
+  (`UberSolver`, scene 5) differ by ≤ 4 ULP in some words. These kernels
+  use no atomics; the cause is ptxas leaving some products unfused for
+  reasons no structural rule found so far explains (in one x/y/z triple
+  of identical `sub`s it fuses x and y but not z, which accounts for about
+  a fifth of the difference). Chaotic scenes amplify
   this: SampleCloth scene 7 visibly diverges from native after ~100 frames,
   and SampleParticleFluid scenes 2, 3 and 5 drift slightly (native runs are
   deterministic). The physics stays plausible. Starting points: replay the
-  "ok" cloth captures with `--verbose`, and diff native vs pxvk captures of
+  "ok" cloth captures (launches 6643 and 6646), and diff native vs pxvk captures of
   fluid scene 2 with `tools/capture-diff.py` (its captured launches replay
   exactly, so the divergence comes from other frames or non-kernel work).
 - Warp emulation and the split heap are slower than the normal paths (two

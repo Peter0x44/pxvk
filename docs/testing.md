@@ -116,7 +116,7 @@ Expected results on the reference laptop:
 
 | Captures | RTX 3070 | Intel UHD |
 |---|---|---|
-| SampleCloth (90 launches) | 84 EXACT, 6 ok | 28 EXACT, 55 ok, 7 tolerated BAD |
+| SampleCloth (90 launches) | 88 EXACT, 2 ok | 28 EXACT, 55 ok, 7 tolerated BAD |
 | SampleParticleFluid (112 launches) | 112 EXACT | 104 EXACT, 8 ok |
 
 ## lavapipe (no second GPU needed)
