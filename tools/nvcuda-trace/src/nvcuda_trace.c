@@ -119,10 +119,22 @@ static void append_log_unlocked(const char *message, size_t length)
 
 static void trace_log(const char *format, ...);
 
+/* A switch is on when set to anything but empty, 0, off, false or no
+   (docs/environment.md). */
+static int env_flag(const char *name)
+{
+    char value[16];
+    DWORD length = GetEnvironmentVariableA(name, value, sizeof(value));
+    if (length == 0) return 0;
+    if (length >= sizeof(value)) return 1;
+    return _stricmp(value, "0") != 0 && _stricmp(value, "off") != 0 && _stricmp(value, "false") != 0 &&
+           _stricmp(value, "no") != 0;
+}
+
 static int api_log_enabled(void)
 {
     static int value = -1;
-    if (value < 0) value = GetEnvironmentVariableA("PXVK_API_LOG", NULL, 0) != 0;
+    if (value < 0) value = env_flag("PXVK_API_LOG");
     return value;
 }
 
@@ -837,7 +849,7 @@ static unsigned long long g_timed_launches;
 static int timing_enabled(void)
 {
     static int value = -1;
-    if (value < 0) value = GetEnvironmentVariableA("PXVK_TRACE_TIMING", NULL, 0) != 0;
+    if (value < 0) value = env_flag("PXVK_TRACE_TIMING");
     return value;
 }
 

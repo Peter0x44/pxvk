@@ -69,9 +69,12 @@ C:\pxvk\pxvk-launch.exe "C:\path\to\Application.exe"
 From `cmd.exe`, run `set PXVK_LOG=C:\temp\pxvk.log` first. A shortcut can
 point at `pxvk-launch.exe` with the application path as its argument.
 
-On a laptop with two GPUs, pxvk uses the first Vulkan device unless you set
-`PXVK_DEVICE` to part of the device name (`radeon`, `nvidia`, `intel`) or to
-a device index. The device in use is printed in the first log line.
+On a machine with several GPUs, pxvk uses the first discrete GPU unless you
+set `PXVK_DEVICE` to part of the device name (`radeon`, `nvidia`, `intel`) or
+to a device index. The device in use is printed in the first log line. A
+name that matches no device is logged with the list of available devices.
+Each run replaces the log, and a missing log folder is created.
+[`environment.md`](environment.md) lists every variable.
 
 Kernels are compiled the first time each one is used, and the pipelines are
 cached in `%LOCALAPPDATA%\pxvk`. The first run of a scene can stutter briefly.
@@ -86,9 +89,10 @@ In the PhysX SDK samples the window title or overlay says `(hardware)` or
 | Log contents | Meaning |
 |---|---|
 | `init device="..."`, `context create`, 17 × `module load`, `first launch ...`, periodic `stats launches=...` | hardware PhysX is running on pxvk |
-| only the `init device=` line | PhysX initialized CUDA but chose CPU PhysX. Check that `pxvk-nvapi.dll` is next to `nvcuda.dll` and that `PXVK_NVAPI` is not set |
+| only the `init device=` line | PhysX initialized CUDA but chose CPU PhysX. The line ends with `nvapi=pxvk` when pxvk's NVAPI is in use. `nvapi=missing` means `pxvk-nvapi.dll` is not next to `nvcuda.dll`, and `nvapi=system` means `PXVK_NVAPI=system` is set |
 | no log file | pxvk was not loaded or never used: the application was not started through `pxvk-launch.exe`, PhysX is disabled in the application, the PhysX System Software is missing, or the application uses its own PhysX copy (see Mirror's Edge below) |
-| `error ...`, `unsupported call ...` or `init failed` lines | a pxvk problem. Please report it with the log |
+| `init failed: no Vulkan device matches ...` or `... out of range` | `PXVK_DEVICE` names no device. The line lists the available devices |
+| `error ...`, `unsupported call ...` or other `init failed` lines | a pxvk problem. Please report it with the log |
 
 `stats` lines appear about every 5 seconds while PhysX runs. `launches`
 counts kernel launches, `syncs` counts roughly one per PhysX simulation step,
@@ -147,7 +151,7 @@ Please include:
 
 `PXVK_SYNC=1` (very slow) makes the GPU finish each operation before the
 next. It helps tell a synchronization bug from a computation bug. The other
-debugging variables are listed in the README.
+debugging variables are listed in [`environment.md`](environment.md).
 
 ## Known issues
 

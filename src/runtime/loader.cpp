@@ -50,6 +50,7 @@ struct LoadedDllNotification {
 
 wchar_t g_module_path[32768]{};
 wchar_t g_nvapi_path[32768]{};
+const char *g_nvapi_mode = "pxvk";
 LoadLibraryAFn g_load_library_a = nullptr;
 LoadLibraryWFn g_load_library_w = nullptr;
 LoadLibraryExWFn g_load_library_ex_w = nullptr;
@@ -166,11 +167,13 @@ void install_driver_redirect(HMODULE self)
     std::wmemcpy(g_nvapi_path, g_module_path, std::size(g_nvapi_path));
     if (wchar_t *slash = std::wcsrchr(g_nvapi_path, L'\\'))
         lstrcpynW(slash + 1, L"pxvk-nvapi.dll", static_cast<int>(std::size(g_nvapi_path) - (slash + 1 - g_nvapi_path)));
-    wchar_t nvapi_mode[16]{};
-    const DWORD mode_length = GetEnvironmentVariableW(L"PXVK_NVAPI", nvapi_mode, static_cast<DWORD>(std::size(nvapi_mode)));
-    const bool use_system_nvapi = mode_length > 0 && mode_length < std::size(nvapi_mode) &&
-                                  _wcsicmp(nvapi_mode, L"system") == 0;
-    if (use_system_nvapi || GetFileAttributesW(g_nvapi_path) == INVALID_FILE_ATTRIBUTES) g_nvapi_path[0] = L'\0';
+    wchar_t mode[16]{};
+    const DWORD mode_length = GetEnvironmentVariableW(L"PXVK_NVAPI", mode, static_cast<DWORD>(std::size(mode)));
+    if (mode_length > 0 && mode_length < std::size(mode) && _wcsicmp(mode, L"system") == 0)
+        g_nvapi_mode = "system";
+    else if (GetFileAttributesW(g_nvapi_path) == INVALID_FILE_ATTRIBUTES)
+        g_nvapi_mode = "missing";
+    if (std::strcmp(g_nvapi_mode, "pxvk") != 0) g_nvapi_path[0] = L'\0';
     HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     g_load_library_a = reinterpret_cast<LoadLibraryAFn>(reinterpret_cast<void *>(GetProcAddress(kernel, "LoadLibraryA")));
@@ -187,6 +190,11 @@ void install_driver_redirect(HMODULE self)
                                 L"cudart32_42_9.dll", L"cudart32_41_28.dll", L"cudart32_40_17.dll",
                                 L"cudart32_32_16.dll", L"cudart32_31_4.dll", L"cudart32_30_14.dll"})
         if (HMODULE loaded = GetModuleHandleW(name)) patch_imports(loaded, false);
+}
+
+const char *nvapi_mode()
+{
+    return g_nvapi_mode;
 }
 
 void remove_driver_redirect()

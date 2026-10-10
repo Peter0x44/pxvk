@@ -43,6 +43,35 @@ constexpr std::uint32_t kFatbinMagic = 0xBA55ED50u;
 
 HMODULE g_module = nullptr;
 
+// ---- environment ----------------------------------------------------------
+// All variables are described in docs/environment.md.
+std::string env(const char *name)
+{
+    char value[1024];
+    const DWORD length = GetEnvironmentVariableA(name, value, sizeof(value));
+    return length && length < sizeof(value) ? std::string(value, length) : std::string();
+}
+
+// A switch is on when set to anything but empty, 0, off, false or no.
+bool env_flag(const char *name)
+{
+    const std::string value = env(name);
+    for (const char *off : {"", "0", "off", "false", "no"})
+        if (_stricmp(value.c_str(), off) == 0) return false;
+    return true;
+}
+
+// Creates a directory and any missing parents; existing ones are fine.
+void make_directories(const std::string &path)
+{
+    for (std::size_t i = 0; i <= path.size(); ++i) {
+        if (i == path.size() || path[i] == '\\' || path[i] == '/') {
+            const std::string prefix = path.substr(0, i);
+            if (!prefix.empty() && prefix.back() != ':') CreateDirectoryA(prefix.c_str(), nullptr);
+        }
+    }
+}
+
 // ---- logging ------------------------------------------------------------
 class Log {
 public:
@@ -59,23 +88,19 @@ public:
     }
 
 private:
+    // PXVK_LOG: a new log per run; missing folders are created.
     void open()
     {
         opened_ = true;
-        char path[1024];
-        const DWORD length = GetEnvironmentVariableA("PXVK_LOG", path, sizeof(path));
-        if (length && length < sizeof(path)) file_ = std::fopen(path, "a");
+        const std::string path = env("PXVK_LOG");
+        if (path.empty()) return;
+        const std::size_t slash = path.find_last_of("\\/");
+        if (slash != std::string::npos) make_directories(path.substr(0, slash));
+        file_ = std::fopen(path.c_str(), "w");
     }
     bool opened_ = false;
     FILE *file_ = nullptr;
 };
-
-std::string env(const char *name)
-{
-    char value[1024];
-    const DWORD length = GetEnvironmentVariableA(name, value, sizeof(value));
-    return length && length < sizeof(value) ? std::string(value, length) : std::string();
-}
 
 // ---- runtime objects --------------------------------------------------------
 struct Module;
@@ -204,7 +229,7 @@ std::uint64_t fnv1a(const std::string &text)
 // harness frame number, in the same format as tools/nvcuda-trace.
 bool api_log_enabled()
 {
-    static const bool enabled = !env("PXVK_API_LOG").empty();
+    static const bool enabled = env_flag("PXVK_API_LOG");
     return enabled;
 }
 #define API_LOG(...)                                                                     do {                                                                                     if (api_log_enabled()) {                                                                 char api_buffer_[256];                                                               std::snprintf(api_buffer_, sizeof(api_buffer_), __VA_ARGS__);                        state().log.write("api f=%s %s", env("PXVK_FRAME").c_str(), api_buffer_);         }                                                                                } while (0)
@@ -219,10 +244,8 @@ CUresult initialize(State &s)
 {
     if (s.initialized) return s.init_result;
     s.initialized = true;
-    std::string device_env = env("PXVK_DEVICE");
-    if (device_env.empty()) device_env = env("PXVK_VULKAN_DEVICE");
     std::string error;
-    if (!s.device.initialize(device_env, error)) {
+    if (!s.device.initialize(env("PXVK_DEVICE"), error)) {
         s.log.write("init failed: %s", error.c_str());
         s.init_result = CUDA_ERROR_NO_DEVICE;
         return s.init_result;
@@ -234,23 +257,23 @@ CUresult initialize(State &s)
     s.heap_limit = std::min<std::uint64_t>(caps.max_heap_bytes, caps.device_local_bytes * 3 / 4);
     s.heap_limit = std::min<std::uint64_t>(s.heap_limit, 0xF0000000u);
     s.dump_directory = env("PXVK_DUMP_SPIRV");
-    s.sync_everything = !env("PXVK_SYNC").empty();
-    s.profile = !env("PXVK_PROFILE").empty();
+    if (!s.dump_directory.empty()) make_directories(s.dump_directory);
+    s.sync_everything = env_flag("PXVK_SYNC");
+    s.profile = env_flag("PXVK_PROFILE");
     // Persistent pipeline cache: %LOCALAPPDATA%\pxvk (PXVK_CACHE_DIR
     // overrides, "off" disables), one file per driver cache identity.
     std::string cache_dir = env("PXVK_CACHE_DIR");
-    if (cache_dir.empty() && !env("LOCALAPPDATA").empty()) {
-        cache_dir = env("LOCALAPPDATA") + "\\pxvk";
-        CreateDirectoryA(cache_dir.c_str(), nullptr);
-    }
-    if (!cache_dir.empty() && cache_dir != "off") {
+    if (cache_dir.empty() && !env("LOCALAPPDATA").empty()) cache_dir = env("LOCALAPPDATA") + "\\pxvk";
+    if (!cache_dir.empty() && _stricmp(cache_dir.c_str(), "off") != 0) {
+        make_directories(cache_dir);
         s.pipeline_cache_path = cache_dir + "\\pipelines-" + caps.pipeline_cache_uuid + ".bin";
         s.device.load_pipeline_cache(s.pipeline_cache_path);
     }
     s.device.set_timing(s.profile);
-    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d subgroup_control=%d preserve_nan=%d shared=%u heap_limit=%lluMiB",
+    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d subgroup_control=%d preserve_nan=%d shared=%u heap_limit=%lluMiB nvapi=%s",
                 caps.name.c_str(), caps.vendor_id, caps.subgroup_size, caps.native_ftz, caps.subgroup_control,
-                caps.preserve_nan, caps.max_shared_bytes, static_cast<unsigned long long>(s.heap_limit >> 20));
+                caps.preserve_nan, caps.max_shared_bytes, static_cast<unsigned long long>(s.heap_limit >> 20),
+                pxvk::runtime::nvapi_mode());
     return CUDA_SUCCESS;
 }
 
@@ -506,6 +529,8 @@ bool capture_selected(State &s)
 {
     static const std::string frames = env("PXVK_CAPTURE_FRAMES");
     if (frames.empty() || env("PXVK_CAPTURE_DIR").empty()) return false;
+    static const bool directory_ready = (make_directories(env("PXVK_CAPTURE_DIR")), true);
+    (void)directory_ready;
     const std::string frame = env("PXVK_FRAME");
     std::size_t start = 0;
     while (start <= frames.size()) {

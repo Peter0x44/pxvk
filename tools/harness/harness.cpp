@@ -69,6 +69,16 @@ std::string env(const char *name)
     return length == 0 || length >= sizeof(buffer) ? std::string() : std::string(buffer, length);
 }
 
+// A switch is on when set to anything but empty, 0, off, false or no
+// (docs/environment.md).
+bool env_flag(const char *name)
+{
+    const std::string value = env(name);
+    for (const char *off : {"", "0", "off", "false", "no"})
+        if (_stricmp(value.c_str(), off) == 0) return false;
+    return true;
+}
+
 LONGLONG real_counter()
 {
     LARGE_INTEGER now{};
@@ -234,7 +244,7 @@ void __stdcall hook_swap()
         // Measure throughput, not the display refresh: disable vsync.
         HMODULE gl = GetModuleHandleA("opengl32.dll");
         auto get_proc = gl ? reinterpret_cast<void *(__stdcall *)(const char *)>(GetProcAddress(gl, "wglGetProcAddress")) : nullptr;
-        if (get_proc && env("PXVK_HARNESS_VSYNC").empty()) {
+        if (get_proc && !env_flag("PXVK_HARNESS_VSYNC")) {
             if (auto swap_interval = reinterpret_cast<int(__stdcall *)(int)>(get_proc("wglSwapIntervalEXT")))
                 swap_interval(0);
         }

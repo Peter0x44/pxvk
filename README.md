@@ -43,6 +43,7 @@ and mobile (Adreno) drivers. See [`docs/roadmap.md`](docs/roadmap.md).
 |---|---|
 | [`docs/install.md`](docs/install.md) | **for testers**: required files, how loading works, running samples and Mirror's Edge, checking and reporting results |
 | [`docs/charter.md`](docs/charter.md) | goal, targets and scope |
+| [`docs/environment.md`](docs/environment.md) | every environment variable of the runtime, capture tools and harness |
 | [`docs/architecture.md`](docs/architecture.md) | design: compiler, Vulkan backend, runtime, Vulkan requirements, known limitations |
 | [`docs/testing.md`](docs/testing.md) | differential testing tools, profiling, regression check |
 | [`docs/mirrors-edge.md`](docs/mirrors-edge.md) | setting up, launching and testing Mirror's Edge |
@@ -81,20 +82,11 @@ Kernels compile on first use and are cached on disk, so the first run of each
 scene is slower. [`docs/install.md`](docs/install.md) explains the loading
 steps and how to confirm from the log that hardware PhysX is active.
 
-Environment variables:
-
-| Variable | Effect |
-|---|---|
-| `PXVK_DEVICE` | Vulkan device by name fragment (`intel`, `nvidia`, `radeon`) or index |
-| `PXVK_LOG` | log file path (init, module loads, compiles, errors, periodic stats) |
-| `PXVK_NVAPI` | `system`: PhysX's hardware check uses the NVIDIA driver's NVAPI instead of `pxvk-nvapi.dll` |
-| `PXVK_API_LOG` | also log every copy/sync/launch/texture call (with `PXVK_LOG`) |
-| `PXVK_CACHE_DIR` | pipeline cache directory (default `%LOCALAPPDATA%\pxvk`; `off` disables) |
-| `PXVK_PROFILE` | per-kernel GPU timing and fence-wait/pipeline-creation times in the log |
-| `PXVK_PIPELINE_STATS` | print the driver's register count/binary size for each pipeline (stderr) |
-| `PXVK_SYNC` | wait for the GPU after every operation (debugging) |
-| `PXVK_DUMP_SPIRV` | directory to write every compiled kernel's SPIR-V |
-| `PXVK_CAPTURE_DIR`, `PXVK_CAPTURE_FRAMES` | capture launches for differential testing |
+The most common environment variables are `PXVK_LOG` (log file),
+`PXVK_DEVICE` (Vulkan device by name fragment or index) and `PXVK_NVAPI`
+(`system` keeps the NVIDIA driver's NVAPI). Every variable read by the runtime,
+the capture tools and the benchmark harness, with values and defaults, is
+listed in [`docs/environment.md`](docs/environment.md).
 
 Captured PhysX PTX, capture files and the samples are proprietary; keep them
 local (`tmp/` and `test-output/` are git-ignored).

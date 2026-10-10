@@ -409,18 +409,29 @@ std::vector<std::string> Device::enumerate(std::string &error)
 bool Device::initialize(const std::string &selector, std::string &error)
 {
     if (selector.empty()) return initialize(-1, error);
+    std::string enumerate_error;
+    const std::vector<std::string> names = enumerate(enumerate_error);
+    // A selector that matches nothing is reported with the devices that exist.
+    auto fail = [&](const std::string &message) {
+        error = message + "; available devices:";
+        for (const std::string &name : names) error += " \"" + name + "\""; // "index: name"
+        if (names.empty()) error += " none";
+        return false;
+    };
     bool numeric = true;
     for (char c : selector) numeric = numeric && c >= '0' && c <= '9';
-    if (numeric) return initialize(std::atoi(selector.c_str()), error);
-    std::vector<std::string> names = enumerate(error);
+    if (numeric) {
+        if (std::strtoul(selector.c_str(), nullptr, 10) >= names.size())
+            return fail("PXVK_DEVICE index " + selector + " is out of range");
+        return initialize(std::atoi(selector.c_str()), error);
+    }
     auto lower = [](std::string text) {
         for (char &c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         return text;
     };
     for (std::size_t i = 0; i < names.size(); ++i)
         if (lower(names[i]).find(lower(selector)) != std::string::npos) return initialize(static_cast<int>(i), error);
-    error = "no Vulkan device matches \"" + selector + "\"";
-    return false;
+    return fail("no Vulkan device matches PXVK_DEVICE=\"" + selector + "\"");
 }
 
 bool Device::initialize(int index, std::string &error)
@@ -586,7 +597,11 @@ bool Device::initialize(int index, std::string &error)
     if (float_controls && !api12) enabled_extensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enable_executable_info{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
-    if (std::getenv("PXVK_PIPELINE_STATS") && has_extension(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)) {
+    const char *stats_switch = std::getenv("PXVK_PIPELINE_STATS"); // a switch, as in docs/environment.md
+    const bool want_stats = stats_switch != nullptr && *stats_switch != '\0' && std::strcmp(stats_switch, "0") != 0 &&
+                            _stricmp(stats_switch, "off") != 0 && _stricmp(stats_switch, "false") != 0 &&
+                            _stricmp(stats_switch, "no") != 0;
+    if (want_stats && has_extension(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)) {
         d.pipeline_stats = true;
         enable_executable_info.pipelineExecutableInfo = VK_TRUE;
         enable_executable_info.pNext = enable.pNext;

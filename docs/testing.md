@@ -1,5 +1,8 @@
 # Testing pxvk
 
+All environment variables used below (capture, tracer, harness, profiling)
+are described in [`environment.md`](environment.md).
+
 pxvk is tested differentially against the real NVIDIA driver at three
 levels. Everything derived from PhysX binaries (PTX, captures, samples) is
 proprietary and stays local under `tmp/` or `test-output/`.
