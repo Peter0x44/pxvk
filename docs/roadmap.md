@@ -66,11 +66,11 @@ A tester with an NVIDIA GPU received an early build (before
 
 ### 6. Exactness on NVIDIA
 
-Six of 90 replayed SampleCloth launches differ from native by ≤ 4 ULP,
-which makes SampleCloth scene 7 diverge visibly after ~100 frames;
-SampleParticleFluid scenes 2, 3 and 5 also drift slightly. Players will not
-notice, but exact results keep differential testing simple. Starting points
-are in the known limitations of `docs/architecture.md`.
+Two of 90 replayed SampleCloth launches (`UberSolver`, scene 5) differ from
+native by ≤ 4 ULP, and SampleCloth scene 5 ends with under 0.1% of its
+pixels different; every other SampleCloth and SampleParticleFluid scene is
+pixel-identical to native. The cause is ptxas leaving some products unfused
+without a structural reason found so far (`docs/architecture.md`).
 
 ### 7. Performance
 

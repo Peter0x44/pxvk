@@ -1206,6 +1206,15 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemAlloc_v2(CUdeviceptr *pointer, size_t byt
         s.log.write("cuMemAlloc failed bytes=%u result=%d", static_cast<unsigned>(bytes), r);
         return r;
     }
+    // The NVIDIA driver hands out zeroed memory in practice and PhysX relies
+    // on it: SampleParticleFluid frees and reallocates its pool on a scene
+    // change and diverged from native while the reused block still held the
+    // previous scene's data.
+    std::string error;
+    if (!s.device.fill(address, 0, bytes, error)) {
+        release(s, address);
+        return failure(s, "cuMemAlloc clear", error);
+    }
     *pointer = address;
     s.log.write("cuMemAlloc address=%08x bytes=%u", address, static_cast<unsigned>(bytes));
     return CUDA_SUCCESS;
