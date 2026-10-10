@@ -68,16 +68,19 @@ Cfg build_cfg(const Function &function)
     // The last block falls off the end of the function: return.
     if (!closed) cfg.blocks.back().term = CfgBlock::Term::ret;
 
+    // Only the blocks built above have jump labels; the shared return block
+    // appended below must not be visited (and appending may reallocate, so
+    // no reference into cfg.blocks is held across it).
     int return_block = -1;
-    for (std::size_t i = 0; i < cfg.blocks.size(); ++i) {
-        CfgBlock &b = cfg.blocks[i];
+    const std::size_t built = cfg.blocks.size();
+    for (std::size_t i = 0; i < built; ++i) {
         if (!jump_labels[i].empty()) {
             const auto found = labels.find(jump_labels[i]);
             if (found == labels.end())
-                throw Error("branch to unknown label " + jump_labels[i], b.line);
-            b.target = found->second;
+                throw Error("branch to unknown label " + jump_labels[i], cfg.blocks[i].line);
+            cfg.blocks[i].target = found->second;
         }
-        if (b.target == -2) {
+        if (cfg.blocks[i].target == -2) {
             if (return_block < 0) {
                 return_block = static_cast<int>(cfg.blocks.size());
                 cfg.blocks.emplace_back(); // term = ret by default
