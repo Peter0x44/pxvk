@@ -54,7 +54,11 @@ def main():
             print("build failed")
             return 1
 
-    if args.ptx:
+    if args.ptx and not any(Path(args.ptx).glob("*.ptx")):
+        step(f"compile corpus {args.ptx}")
+        print(f"  no .ptx files in {args.ptx}. Extract them with tools/extract-physx-ptx.py (docs/testing.md).")
+        failures.append(f"missing PTX corpus {args.ptx}")
+    elif args.ptx:
         step(f"compile corpus {args.ptx}")
         spirv_val = shutil.which("spirv-val")
         with tempfile.TemporaryDirectory() as out:
@@ -101,6 +105,12 @@ def main():
             command = [str(build / "pxvk-replay.exe")] + (["--device", device] if device else []) + [capture]
             r = subprocess.run(command, capture_output=True, text=True)
             lines = r.stdout.splitlines()
+            if r.returncode == 2 or not lines:
+                # Missing or empty capture folder, or no such device.
+                for l in (r.stderr.strip() or "pxvk-replay produced no output").splitlines():
+                    print("  " + l)
+                failures.append(f"replay {capture} {device}: could not run")
+                continue
             graded = [l.split()[2] for l in lines if len(l.split()) > 2 and l.split()[2] in ("EXACT", "ok", "BAD", "FAIL")]
             print("  " + (lines[0] if lines else "no output"))
             print("  " + ", ".join(f"{g}={graded.count(g)}" for g in ("EXACT", "ok", "BAD", "FAIL")))

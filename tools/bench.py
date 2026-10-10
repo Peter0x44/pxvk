@@ -141,12 +141,17 @@ def main():
         print(f"exit={summary['exit']} fps " + " ".join(f"s{i + 1}:{f}" for i, f in enumerate(scene_fps(out, args.scenes))))
     else:
         a, b = Path(args.a), Path(args.b)
+        for d in (a, b):
+            if not d.is_dir() or not any(d.glob("frame_*.bmp")):
+                print(f"{d}: no frame captures. Native reference runs (--mode native) need an NVIDIA GPU; "
+                      "copy them from such a machine.")
+                sys.exit(1)
         frames = args.frames or [int(p.stem.split("_")[1]) for p in sorted(a.glob("frame_*.bmp"))]
         failures = 0
         for frame in frames:
             name = f"frame_{frame:05d}.bmp"
             if not (a / name).exists() or not (b / name).exists():
-                print(f"{name}: missing")
+                print(f"{name}: missing in {a if not (a / name).exists() else b}")
                 failures += 1
                 continue
             diff = pixel_diff(a / name, b / name)

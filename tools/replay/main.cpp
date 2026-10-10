@@ -158,6 +158,13 @@ int main(int argc, char **argv)
         std::fprintf(stderr, "usage: pxvk-replay [--device N] [--no-native-ftz] [--time N] [--verbose] dir [ordinal...]\n");
         return 2;
     }
+    // Missing native captures are an error, not "0/0 failed".
+    const char *capture_hint = "Captures are recorded from native CUDA with tools/nvcuda-trace on an NVIDIA "
+                               "machine and copied to other machines; see docs/testing.md.";
+    if (!fs::is_directory(dir)) {
+        std::fprintf(stderr, "capture folder not found: %s\n%s\n", dir.string().c_str(), capture_hint);
+        return 2;
+    }
 
     pxvk::vk::Device device;
     std::string error;
@@ -180,6 +187,10 @@ int main(int argc, char **argv)
         if (entry.path().extension() == ".txt" && entry.path().filename().string().rfind("capture_", 0) == 0)
             metas.push_back(entry.path());
     std::sort(metas.begin(), metas.end());
+    if (metas.empty()) {
+        std::fprintf(stderr, "no captures (capture_*.txt) in %s\n%s\n", dir.string().c_str(), capture_hint);
+        return 2;
+    }
 
     std::map<unsigned, std::unique_ptr<ModuleCache>> modules;
     int failures = 0, total = 0;
@@ -414,6 +425,10 @@ int main(int argc, char **argv)
             }
         }
         std::fflush(stdout);
+    }
+    if (total == 0) {
+        std::fprintf(stderr, "none of the requested capture ordinals exist in %s\n", dir.string().c_str());
+        return 2;
     }
     std::printf("%d/%d captures failed\n", failures, total);
     return failures == 0 ? 0 : 1;
