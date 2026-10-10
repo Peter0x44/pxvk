@@ -96,20 +96,20 @@ Running Windows games through Winlator (Wine + Box64) on Android would use
 the Adreno Vulkan driver (Qualcomm's or Mesa Turnip). Known obstacles:
 
 - Most Android drivers, including Adreno ones, report a 128 MiB
-  `maxStorageBufferRange`. pxvk keeps all CUDA memory in one buffer, PhysX
-  cloth alone allocates a 128 MiB pool, and FluidMark asks PhysX for a 256 MB
-  GPU heap. The heap would have to be split across several buffers selected
-  by address bits (needs non-uniform descriptor indexing), or use buffer
-  device addresses (needs 64-bit integer support in shaders).
-- Adreno subgroups are 64 or 128 lanes; the warp-synchronous guard accepts
-  that, but it has not been verified.
+  `maxStorageBufferRange`. The split heap (`docs/architecture.md`) handles
+  this when the driver supports non-uniform storage-buffer indexing (Turnip
+  does; Qualcomm's driver is unverified). Tested on lavapipe, which has the
+  same limit.
+- Adreno subgroups are 64 or 128 lanes, which contain whole warps, so warp
+  emulation should not be needed; not verified on hardware.
 - 32 KiB shared memory (storage fallback), and unknown float-controls support
   (FTZ emulation and possible NaN-comparison issues).
 - The x86 runtime itself runs under emulation, so first-use compilation is
   slow; the persistent pipeline cache helps afterwards.
 
-A first step that needs no phone: simulate Adreno limits on the development
-laptop with the Khronos Vulkan Profiles layer and run the replay tests.
+lavapipe already reproduces the storage-range limit on a PC
+(`docs/testing.md`); the Khronos Vulkan Profiles layer could simulate the
+remaining Adreno limits before testing on a phone.
 
 ### 10. More games
 

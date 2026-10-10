@@ -253,6 +253,9 @@ CUresult initialize(State &s)
     const auto &caps = s.device.caps();
     s.options.native_ftz = caps.native_ftz;
     s.options.preserve_nan = caps.preserve_nan;
+    s.options.emulate_warps = caps.narrow_subgroups();
+    s.options.heap_window_shift = caps.heap_window_shift;
+    s.options.heap_windows = caps.heap_windows;
     // Leave headroom on the device for the application's own rendering.
     s.heap_limit = std::min<std::uint64_t>(caps.max_heap_bytes, caps.device_local_bytes * 3 / 4);
     s.heap_limit = std::min<std::uint64_t>(s.heap_limit, 0xF0000000u);
@@ -270,10 +273,10 @@ CUresult initialize(State &s)
         s.device.load_pipeline_cache(s.pipeline_cache_path);
     }
     s.device.set_timing(s.profile);
-    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d subgroup_control=%d preserve_nan=%d shared=%u heap_limit=%lluMiB nvapi=%s",
+    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d subgroup_control=%d preserve_nan=%d shared=%u heap_limit=%lluMiB heap_windows=%u warp_emulation=%d nvapi=%s",
                 caps.name.c_str(), caps.vendor_id, caps.subgroup_size, caps.native_ftz, caps.subgroup_control,
                 caps.preserve_nan, caps.max_shared_bytes, static_cast<unsigned long long>(s.heap_limit >> 20),
-                pxvk::runtime::nvapi_mode());
+                caps.heap_windows, s.options.emulate_warps, pxvk::runtime::nvapi_mode());
     return CUDA_SUCCESS;
 }
 
@@ -500,8 +503,9 @@ CompiledVariant *variant(State &s, Function &f, int which)
             } catch (const std::exception &e) {
                 entry->error = e.what();
             }
-            s.log.write("compile %s variant=%d words=%u time=%lums%s%s", f.name.c_str(), which,
+            s.log.write("compile %s variant=%d words=%u time=%lums%s%s%s", f.name.c_str(), which,
                         static_cast<unsigned>(entry->kernel.spirv.size()), GetTickCount() - start,
+                        entry->kernel.info.warp_emulated ? " warp_emulated" : "",
                         entry->error.empty() ? "" : " error=", entry->error.c_str());
         }
         slot = entry.get();

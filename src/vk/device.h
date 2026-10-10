@@ -28,11 +28,20 @@ struct Capabilities {
     bool subgroup_control = false; // can require a subgroup size of 32
     std::uint32_t subgroup_size = 0;
     std::uint32_t min_subgroup_size = 0; // smallest size compute may run with (no size control)
+    // Compute may run with subgroups narrower than a CUDA warp and cannot be
+    // forced to 32: warp-synchronous code must be emulated (lavapipe: 8).
+    bool narrow_subgroups() const { return !subgroup_control && min_subgroup_size < 32; }
     std::uint32_t max_workgroup_invocations = 0;
     std::uint32_t max_workgroup_size[3] = {0, 0, 0};
     std::uint32_t max_workgroup_count[3] = {0, 0, 0};
     std::uint32_t max_shared_bytes = 0;
     std::uint64_t max_heap_bytes = 0;
+    // Split heap (ptx::CompileOptions::heap_window_shift): used only when
+    // maxStorageBufferRange is below 512 MiB (lavapipe, most mobile drivers).
+    // Shaders then see the heap as heap_windows descriptors of
+    // 2^heap_window_shift bytes. 0 = one descriptor for the whole heap.
+    std::uint32_t heap_window_shift = 0;
+    std::uint32_t heap_windows = 0;
     std::uint64_t device_local_bytes = 0;
     std::string pipeline_cache_uuid; // hex; identifies compatible pipeline caches
 };

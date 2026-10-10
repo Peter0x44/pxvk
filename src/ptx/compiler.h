@@ -55,6 +55,20 @@ struct CompileOptions {
     // + 1) * S) where S is spec constant 3. For launches whose shared memory
     // exceeds the device's maxComputeSharedMemorySize.
     bool shared_in_storage = false;
+    // The device cannot guarantee subgroups of at least 32 lanes (e.g.
+    // lavapipe's 8). Warp-synchronous code (volatile shared stores) is then
+    // emulated with workgroup barriers around each store; `if` arms that
+    // contain such code are predicated so that every invocation reaches
+    // the barriers. The kernel no longer needs a subgroup size.
+    bool emulate_warps = false;
+    // Split heap, for devices whose maxStorageBufferRange is smaller than
+    // the CUDA heap: binding 0 is an array of heap_windows descriptors, each
+    // covering 2^heap_window_shift bytes of the heap buffer, selected per
+    // access by address (non-uniform descriptor indexing), plus one dummy
+    // descriptor that out-of-range indices are clamped to. Vector accesses
+    // become scalar ones and bindings 1-2 are unused. 0 = one descriptor.
+    std::uint32_t heap_window_shift = 0;
+    std::uint32_t heap_windows = 0;
 };
 
 struct KernelInfo {
@@ -76,6 +90,9 @@ struct KernelInfo {
     // Kernel relies on warp-synchronous shared memory (volatile accesses);
     // the runtime should request a subgroup size of 32.
     bool warp_synchronous = false;
+    // Compiled with CompileOptions::emulate_warps and contains warp-
+    // synchronous code, which is emulated with workgroup barriers.
+    bool warp_emulated = false;
 };
 
 struct CompiledKernel {

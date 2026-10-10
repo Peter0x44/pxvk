@@ -78,6 +78,10 @@ laptop with no NVIDIA driver.
   (see the known limitations in [`architecture.md`](architecture.md)).
 - Other GPUs differ from NVIDIA by 1–2 ULP in the hardware `rcp`, `rsqrt`
   and `sqrt` approximations.
+- Mesa's lavapipe (software Vulkan) runs everything through the fallbacks
+  for limited devices, with the same replay results as the Intel UHD. It is
+  a test device, not a speedup: on the i7-11800H, FluidMark runs at 28
+  simulation steps/s against 39 with CPU PhysX.
 
 FluidMark 1.5.4, 720 preset, mean of 10 interleaved runs on the RTX 3070
 laptop:

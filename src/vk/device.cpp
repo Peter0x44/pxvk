@@ -73,6 +73,7 @@ struct Device::Impl {
     VkPipelineCache pipeline_cache = VK_NULL_HANDLE;
 
     Buffer heap, staging, readback, launch, scratch;
+    Buffer dummy; // split heap: target of windows past the heap end (see update_descriptors)
     VkDeviceSize staging_head = 0, launch_head = 0;
     std::uint32_t heap_base = 0;
 
@@ -154,10 +155,23 @@ struct Device::Impl {
     {
         VkDescriptorBufferInfo infos[5]{};
         VkWriteDescriptorSet writes[5]{};
+        // Split heap: binding 0 holds one window per 2^shift bytes, plus one
+        // more that shaders clamp out-of-range indices to. That one and the
+        // windows past the end of the current heap see a small dummy buffer,
+        // so stray accesses never touch live data (robustBufferAccess keeps
+        // them inside it). Bindings 1-2, unused, see the first window.
+        const VkDeviceSize window = caps.heap_windows ? VkDeviceSize{1} << caps.heap_window_shift : 0;
+        std::vector<VkDescriptorBufferInfo> windows(caps.heap_windows ? caps.heap_windows + 1 : 0);
+        for (std::uint32_t w = 0; w < windows.size(); ++w) {
+            const VkDeviceSize offset = VkDeviceSize{w} * window;
+            windows[w] = w < caps.heap_windows && offset < heap.size
+                             ? VkDescriptorBufferInfo{heap.buffer, offset, std::min(window, heap.size - offset)}
+                             : VkDescriptorBufferInfo{dummy.buffer, 0, VK_WHOLE_SIZE};
+        }
         for (std::uint32_t i = 0; i < 5; ++i) {
             infos[i].buffer = i < 3 ? heap.buffer : i == 3 ? launch.buffer : scratch.buffer;
             infos[i].offset = 0;
-            infos[i].range = i == 3 ? kLaunchRange : VK_WHOLE_SIZE;
+            infos[i].range = i == 3 ? kLaunchRange : i < 3 && window ? std::min(window, heap.size) : VK_WHOLE_SIZE;
             writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[i].dstSet = set;
             writes[i].dstBinding = i;
@@ -165,6 +179,10 @@ struct Device::Impl {
             writes[i].descriptorType =
                 i == 3 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writes[i].pBufferInfo = &infos[i];
+        }
+        if (caps.heap_windows) {
+            writes[0].descriptorCount = caps.heap_windows + 1;
+            writes[0].pBufferInfo = windows.data();
         }
         if (heap.buffer) vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
     }
@@ -527,9 +545,11 @@ bool Device::initialize(int index, std::string &error)
     VkPhysicalDeviceSubgroupSizeControlProperties subgroup_props{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
     VkPhysicalDeviceSubgroupProperties subgroup_basic{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES};
+    VkPhysicalDeviceMaintenance3Properties maintenance3{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES};
     VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
     props2.pNext = &subgroup_basic;
-    void **tail = &subgroup_basic.pNext;
+    subgroup_basic.pNext = &maintenance3;
+    void **tail = &maintenance3.pNext;
     if (float_controls) {
         *tail = &float_props;
         tail = &float_props.pNext;
@@ -546,8 +566,16 @@ bool Device::initialize(int index, std::string &error)
 
     VkPhysicalDeviceSubgroupSizeControlFeatures subgroup_features{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES};
+    VkPhysicalDeviceDescriptorIndexingFeatures indexing_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
+    const bool indexing_ext = api12 || has_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
     VkPhysicalDeviceFeatures2 features2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
-    if (subgroup_ext) features2.pNext = &subgroup_features;
+    void **feature_tail = &features2.pNext;
+    if (subgroup_ext) {
+        *feature_tail = &subgroup_features;
+        feature_tail = &subgroup_features.pNext;
+    }
+    if (indexing_ext) *feature_tail = &indexing_features;
     vkGetPhysicalDeviceFeatures2(d.physical, &features2);
     c.int64 = features2.features.shaderInt64;
     c.subgroup_control = subgroup_ext && subgroup_features.subgroupSizeControl &&
@@ -559,6 +587,30 @@ bool Device::initialize(int index, std::string &error)
     for (std::uint32_t i = 0; i < d.memory_properties.memoryHeapCount; ++i)
         if (d.memory_properties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
             c.device_local_bytes = std::max<std::uint64_t>(c.device_local_bytes, d.memory_properties.memoryHeaps[i].size);
+
+    // Split heap only where a single storage-buffer descriptor cannot cover
+    // what PhysX applications allocate (FluidMark alone asks for a 256 MB
+    // GPU heap): a window per 2^shift bytes, selected per access.
+    constexpr std::uint64_t kSplitBelow = 512ull << 20;
+    const bool can_split = indexing_ext && indexing_features.shaderStorageBufferArrayNonUniformIndexing;
+    if (props.limits.maxStorageBufferRange < kSplitBelow && props.limits.maxStorageBufferRange >= (1u << 20) &&
+        can_split) {
+        std::uint32_t shift = 20; // windows of at least 1 MiB
+        while (shift < 30 && (2ull << shift) <= props.limits.maxStorageBufferRange) ++shift;
+        std::uint64_t wanted = std::min<std::uint64_t>(c.device_local_bytes * 3 / 4, 0xF0000000u);
+        wanted = std::min<std::uint64_t>(wanted, maintenance3.maxMemoryAllocationSize);
+        // Bindings 1, 2 and 4, plus the out-of-range window, also count.
+        const std::uint64_t storage_slots = props.limits.maxPerStageDescriptorStorageBuffers > 4
+                                                ? props.limits.maxPerStageDescriptorStorageBuffers - 4
+                                                : 1;
+        const std::uint64_t windows =
+            std::min<std::uint64_t>({(wanted + (1ull << shift) - 1) >> shift, storage_slots, std::uint64_t{32}});
+        if (windows >= 2) {
+            c.heap_window_shift = shift;
+            c.heap_windows = static_cast<std::uint32_t>(windows);
+            c.max_heap_bytes = std::min<std::uint64_t>(windows << shift, maintenance3.maxMemoryAllocationSize);
+        }
+    }
 
     std::uint32_t family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(d.physical, &family_count, nullptr);
@@ -595,6 +647,14 @@ bool Device::initialize(int index, std::string &error)
         if (!api13) enabled_extensions.push_back(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME);
     }
     if (float_controls && !api12) enabled_extensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
+    VkPhysicalDeviceDescriptorIndexingFeatures enable_indexing{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES};
+    if (c.heap_windows != 0) {
+        enable_indexing.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
+        enable_indexing.pNext = enable.pNext;
+        enable.pNext = &enable_indexing;
+        if (!api12) enabled_extensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+    }
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enable_executable_info{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
     const char *stats_switch = std::getenv("PXVK_PIPELINE_STATS"); // a switch, as in docs/environment.md
@@ -639,7 +699,7 @@ bool Device::initialize(int index, std::string &error)
         bindings[i].binding = i;
         bindings[i].descriptorType =
             i == 3 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        bindings[i].descriptorCount = 1;
+        bindings[i].descriptorCount = i == 0 && c.heap_windows != 0 ? c.heap_windows + 1 : 1;
         bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     }
     VkDescriptorSetLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
@@ -650,7 +710,7 @@ bool Device::initialize(int index, std::string &error)
     pipeline_layout_info.setLayoutCount = 1;
     pipeline_layout_info.pSetLayouts = &d.set_layout;
     vkCreatePipelineLayout(d.device, &pipeline_layout_info, nullptr, &d.pipeline_layout);
-    VkDescriptorPoolSize sizes[2] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4},
+    VkDescriptorPoolSize sizes[2] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 + c.heap_windows},
                                      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1}};
     VkDescriptorPoolCreateInfo descriptor_pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     descriptor_pool_info.maxSets = 1;
@@ -677,6 +737,9 @@ bool Device::initialize(int index, std::string &error)
     if (!d.create_buffer(64u << 10, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
                          d.scratch, error))
         return false;
+    if (c.heap_windows != 0 &&
+        !d.create_buffer(256, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, d.dummy, error))
+        return false;
     return true;
 }
 
@@ -701,6 +764,7 @@ void Device::shutdown()
     d.destroy(d.readback);
     d.destroy(d.launch);
     d.destroy(d.scratch);
+    d.destroy(d.dummy);
     if (d.queries) vkDestroyQueryPool(d.device, d.queries, nullptr);
     vkDestroyPipelineCache(d.device, d.pipeline_cache, nullptr);
     vkDestroyDescriptorPool(d.device, d.descriptor_pool, nullptr);
@@ -932,7 +996,9 @@ Shader *Device::create_shader(const std::vector<std::uint32_t> &spirv, std::uint
     // Warp-synchronous PTX relies on 32 lanes running in lockstep. Wider
     // subgroups (64/128 lanes) contain whole warps; narrower ones that cannot
     // be forced to 32 would silently compute wrong results.
-    if (warp_synchronous && !d.caps.subgroup_control && d.caps.min_subgroup_size < 32) {
+    // (Kernels compiled with CompileOptions::emulate_warps do not report
+    // warp_synchronous.)
+    if (warp_synchronous && d.caps.narrow_subgroups()) {
         error = "warp-synchronous kernel needs 32-lane subgroups, device may use " +
                 std::to_string(d.caps.min_subgroup_size);
         return nullptr;

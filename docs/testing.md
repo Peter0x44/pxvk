@@ -111,6 +111,25 @@ Expected results on the reference laptop:
 | SampleCloth (90 launches) | 84 EXACT, 6 ok | 28 EXACT, 56 ok, 6 tolerated BAD |
 | SampleParticleFluid (112 launches) | 112 EXACT | 104 EXACT, 8 ok |
 
+## lavapipe (no second GPU needed)
+
+Mesa's software Vulkan driver exercises the fallbacks for limited devices
+(warp emulation and the split heap; see `docs/architecture.md`). Point the
+Vulkan loader at a 32-bit lavapipe build only for the process, e.g. from
+[mesa-dist-win](https://github.com/pal1000/mesa-dist-win) unpacked into
+`tmp/mesa`:
+
+```powershell
+$env:VK_DRIVER_FILES = "$PWD\tmp\mesa\x86\lvp_icd.x86.json"
+build\x86\pxvk-replay.exe test-output\bench\fluid-capture\trace\SampleParticleFluid.exe_<pid>
+```
+
+Expected: the same results as on the Intel UHD (fluid 104 EXACT + 8 ok;
+cloth 28 EXACT, 56 ok, 6 tolerated BAD). `pxvk-replay --emulate-warps`
+forces warp emulation on any device; on NVIDIA the results must stay
+bit-exact. `pxvk-ptxc --emulate-warps --split-heap` compiles the corpus
+with both fallbacks for `spirv-val`.
+
 ## Testing on another machine
 
 Clone the repository, build, extract the PTX corpus as above, and copy the

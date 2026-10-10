@@ -132,6 +132,7 @@ int main(int argc, char **argv)
 {
     std::string device_selector;
     bool native_ftz = true;
+    bool force_emulate_warps = false; // emulate warp-synchronous code even with 32-lane subgroups
     bool force_native_ftz = false; // timing experiments: skip FTZ emulation even if unsupported
     bool verbose = false;
     bool no_contraction = false;
@@ -145,6 +146,7 @@ int main(int argc, char **argv)
         if (arg == "--device" && i + 1 < argc) device_selector = argv[++i];
         else if (arg == "--no-native-ftz") native_ftz = false;
         else if (arg == "--force-native-ftz") force_native_ftz = true;
+        else if (arg == "--emulate-warps") force_emulate_warps = true;
         else if (arg == "--no-contract") no_contraction = true;
         else if (arg == "--storage-shared") force_storage_shared = true;
         else if (arg == "--verbose") verbose = true;
@@ -179,6 +181,9 @@ int main(int argc, char **argv)
     pxvk::ptx::CompileOptions options;
     options.native_ftz = force_native_ftz || (native_ftz && caps.native_ftz);
     options.preserve_nan = caps.preserve_nan;
+    options.emulate_warps = force_emulate_warps || caps.narrow_subgroups();
+    options.heap_window_shift = caps.heap_window_shift;
+    options.heap_windows = caps.heap_windows;
     options.no_contraction = no_contraction;
     device.set_timing(timing_runs > 0);
 

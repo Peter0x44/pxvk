@@ -55,7 +55,43 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     indexes as `(base >> k) + offset / size`, so drivers share the base
     computation between neighbouring accesses.
   - Warp-synchronous code (volatile shared stores) is bracketed by subgroup
-    barriers and the pipeline requests full 32-wide subgroups.
+    barriers and the pipeline requests full 32-wide subgroups. Devices that
+    cannot guarantee subgroups of at least 32 lanes use warp emulation
+    instead (below).
+
+### Fallbacks for limited devices
+
+Two code-generation modes exist only for devices that need them (lavapipe,
+and most mobile drivers for the split heap). Desktop GPUs never use them; the
+first log line reports both (`heap_windows=`, `warp_emulation=`).
+
+- **Warp emulation** (`CompileOptions::emulate_warps`), when compute may run
+  with subgroups narrower than 32 lanes that cannot be forced to 32
+  (lavapipe: 8). Every volatile shared store is bracketed by *workgroup*
+  barriers instead of subgroup barriers. All warps then advance store by
+  store together, and since every load of a phase completes before any
+  store of the next, this is exactly warp lockstep. Workgroup barriers must
+  be reached by every invocation, so an `if` whose arms contain such stores
+  (`if (tid < 32) { warp scan }`) is emitted predicated: both arms run for
+  all invocations, each instruction guarded by its arm's condition and the
+  barriers unconditional. Arms must be straight-line code, and every other
+  warp-synchronous store must be reached by all invocations: not after a
+  return, break, continue or multi-level exit that some invocations may
+  take, and not in a loop without `bar.sync` (whose trip count may differ
+  between invocations; CUDA already requires loops with `bar.sync` to be
+  uniform). Kernels that break these rules fail to compile with an error
+  rather than risk a hang. Emulated kernels are logged as `warp_emulated`.
+- **Split heap** (`CompileOptions::heap_window_shift`), when
+  `maxStorageBufferRange` is below 512 MiB. The heap is still one buffer,
+  so copies and transfers are unchanged, but shaders see it through an
+  array of storage-buffer descriptors ("windows") of the largest power of
+  two that fits the range, selected per access by the address's high bits
+  with non-uniform descriptor indexing. Vector heap accesses become scalar
+  ones. One extra window at the end of the array is bound to a small dummy
+  buffer, as are windows past the end of the current heap; window indices
+  are clamped to it, so a garbage address never reaches live data. Requires `shaderStorageBufferArrayNonUniformIndexing`;
+  up to 32 windows, also bounded by `maxPerStageDescriptorStorageBuffers`
+  and `maxMemoryAllocationSize`.
 
 ### Shader interface
 
@@ -153,11 +189,12 @@ CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
 
 ## Vulkan requirements
 
-Required: Vulkan 1.1 with a compute queue, `robustBufferAccess`, a
-`maxStorageBufferRange` large enough for the application's CUDA memory (one
-buffer holds it all; PhysX cloth alone allocates a 128 MiB pool) and
-768-invocation workgroups. No descriptor indexing, buffer device address,
-8/16-bit storage or float atomics are used.
+Required: Vulkan 1.1 with a compute queue, `robustBufferAccess` and
+768-invocation workgroups. The CUDA heap (PhysX cloth alone allocates a
+128 MiB pool, FluidMark a 256 MB one) needs either a `maxStorageBufferRange`
+that covers it or non-uniform storage-buffer descriptor indexing for the
+split heap. No buffer device address, 8/16-bit storage or float atomics are
+used.
 
 Optional, with fallbacks:
 
@@ -165,15 +202,16 @@ Optional, with fallbacks:
 |---|---|---|---|
 | float controls: fp32 `DenormFlushToZero` | 1.2 | native `.ftz` | emulated (slower on small launches; NVIDIA today) |
 | float controls: `SignedZeroInfNanPreserve` | 1.2 | correct unordered comparisons | NaN comparisons may be wrong on some drivers |
-| `subgroupSizeControl` + `computeFullSubgroups` | 1.3 | 32-wide subgroups for warp-synchronous kernels | allowed if the device never runs compute narrower than 32 lanes; refused otherwise |
+| `subgroupSizeControl` + `computeFullSubgroups` | 1.3 | 32-wide subgroups for warp-synchronous kernels | fine if compute never runs narrower than 32 lanes; otherwise warp emulation |
+| `maxStorageBufferRange` ≥ 512 MiB | limit | the whole heap in one descriptor | split heap (needs `shaderStorageBufferArrayNonUniformIndexing`, 1.2) |
 | `shaderInt64` | 1.0 feature | PTX using 64-bit integers | such kernels fail to compile (PhysX has not needed it) |
 | ≥ 42 KiB shared memory | limit | cloth solver shared memory as Workgroup memory | storage-buffer fallback (slower) |
 | `VK_KHR_pipeline_executable_properties` | ext | `PXVK_PIPELINE_STATS` | — |
 
 In practice this is any GPU with a current Windows Vulkan driver: NVIDIA
-Kepler and later, AMD GCN and later, Intel Gen9 (Skylake) and later. Mobile
-drivers commonly cap `maxStorageBufferRange` at 128 MiB (see
-`docs/roadmap.md`).
+Kepler and later, AMD GCN and later, Intel Gen9 (Skylake) and later. With
+the fallbacks above it also runs on Mesa's lavapipe (software Vulkan), which
+behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
 
 ## Known limitations
 
@@ -191,8 +229,9 @@ drivers commonly cap `maxStorageBufferRange` at 128 MiB (see
   "ok" cloth captures with `--verbose`, and diff native vs pxvk captures of
   fluid scene 2 with `tools/capture-diff.py` (its captured launches replay
   exactly, so the divergence comes from other frames or non-kernel work).
-- Warp-synchronous kernels need 32-lane (or wider) subgroups; on devices
-  that may run narrower subgroups without size control they fail to load.
+- Warp emulation and the split heap are slower than the normal paths (two
+  workgroup barriers per warp-synchronous store; scalar heap accesses).
+  Only devices that need them pay for that.
 - 64-thread `UberSolver` launches (SampleCloth scenes 5 and 9) still pay
   30-80% of their GPU time for `.ftz` emulation on NVIDIA; frame rates are
   above native regardless.

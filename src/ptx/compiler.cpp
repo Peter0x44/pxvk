@@ -103,6 +103,12 @@ public:
         }
         cfg_ = &cfg;
         find_transparent_blocks(tree);
+        if (options_.emulate_warps && contains_warp_sync(tree.root)) {
+            // Emulated warps add workgroup barriers that every invocation
+            // must reach: reject kernels where that is not guaranteed.
+            check_warp_uniformity(tree.root, true);
+            info_.warp_emulated = true;
+        }
 
         b_.label(b_.id());
         // Module-global addresses come from the launch block, so pipelines do
@@ -799,8 +805,58 @@ private:
         return heap_base_;
     }
 
+    bool split_heap() const { return options_.heap_window_shift != 0; }
+
+    // Split heap: binding 0 as an array of windows (see CompileOptions).
+    std::uint32_t heap_windows_view()
+    {
+        if (heap_[0] != 0) return heap_[0];
+        const std::uint32_t element = b_.t_u32();
+        const std::uint32_t rta = b_.unique_type(SpvOpTypeRuntimeArray, {element});
+        b_.decorate(rta, SpvDecorationArrayStride, {4});
+        const std::uint32_t block = b_.unique_type(SpvOpTypeStruct, {rta});
+        b_.decorate(block, SpvDecorationBlock);
+        b_.member_decorate(block, 0, SpvDecorationOffset, {0});
+        // One more window than the heap needs: out-of-range indices are
+        // clamped to it, and the runtime binds a dummy buffer there.
+        const std::uint32_t array = b_.unique_type(SpvOpTypeArray, {block, b_.u32(options_.heap_windows + 1)});
+        const std::uint32_t var = b_.global_variable(b_.t_ptr(SpvStorageClassStorageBuffer, array),
+                                                     SpvStorageClassStorageBuffer);
+        b_.decorate(var, SpvDecorationDescriptorSet, {0});
+        b_.decorate(var, SpvDecorationBinding, {kBindingHeap});
+        b_.decorate(var, SpvDecorationAliased);
+        b_.extension("SPV_EXT_descriptor_indexing");
+        b_.capability(SpvCapabilityShaderNonUniform);
+        b_.capability(SpvCapabilityStorageBufferArrayNonUniformIndexing);
+        heap_element_[0] = element;
+        heap_[0] = var;
+        return var;
+    }
+
     std::uint32_t heap_pointer(int words, const Address &address)
     {
+        if (split_heap()) {
+            if (words != 1) throw Error("internal: vector heap access with a split heap", 0);
+            const std::uint32_t u32 = b_.t_u32();
+            const std::uint32_t var = heap_windows_view();
+            const std::uint32_t relative = b_.value(SpvOpISub, u32, {byte_address(address), heap_base()});
+            // Clamped: an address outside the heap (garbage data) must not
+            // index past the descriptor array, which is undefined behaviour.
+            // The extra last window is a dummy buffer, so such accesses never
+            // reach live data; robustBufferAccess keeps them inside it.
+            const std::uint32_t window = b_.ext(u32, GLSLstd450UMin,
+                {b_.value(SpvOpShiftRightLogical, u32, {relative, b_.u32(options_.heap_window_shift)}),
+                 b_.u32(options_.heap_windows)});
+            const std::uint32_t within = b_.value(SpvOpBitwiseAnd, u32,
+                                                  {relative, b_.u32((1u << options_.heap_window_shift) - 1u)});
+            const std::uint32_t element = b_.value(SpvOpShiftRightLogical, u32, {within, b_.u32(2)});
+            // Invocations may access different windows.
+            b_.decorate(window, SpvDecorationNonUniform);
+            const std::uint32_t pointer = b_.value(SpvOpAccessChain, b_.t_ptr(SpvStorageClassStorageBuffer, u32),
+                                                   {var, window, b_.u32(0), element});
+            b_.decorate(pointer, SpvDecorationNonUniform);
+            return pointer;
+        }
         const std::uint32_t var = heap_view(words);
         const int index = words == 1 ? 0 : words == 2 ? 1 : 2;
         // The heap base is aligned far beyond any access size.
@@ -920,7 +976,7 @@ private:
     std::vector<std::uint32_t> load_words(Space space, const Address &address, int count, bool is_volatile)
     {
         std::vector<std::uint32_t> words;
-        if (space == Space::global && (count == 2 || count == 4) && !is_volatile) {
+        if (space == Space::global && (count == 2 || count == 4) && !is_volatile && !split_heap()) {
             const std::uint32_t vec = load_pointer(b_.t_vec(b_.t_u32(), static_cast<std::uint32_t>(count)),
                                                    heap_pointer(count, address), false);
             for (int i = 0; i < count; ++i)
@@ -935,7 +991,7 @@ private:
     void store_words(Space space, const Address &address, const std::vector<std::uint32_t> &words, bool is_volatile)
     {
         const int count = static_cast<int>(words.size());
-        if (space == Space::global && (count == 2 || count == 4) && !is_volatile) {
+        if (space == Space::global && (count == 2 || count == 4) && !is_volatile && !split_heap()) {
             std::vector<std::uint32_t> operands{b_.t_vec(b_.t_u32(), static_cast<std::uint32_t>(count))};
             const std::uint32_t composite = b_.id();
             operands.push_back(composite);
@@ -1091,7 +1147,8 @@ private:
 
     void note_space(Space space, bool is_volatile)
     {
-        if (space == Space::shared && is_volatile) info_.warp_synchronous = true;
+        // Emulated warps need no particular subgroup size.
+        if (space == Space::shared && is_volatile && !options_.emulate_warps) info_.warp_synchronous = true;
     }
 
     void lower_load(const Instruction &in)
@@ -1130,27 +1187,39 @@ private:
         const Address addr = address(in.operands[0], in.line);
         const std::vector<std::uint32_t> elems = read_elements(in.operands[1], type, in.line);
         const int total = type.bits / 8 * count;
-        const bool warp_sync = space == Space::shared && is_volatile;
-        if (warp_sync) subgroup_barrier();
+        // With emulate_warps the barriers are emitted by lower_instruction,
+        // outside any guard, so that they stay in uniform control flow.
+        const bool warp_sync = space == Space::shared && is_volatile && !options_.emulate_warps;
+        if (warp_sync) warp_barrier();
         if (total < 4) {
             for (int i = 0; i < count; ++i)
                 store_subword(space, offset_by(addr, static_cast<std::uint32_t>(i * type.bits / 8)), elems[i], type.bits);
         } else {
             store_words(space, addr, elements_to_words(elems, type), is_volatile);
         }
-        if (warp_sync) subgroup_barrier();
+        if (warp_sync) warp_barrier();
     }
 
     // Warp-synchronous PTX assumes the 32 lanes of a warp execute in
     // lockstep, so a volatile shared store is visible to every lane's next
     // instruction. Vulkan guarantees neither, so surround such stores with
-    // subgroup execution+memory barriers.
-    void subgroup_barrier()
+    // execution+memory barriers: subgroup-wide on devices with 32-lane (or
+    // wider) subgroups, workgroup-wide with emulate_warps. A workgroup
+    // barrier makes every warp advance store by store together, and since
+    // all loads of a phase complete before any store of the next, this is
+    // exactly lockstep execution.
+    void warp_barrier()
     {
-        b_.op(SpvOpControlBarrier, {b_.u32(SpvScopeSubgroup), b_.u32(SpvScopeSubgroup),
+        const std::uint32_t scope = options_.emulate_warps ? SpvScopeWorkgroup : SpvScopeSubgroup;
+        b_.op(SpvOpControlBarrier, {b_.u32(scope), b_.u32(scope),
                                     b_.u32(SpvMemorySemanticsAcquireReleaseMask |
                                            (options_.shared_in_storage ? SpvMemorySemanticsUniformMemoryMask
                                                                        : SpvMemorySemanticsWorkgroupMemoryMask))});
+    }
+
+    bool is_warp_sync_store(const Instruction &in)
+    {
+        return in.op == "st" && in.has("volatile") && access_space(in, in.operands[0]) == Space::shared;
     }
 
     void lower_texture(const Instruction &in)
@@ -1357,20 +1426,31 @@ private:
     // ---- instruction dispatch -------------------------------------------------
     void lower_instruction(const Instruction &in)
     {
+        const bool emulated_warp_store = options_.emulate_warps && is_warp_sync_store(in);
+        if (predicate_ != 0 && in.op == "bar")
+            throw Error("bar.sync inside warp-synchronous code under a branch", in.line);
+        if (emulated_warp_store) warp_barrier();
+        // Condition: the instruction's guard, and the predicate of an arm
+        // emitted by emit_predicated.
+        std::uint32_t condition = predicate_;
         if (!in.guard.empty()) {
-            // Predicated non-branch instruction: if (p) { in }
             std::uint32_t p = read_reg(in.guard, Type{'p', 1}, in.line);
             if (in.guard_negated) p = b_.value(SpvOpLogicalNot, b_.t_bool(), {p});
+            condition = condition ? b_.value(SpvOpLogicalAnd, b_.t_bool(), {condition, p}) : p;
+        }
+        if (condition != 0) {
+            // Predicated instruction: if (condition) { in }
             const std::uint32_t then_label = b_.id(), merge = b_.id();
             b_.op(SpvOpSelectionMerge, {merge, SpvSelectionControlMaskNone});
-            b_.branch_conditional(p, then_label, merge);
+            b_.branch_conditional(condition, then_label, merge);
             b_.label(then_label);
             lower_unguarded(in);
             b_.branch(merge);
             b_.label(merge);
-            return;
+        } else {
+            lower_unguarded(in);
         }
-        lower_unguarded(in);
+        if (emulated_warp_store) warp_barrier();
     }
 
     void lower_unguarded(const Instruction &in)
@@ -1772,6 +1852,10 @@ private:
             const CfgBlock &block = cfg_->blocks[node.cfg_block];
             std::uint32_t p = read_reg(block.predicate, Type{'p', 1}, block.line);
             if (block.negated) p = b_.value(SpvOpLogicalNot, b_.t_bool(), {p});
+            if (options_.emulate_warps && (contains_warp_sync(node.children[0]) || contains_warp_sync(node.children[1]))) {
+                emit_predicated(node, p, block.line);
+                break;
+            }
             const std::uint32_t then_label = b_.id(), else_label = b_.id(), merge = b_.id();
             b_.op(SpvOpSelectionMerge, {merge, SpvSelectionControlMaskNone});
             b_.branch_conditional(p, then_label, else_label);
@@ -1814,6 +1898,138 @@ private:
             emit_br(node.construct);
             break;
         }
+    }
+
+    // ---- warp emulation uniformity --------------------------------------------
+    // Emulation brackets each warp-synchronous store with workgroup barriers,
+    // so every such store must be reached by all invocations of the
+    // workgroup, or sit in a predicated if-arm (emit_predicated) whose `if`
+    // is itself reached by all. An invocation stops being guaranteed to reach
+    // the rest of a sequence once an earlier element can leave it early: a
+    // return, or a branch to a construct enclosing that element (break,
+    // continue, multi-level exit). A loop body counts as uniform only if the
+    // loop contains bar.sync, because CUDA already requires uniform control
+    // flow around bar.sync; other loops may have per-invocation trip counts.
+    void collect_constructs(const StructNode &node, std::set<int> &inside)
+    {
+        if (node.kind == StructNode::Kind::block || node.kind == StructNode::Kind::loop) inside.insert(node.construct);
+        for (const StructNode &child : node.children) collect_constructs(child, inside);
+    }
+
+    bool leaves_early(const StructNode &node, const std::set<int> &inside)
+    {
+        if (node.kind == StructNode::Kind::ret) return true;
+        // A branch to a transparent block is in tail position (see
+        // find_transparent_blocks): it skips nothing.
+        if (node.kind == StructNode::Kind::br && !inside.count(node.construct) && !constructs_[node.construct].transparent)
+            return true;
+        for (const StructNode &child : node.children)
+            if (leaves_early(child, inside)) return true;
+        return false;
+    }
+
+    bool leaves_early(const StructNode &node)
+    {
+        std::set<int> inside;
+        collect_constructs(node, inside);
+        return leaves_early(node, inside);
+    }
+
+    bool contains_barrier(const StructNode &node)
+    {
+        if (node.kind == StructNode::Kind::code) {
+            for (const Instruction *in : cfg_->blocks[node.cfg_block].code)
+                if (in->op == "bar") return true;
+            return false;
+        }
+        for (const StructNode &child : node.children)
+            if (contains_barrier(child)) return true;
+        return false;
+    }
+
+    void check_warp_uniformity(const StructNode &node, bool uniform)
+    {
+        const auto reject = [] {
+            throw Error("warp-synchronous code that not every invocation reaches cannot be emulated", 0);
+        };
+        switch (node.kind) {
+        case StructNode::Kind::seq:
+            for (const StructNode &child : node.children) {
+                check_warp_uniformity(child, uniform);
+                if (leaves_early(child)) uniform = false;
+            }
+            return;
+        case StructNode::Kind::code:
+            if (!uniform && contains_warp_sync(node)) reject();
+            return;
+        case StructNode::Kind::branch_if:
+            if (contains_warp_sync(node)) {
+                // Emitted predicated; its arms must be straight-line code
+                // (checked by emit_straight) and the `if` itself uniform.
+                if (!uniform) reject();
+                return;
+            }
+            for (const StructNode &child : node.children) check_warp_uniformity(child, false);
+            return;
+        case StructNode::Kind::block:
+            check_warp_uniformity(node.children[0], uniform);
+            return;
+        case StructNode::Kind::loop:
+            check_warp_uniformity(node.children[0], uniform && contains_barrier(node.children[0]));
+            return;
+        default:
+            return;
+        }
+    }
+
+    bool contains_warp_sync(const StructNode &node)
+    {
+        if (node.kind == StructNode::Kind::code) {
+            for (const Instruction *in : cfg_->blocks[node.cfg_block].code)
+                if (is_warp_sync_store(*in)) return true;
+            return false;
+        }
+        for (const StructNode &child : node.children)
+            if (contains_warp_sync(child)) return true;
+        return false;
+    }
+
+    // emulate_warps: an `if` whose arms contain warp-synchronous code (e.g.
+    // `if (tid < 32) { warp scan }`) cannot branch, because its workgroup
+    // barriers must be reached by every invocation. Both arms are emitted
+    // for all invocations instead, each instruction predicated on its arm's
+    // condition (lower_instruction), with the barriers unconditional. This
+    // needs straight-line arms; anything else is rejected rather than
+    // miscompiled.
+    void emit_predicated(const StructNode &node, std::uint32_t p, int line)
+    {
+        const std::uint32_t outer = predicate_;
+        const std::uint32_t not_p = b_.value(SpvOpLogicalNot, b_.t_bool(), {p});
+        for (int arm = 0; arm < 2; ++arm) {
+            const std::uint32_t own = arm == 0 ? p : not_p;
+            predicate_ = outer ? b_.value(SpvOpLogicalAnd, b_.t_bool(), {outer, own}) : own;
+            emit_straight(node.children[static_cast<std::size_t>(arm)], line);
+        }
+        predicate_ = outer;
+    }
+
+    void emit_straight(const StructNode &node, int line)
+    {
+        switch (node.kind) {
+        case StructNode::Kind::seq:
+            for (const StructNode &child : node.children) emit_straight(child, line);
+            return;
+        case StructNode::Kind::code:
+            for (const Instruction *in : cfg_->blocks[node.cfg_block].code) lower_instruction(*in);
+            return;
+        case StructNode::Kind::br:
+            // A tail branch to a transparent block falls through anyway.
+            if (constructs_[node.construct].transparent) return;
+            break;
+        default:
+            break;
+        }
+        throw Error("warp-synchronous code under a branch with nested control flow cannot be emulated", line);
     }
 
     std::uint32_t construct_target(int id) const
@@ -1892,6 +2108,7 @@ private:
     KernelInfo info_;
     std::uint32_t main_ = 0;
     bool native_ftz_ = false;
+    std::uint32_t predicate_ = 0; // emulate_warps: condition of the arm being emitted predicated
     std::set<std::string> flushed_; // registers that never hold a denormal (emulated ftz)
     std::map<std::string, ParamSlot> params_;
     std::map<std::string, std::uint32_t> symbol_spec_, texture_index_, shared_offset_, local_offset_;
