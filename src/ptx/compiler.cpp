@@ -742,8 +742,9 @@ private:
     // (base >> k) + offset / size: drivers then share the base computation
     // between neighbouring accesses and fold the offset into the access.
     // The split is exact as long as base itself does not wrap below the
-    // start of its space; for the heap that holds for |offset| < 64 KiB
-    // because the runtime never allocates its first 64 KiB (kHeapReserve).
+    // start of its space, so it is used only for the heap, where that holds
+    // for |offset| < 64 KiB because the runtime never allocates its first
+    // 64 KiB (kHeapReserve).
     struct Address {
         std::uint32_t base = 0;
         std::uint32_t offset = 0;
@@ -935,7 +936,10 @@ private:
     std::uint32_t word_pointer(Space space, const Address &address)
     {
         if (space != Space::shared && space != Space::local) return heap_pointer(1, address);
-        const std::uint32_t index = element_index(address, 2);
+        // Not element_index: shared and local memory start at address 0, so
+        // a valid access such as st[top + 1] with top == -1 has a base below
+        // the start of the space and the base/offset split would be wrong.
+        const std::uint32_t index = b_.value(SpvOpShiftRightLogical, b_.t_u32(), {byte_address(address), b_.u32(2)});
         switch (space) {
         case Space::shared:
             if (options_.shared_in_storage) {
