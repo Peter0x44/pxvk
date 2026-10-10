@@ -77,7 +77,7 @@ endif()
 
 # The nvcuda.dll replacement (32-bit only).
 if(CMAKE_SIZEOF_VOID_P EQUAL 4 AND WIN32)
-    add_library(nvcuda SHARED src/runtime/runtime.cpp src/runtime/loader.cpp src/runtime/stubs.cpp src/runtime/exports.def)
+    add_library(nvcuda SHARED src/runtime/runtime.cpp src/runtime/loader.cpp src/runtime/stubs.cpp)
     set_target_properties(nvcuda PROPERTIES PREFIX "" OUTPUT_NAME "nvcuda")
     target_link_libraries(nvcuda PRIVATE pxvk-ptx pxvk-vk)
     target_compile_definitions(nvcuda PRIVATE NOMINMAX _WIN32_WINNT=0x0601)

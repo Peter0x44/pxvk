@@ -58,7 +58,7 @@ run the GPU tests.
 | `tools/bench.py` | native/pxvk sample runs, frame rates and image comparison |
 | `tools/capture-diff.py` | find the first diverging launch between native and pxvk captures |
 | `tools/extract-physx-ptx.py` | extract the PTX corpus from a PhysX DLL |
-| `tools/gen-stubs.py` | regenerate the stubs for unsupported CUDA exports |
+| `tools/gen-stubs.py` | regenerate `src/runtime/stubs.cpp` from `unsupported-exports.txt` (needs the CUDA toolkit headers) |
 
 PhysX PTX, captures, samples and game files are proprietary: keep them in
 `tmp/` or `test-output/`, which git ignores.

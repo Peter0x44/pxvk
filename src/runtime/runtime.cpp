@@ -1662,11 +1662,6 @@ CUresult PXVK_CUDAAPI dark_heap_free(const void *opaque, size_t *second)
 
 } // namespace
 
-PXVK_EXPORT CUresult __cdecl pxvkNotSupportedStub(void)
-{
-    return CUDA_ERROR_NOT_SUPPORTED;
-}
-
 extern "C" BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH) {
