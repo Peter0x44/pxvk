@@ -3,8 +3,10 @@
 // NVIDIA's cudart32_65.dll builds an absolute System32 path for nvcuda.dll,
 // so the normal DLL search order cannot substitute pxvk. When pxvk is
 // injected first (pxvk-launch.exe), a loader notification patches only
-// CUDART's LoadLibraryW/LoadLibraryExW imports so that its nvcuda.dll
-// request resolves to the already loaded pxvk module.
+// CUDART's LoadLibraryA/W/ExW imports so that its nvcuda.dll request
+// resolves to the already loaded pxvk module. (CUDA 4.x runtimes such as
+// cudart32_41_4.dll ask for plain "nvcuda.dll" with LoadLibraryA, which the
+// loaded pxvk module would satisfy anyway; the redirect makes it explicit.)
 //
 // The same notification patches PhysXCore.dll's and PhysXDevice.dll's
 // LoadLibraryA/W/ExW imports so that their nvapi.dll requests resolve to
@@ -28,7 +30,7 @@ namespace pxvk::runtime {
 namespace {
 
 using LoadLibraryAFn = HMODULE(WINAPI *)(LPCSTR);
-using LoadLibraryWFn =HMODULE(WINAPI *)(LPCWSTR);
+using LoadLibraryWFn = HMODULE(WINAPI *)(LPCWSTR);
 using LoadLibraryExWFn = HMODULE(WINAPI *)(LPCWSTR, HANDLE, DWORD);
 using LdrDllNotificationFn = VOID(CALLBACK *)(ULONG, const void *, void *);
 using LdrRegisterDllNotificationFn = LONG(NTAPI *)(ULONG, LdrDllNotificationFn, void *, void **);
@@ -57,23 +59,29 @@ LoadLibraryExWFn g_load_library_ex_w = nullptr;
 LdrUnregisterDllNotificationFn g_unregister = nullptr;
 void *g_cookie = nullptr;
 
-bool is_driver_name(LPCWSTR path)
+// Whether the file name part of a path equals `name` (case-insensitive).
+bool has_file_name(LPCWSTR path, const wchar_t *name)
 {
     if (path == nullptr) return false;
-    const wchar_t *name = path;
+    const wchar_t *file = path;
     for (const wchar_t *c = path; *c; ++c)
-        if (*c == L'\\' || *c == L'/') name = c + 1;
-    return _wcsicmp(name, L"nvcuda.dll") == 0;
+        if (*c == L'\\' || *c == L'/') file = c + 1;
+    return _wcsicmp(file, name) == 0;
 }
 
-bool is_nvapi_name(LPCWSTR path)
+bool has_file_name(LPCSTR path, const char *name)
 {
-    if (path == nullptr || g_nvapi_path[0] == L'\0') return false;
-    const wchar_t *name = path;
-    for (const wchar_t *c = path; *c; ++c)
-        if (*c == L'\\' || *c == L'/') name = c + 1;
-    return _wcsicmp(name, L"nvapi.dll") == 0;
+    if (path == nullptr) return false;
+    const char *file = path;
+    for (const char *c = path; *c; ++c)
+        if (*c == '\\' || *c == '/') file = c + 1;
+    return _stricmp(file, name) == 0;
 }
+
+bool is_driver_name(LPCWSTR path) { return has_file_name(path, L"nvcuda.dll"); }
+bool is_driver_name(LPCSTR path) { return has_file_name(path, "nvcuda.dll"); }
+bool is_nvapi_name(LPCWSTR path) { return g_nvapi_path[0] != L'\0' && has_file_name(path, L"nvapi.dll"); }
+bool is_nvapi_name(LPCSTR path) { return g_nvapi_path[0] != L'\0' && has_file_name(path, "nvapi.dll"); }
 
 HMODULE WINAPI redirect_load_library_w(LPCWSTR path)
 {
@@ -92,12 +100,8 @@ HMODULE WINAPI redirect_load_library_ex_w(LPCWSTR path, HANDLE file, DWORD flags
 
 HMODULE WINAPI redirect_load_library_a(LPCSTR path)
 {
-    if (path != nullptr && g_nvapi_path[0] != L'\0') {
-        const char *name = path;
-        for (const char *c = path; *c; ++c)
-            if (*c == '\\' || *c == '/') name = c + 1;
-        if (_stricmp(name, "nvapi.dll") == 0) return g_load_library_w(g_nvapi_path);
-    }
+    if (is_driver_name(path)) return g_load_library_w(g_module_path);
+    if (is_nvapi_name(path)) return g_load_library_w(g_nvapi_path);
     return g_load_library_a(path);
 }
 
@@ -110,7 +114,7 @@ void patch_slot(void **slot, void *replacement)
     FlushInstructionCache(GetCurrentProcess(), slot, sizeof(*slot));
 }
 
-void patch_imports(void *module_base, bool physx)
+void patch_imports(void *module_base)
 {
     auto *base = static_cast<unsigned char *>(module_base);
     const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(base);
@@ -127,7 +131,7 @@ void patch_imports(void *module_base, bool physx)
             if (IMAGE_SNAP_BY_ORDINAL32(names->u1.Ordinal)) continue;
             const auto *import = reinterpret_cast<const IMAGE_IMPORT_BY_NAME *>(base + names->u1.AddressOfData);
             const char *name = reinterpret_cast<const char *>(import->Name);
-            if (physx && std::strcmp(name, "LoadLibraryA") == 0)
+            if (std::strcmp(name, "LoadLibraryA") == 0)
                 patch_slot(reinterpret_cast<void **>(&slots->u1.Function), reinterpret_cast<void *>(&redirect_load_library_a));
             else if (std::strcmp(name, "LoadLibraryW") == 0)
                 patch_slot(reinterpret_cast<void **>(&slots->u1.Function), reinterpret_cast<void *>(&redirect_load_library_w));
@@ -152,9 +156,9 @@ VOID CALLBACK on_dll_notification(ULONG reason, const void *raw, void *)
     wchar_t name[64]{};
     const std::size_t count = std::min<std::size_t>(data->base_name->length / sizeof(wchar_t), std::size(name) - 1);
     std::wmemcpy(name, data->base_name->buffer, count);
-    if (is_cudart(name)) patch_imports(data->base, false);
+    if (is_cudart(name)) patch_imports(data->base);
     else if (_wcsicmp(name, L"PhysXCore.dll") == 0 || _wcsicmp(name, L"PhysXDevice.dll") == 0)
-        patch_imports(data->base, true);
+        patch_imports(data->base);
 }
 
 } // namespace
@@ -189,7 +193,7 @@ void install_driver_redirect(HMODULE self)
     for (const wchar_t *name : {L"cudart32_65.dll", L"cudart32_60.dll", L"cudart32_55.dll", L"cudart32_50_35.dll",
                                 L"cudart32_42_9.dll", L"cudart32_41_28.dll", L"cudart32_40_17.dll",
                                 L"cudart32_32_16.dll", L"cudart32_31_4.dll", L"cudart32_30_14.dll"})
-        if (HMODULE loaded = GetModuleHandleW(name)) patch_imports(loaded, false);
+        if (HMODULE loaded = GetModuleHandleW(name)) patch_imports(loaded);
 }
 
 const char *nvapi_mode()

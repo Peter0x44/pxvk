@@ -44,7 +44,6 @@ SwapFn g_swap = nullptr;
 KeyboardFuncFn g_keyboard_func = nullptr;
 GlutGetFn g_glut_get = nullptr;
 QpcFn g_qpc = nullptr;
-TickFn g_tick = nullptr;
 TickFn g_time_get_time = nullptr;
 SleepFn g_sleep = nullptr;
 KeyboardCallback g_app_keyboard = nullptr;
