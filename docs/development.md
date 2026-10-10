@@ -26,7 +26,8 @@ and the developer tools below.
 `run-mirrors-edge.cmd`. It refuses binaries that import non-system DLLs.
 
 CI (`.github/workflows/build.yml`) builds every push and pull request with
-MSYS2's 32-bit MinGW toolchain and uploads that package as the
+Ubuntu's `i686-w64-mingw32` cross compiler (posix threads, as in
+w64devkit) and uploads that package as the
 `pxvk-<commit>` artifact on the run's page. CI has no GPU, so it does not
 run the GPU tests.
 

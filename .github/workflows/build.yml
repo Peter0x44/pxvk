@@ -1,6 +1,6 @@
-# Builds the 32-bit runtime and uploads the tester package (tools/package.py)
-# as the pxvk-<commit> artifact. There is no GPU here, so the GPU tests
-# (tools/check.py, bench.py) are not run.
+# Cross-compiles the 32-bit runtime on Linux and uploads the tester package
+# (tools/package.py) as the pxvk-<commit> artifact. There is no GPU here, so
+# the GPU tests (tools/check.py, bench.py) are not run.
 name: build
 
 on:
@@ -10,30 +10,24 @@ on:
 
 jobs:
   windows-x86:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      # MINGW32: i686 GCC linking against msvcrt.dll, like the local w64devkit
-      # build. Every target links with -static (CMakeLists.txt), so the
+      # i686-w64-mingw32 with the posix thread model and msvcrt, like
+      # w64devkit. Every target links with -static (CMakeLists.txt), so the
       # binaries import only Windows system DLLs; package.py enforces that.
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW32
-          update: false
-          # git: CMake FetchContent clones the dependencies at configure.
-          install: >-
-            git
-            mingw-w64-i686-gcc
-            mingw-w64-i686-cmake
-            mingw-w64-i686-ninja
-            mingw-w64-i686-python
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-mingw-w64-i686-posix gcc-mingw-w64-i686-posix ninja-build
 
       - name: Configure
-        run: cmake -S . -B build/x86 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+        run: >-
+          cmake -S . -B build/x86 -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_PROCESSOR=x86
+          -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc-posix
+          -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++-posix
 
       - name: Build
         run: cmake --build build/x86
@@ -42,7 +36,7 @@ jobs:
         id: package
         run: |
           name="pxvk-${GITHUB_SHA::7}"
-          python tools/package.py --build build/x86 --out dist --name "$name"
+          python3 tools/package.py --build build/x86 --out dist --name "$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
       # The artifact is the package folder; GitHub serves it as a zip.
