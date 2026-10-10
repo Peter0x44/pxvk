@@ -822,20 +822,25 @@ bool Device::ensure_heap(std::uint64_t bytes, std::string &error)
         error = "CUDA heap exceeds the device's heap limit";
         return false;
     }
-    // Grow geometrically so repeated allocations do not copy repeatedly.
-    VkDeviceSize size = std::max<VkDeviceSize>(d.heap.size * 2, 64u << 20);
-    while (size < bytes) size *= 2;
-    size = std::max<VkDeviceSize>(std::min<VkDeviceSize>(size, d.caps.max_heap_bytes), (bytes + 3) & ~VkDeviceSize{3});
+    // A Vulkan buffer cannot be resized: growing means a new buffer and a
+    // copy. PhysX allocates one pool per context, so the heap grows once at
+    // startup; size it to what is needed (in 64 KiB driver pages) rather
+    // than doubling, which left half of FluidMark's 512 MiB heap unused.
+    // Growth by small steps still adds at least a quarter, so an
+    // application allocating piecemeal does not copy on every allocation.
+    constexpr VkDeviceSize kPage = 64u << 10;
+    const auto round = [&](VkDeviceSize n) {
+        return std::min<VkDeviceSize>((n + kPage - 1) & ~(kPage - 1), d.caps.max_heap_bytes);
+    };
+    const VkDeviceSize needed = round(bytes);
+    VkDeviceSize size = std::max(needed, round(d.heap.size + d.heap.size / 4));
     if (!d.submit_and_wait(error)) return false;
-    // The old heap stays allocated while it is copied, so growth briefly
-    // needs both. Where the doubled size does not fit next to it (small
-    // device-local heaps, e.g. integrated GPUs), retry with what is needed.
-    const VkDeviceSize needed = std::min<VkDeviceSize>((bytes + (16u << 20) - 1) & ~VkDeviceSize((16u << 20) - 1),
-                                                       d.caps.max_heap_bytes);
     const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                                      VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     Buffer grown;
     if (!d.create_buffer(size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, grown, error)) {
+        // The old heap stays allocated during the copy; if the extra quarter
+        // does not fit beside it, try exactly what is needed.
         if (needed >= size) return false;
         size = needed;
         if (!d.create_buffer(size, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, grown, error)) return false;

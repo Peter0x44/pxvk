@@ -332,7 +332,11 @@ CUresult allocate(State &s, std::size_t requested, std::uint32_t alignment, std:
     const std::uint64_t start = (std::uint64_t(s.heap_end) + alignment - 1) & ~std::uint64_t(alignment - 1);
     if (start + size > s.heap_limit) return CUDA_ERROR_OUT_OF_MEMORY;
     std::string error;
+    const std::uint64_t heap_before = s.device.heap_size();
     if (!s.device.ensure_heap(start + size, error)) return failure(s, "heap", error, CUDA_ERROR_OUT_OF_MEMORY);
+    if (s.device.heap_size() != heap_before)
+        s.log.write("heap grow %lluKiB -> %lluKiB", static_cast<unsigned long long>(heap_before >> 10),
+                    static_cast<unsigned long long>(s.device.heap_size() >> 10));
     const std::uint32_t gap_start = s.heap_end;
     s.heap_end = static_cast<std::uint32_t>(start + size);
     if (start > gap_start) add_free(s, gap_start, static_cast<std::uint32_t>(start - gap_start));

@@ -128,10 +128,13 @@ checked heap load using the binding table in the launch block.
 
 - CUDA device memory is one device-local storage buffer. Device pointers are
   byte offsets into it (the first 64 KiB are reserved so null stays invalid).
-  The buffer grows on demand, preserving contents: it doubles, but the old
-  buffer stays allocated during the copy, so where the doubled size does not
-  fit beside it (small device-local heaps) growth retries with just the size
-  needed, rounded up to 16 MiB.
+  A Vulkan buffer cannot be resized, so growing means a new buffer and a
+  copy. PhysX allocates one pool per context and later pools reuse the
+  freed space, so the heap grows once at startup, to the size needed in
+  64 KiB pages (FluidMark: 258 MiB for its 256 MiB pool). Small growth
+  steps add at least a quarter so piecemeal allocators do not copy every
+  time; if that extra does not fit beside the old buffer during the copy,
+  growth retries with exactly what is needed. The log records each growth.
 - Every operation (upload, fill, copy, dispatch) is recorded into one command
   batch, serialized with full memory barriers, which reproduces CUDA
   default-stream ordering. The batch is submitted only when the host must see
