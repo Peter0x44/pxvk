@@ -2,8 +2,10 @@
 """Compare launch captures of the same frames from native CUDA and pxvk.
 
 Native and pxvk place allocations at different device addresses, so regions
-are matched (largest allocations by size and order, module globals by name)
-and 32-bit words that hold device pointers are translated before comparing.
+are matched (allocations of 1 MiB or more by size, in address order among
+equal sizes; module globals by name) and 32-bit words that hold device
+pointers, in memory and in the launch parameters, are translated before
+comparing.
 
 usage: capture-diff.py <native-capture-dir> <pxvk-capture-dir> [--limit N]
 """
@@ -54,10 +56,24 @@ def flatten(memory, base, size):
 def build_mapping(native, pxvk):
     """Pairs of (native_base, pxvk_base, size) regions."""
     pairs = []
-    big_native = sorted([a for a in native["allocations"] if a[1] >= 1 << 20])
-    big_pxvk = sorted([a for a in pxvk["allocations"] if a[1] >= 1 << 20])
-    for n, p in zip(big_native, big_pxvk):
-        pairs.append((n[0], p[0], min(n[1], p[1])))
+
+    def big(meta):
+        # pxvk lists module globals among its allocations; leave them to the
+        # by-name matching below.
+        globals_ = {base for base, _ in meta["globals"].values()}
+        by_size = {}
+        for base, size in sorted(meta["allocations"]):
+            if size >= 1 << 20 and base not in globals_:
+                by_size.setdefault(size, []).append(base)
+        return by_size
+
+    big_native, big_pxvk = big(native), big(pxvk)
+    for size in sorted(set(big_native) | set(big_pxvk)):
+        n, p = big_native.get(size, []), big_pxvk.get(size, [])
+        if len(n) != len(p):
+            print(f"    warning: {len(n)} native and {len(p)} pxvk allocations of {size} bytes; "
+                  f"{abs(len(n) - len(p))} left unmatched")
+        pairs += [(nb, pb, size) for nb, pb in zip(n, p)]
     for name, (base, size) in native["globals"].items():
         if name in pxvk["globals"]:
             pairs.append((base, pxvk["globals"][name][0], size))
@@ -69,6 +85,18 @@ def translate(word, pairs):
         if n <= word < n + size:
             return p + (word - n)
     return None
+
+
+def params_match(native_params, pxvk_params, pairs):
+    """Launch parameters (hex) are equal once device pointers are translated."""
+    a, b = bytes.fromhex(native_params), bytes.fromhex(pxvk_params)
+    if len(a) != len(b):
+        return False
+    for i in range(0, len(a) - 3, 4):
+        wa, wb = struct.unpack_from("<I", a, i)[0], struct.unpack_from("<I", b, i)[0]
+        if wa != wb and translate(wa, pairs) != wb:
+            return False
+    return a[len(a) & ~3:] == b[len(b) & ~3:]
 
 
 def compare(native_image, pxvk_image, pairs, limit):
@@ -110,7 +138,7 @@ def main():
                 fa = struct.unpack("<f", struct.pack("<I", wa))[0]
                 fb = struct.unpack("<f", struct.pack("<I", wb))[0]
                 print(f"    region {base:08x}+{offset:#x}: native={wa:08x} ({fa:.6g}) pxvk={wb:08x} ({fb:.6g})")
-        if native.get("params") != pxvk.get("params"):
+        if not params_match(native.get("params", ""), pxvk.get("params", ""), pairs):
             print(f"    params differ: native={native.get('params')} pxvk={pxvk.get('params')}")
 
 

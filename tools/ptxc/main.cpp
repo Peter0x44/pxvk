@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -48,17 +49,18 @@ int main(int argc, char **argv)
         try {
             const auto kernel = pxvk::ptx::compile_kernel(module, entry, options);
             const auto &k = kernel.info;
-            std::printf("ok %s words=%zu params=%u shared=%u%s local=%u symbols=%zu textures=%zu%s%s%s\n",
-                        entry.c_str(), kernel.spirv.size(), k.param_bytes, k.static_shared_bytes,
-                        k.uses_dynamic_shared ? "+dyn" : "", k.local_bytes, k.symbols.size(),
-                        k.textures.size(), k.uses_barrier ? " barrier" : "",
-                        k.warp_synchronous ? " warp-sync" : "", k.uses_int64 ? " int64" : "");
             if (!out_dir.empty()) {
                 const std::string path = out_dir + "/" + std::to_string(index) + ".spv";
                 std::ofstream out(path, std::ios::binary);
                 out.write(reinterpret_cast<const char *>(kernel.spirv.data()),
                           static_cast<std::streamsize>(kernel.spirv.size() * 4));
+                if (!out.flush()) throw std::runtime_error("cannot write " + path);
             }
+            std::printf("ok %s words=%zu params=%u shared=%u%s local=%u symbols=%zu textures=%zu%s%s%s\n",
+                        entry.c_str(), kernel.spirv.size(), k.param_bytes, k.static_shared_bytes,
+                        k.uses_dynamic_shared ? "+dyn" : "", k.local_bytes, k.symbols.size(),
+                        k.textures.size(), k.uses_barrier ? " barrier" : "",
+                        k.warp_synchronous ? " warp-sync" : "", k.uses_int64 ? " int64" : "");
         } catch (const std::exception &e) {
             std::printf("FAIL %s: %s\n", entry.c_str(), e.what());
             ++failures;

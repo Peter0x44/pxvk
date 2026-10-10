@@ -94,17 +94,20 @@ def load_bmp(path):
     data = path.read_bytes()
     offset = struct.unpack_from("<I", data, 10)[0]
     width, height = struct.unpack_from("<ii", data, 18)
-    return width, height, data[offset:]
+    bpp = struct.unpack_from("<H", data, 28)[0] // 8
+    stride = (width * bpp + 3) & ~3  # rows are padded to 4 bytes
+    rows = [data[offset + y * stride:offset + y * stride + width * bpp] for y in range(abs(height))]
+    return width, height, bpp, rows
 
 
 def pixel_diff(a, b):
-    wa, ha, pa = load_bmp(a)
-    wb, hb, pb = load_bmp(b)
-    if (wa, ha) != (wb, hb):
+    wa, ha, bpp, ra = load_bmp(a)
+    wb, hb, bppb, rb = load_bmp(b)
+    if (wa, ha, bpp) != (wb, hb, bppb):
         return None
-    total = len(pa) // 3
-    differing = sum(1 for i in range(0, len(pa), 3) if pa[i:i + 3] != pb[i:i + 3])
-    return 100.0 * differing / total
+    differing = sum(1 for row_a, row_b in zip(ra, rb) if row_a != row_b
+                    for i in range(0, len(row_a), bpp) if row_a[i:i + bpp] != row_b[i:i + bpp])
+    return 100.0 * differing / (wa * abs(ha))
 
 
 def main():
@@ -155,6 +158,8 @@ def main():
                 failures += 1
                 continue
             diff = pixel_diff(a / name, b / name)
+            if diff is None:
+                failures += 1
             print(f"{name}: {'size mismatch' if diff is None else f'{diff:.3f}% pixels differ'}")
         sys.exit(1 if failures else 0)
 

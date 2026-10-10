@@ -231,12 +231,22 @@ int main(int argc, char **argv)
                 std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
                 const auto ptx = pxvk::fatbin::extract_ptx(bytes.data(), bytes.size());
                 if (ptx.empty()) throw std::runtime_error("fatbin has no PTX");
-                std::string text = ptx.front().text;
+                // The PTX the runtime would load: highest virtual architecture.
+                const auto best = std::max_element(ptx.begin(), ptx.end(), [](const auto &a, const auto &b) {
+                    return a.sm_version < b.sm_version;
+                });
+                cache->module = pxvk::ptx::parse(best->text);
                 if (!ptx_override.empty()) {
+                    // The override replaces only the module it was edited from:
+                    // one that defines every entry of this fatbin.
                     std::ifstream override_in(ptx_override, std::ios::binary);
-                    text.assign((std::istreambuf_iterator<char>(override_in)), std::istreambuf_iterator<char>());
+                    const std::string text((std::istreambuf_iterator<char>(override_in)), std::istreambuf_iterator<char>());
+                    pxvk::ptx::Module edited = pxvk::ptx::parse(text);
+                    bool covers = true;
+                    for (const auto &f : cache->module.functions)
+                        if (f.is_entry && !edited.find(f.name)) covers = false;
+                    if (covers) cache->module = std::move(edited);
                 }
-                cache->module = pxvk::ptx::parse(text);
             }
             if (!cache->kernels.count(c.kernel))
                 cache->kernels[c.kernel] = pxvk::ptx::compile_kernel(cache->module, c.kernel, options);
@@ -295,6 +305,9 @@ int main(int argc, char **argv)
         for (const auto &r : before) extend(r.address, r.bytes.size());
         for (const auto &r : after) extend(r.address, r.bytes.size());
         lo &= ~std::uint64_t(255);
+        // Keep 64 KiB unused below the image, like the runtime's heap
+        // reserve: the compiler's base+offset addressing relies on it.
+        lo = lo >= 0x10000 ? lo - 0x10000 : 0;
         // 1 MiB probe area for the "pxvk_debug" symbol after the image.
         const std::uint64_t debug_address = (hi + 255) & ~std::uint64_t(255);
         hi = debug_address + (1u << 20);
@@ -304,8 +317,13 @@ int main(int argc, char **argv)
             fail(error);
             continue;
         }
+        bool uploaded = true;
         for (const auto &r : before)
-            if (!device.upload(r.address - lo, r.bytes.data(), r.bytes.size(), error)) break;
+            if (!(uploaded = device.upload(r.address - lo, r.bytes.data(), r.bytes.size(), error))) break;
+        if (!uploaded) {
+            fail("upload: " + error);
+            continue;
+        }
 
         // Launch block: params then the texture table.
         std::vector<std::uint8_t> launch(kernel.info.launch_block_bytes, 0);
