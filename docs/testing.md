@@ -18,9 +18,13 @@ build\x86\pxvk-opcheck.exe --device intel --filter f32
 
 ## 2. Real launches: capture and replay
 
-`tools/nvcuda-trace` is a native proxy driver. With `PXVK_CAPTURE_FRAMES` (or
-`PXVK_CAPTURE_LAUNCHES`) it snapshots all device memory around selected
-launches and records parameters, texture bindings and module globals.
+`tools/nvcuda-trace` is a native proxy driver with its own CMake project. It
+forwards to the real `nvcuda.dll` and logs every call; with
+`PXVK_CAPTURE_FRAMES` (frame numbers published by the harness) or
+`PXVK_CAPTURE_LAUNCHES` (launch ordinals, e.g. `100-120,500`) it snapshots
+all device memory around selected launches and records parameters, texture
+bindings and module globals. Capturing needs an NVIDIA GPU; replaying works
+on any Vulkan device.
 `pxvk-replay` re-executes each capture on Vulkan at the original addresses
 and grades the result (EXACT, ok = within 4 ULP / 1e-3 relative, BAD, FAIL).
 
@@ -85,6 +89,24 @@ pxvk's Vulkan device does on Optimus laptops, so images are comparable.
 python tools\check.py --ptx tmp\extracted-ptx --captures <capture dirs> --device nvidia intel
 ```
 
-Builds, compiles and validates every kernel of the PTX corpus, runs opcheck
-and replays the captures. On NVIDIA exact semantics are required; on other
-vendors approximation-unit differences are tolerated.
+Builds, compiles and validates every kernel of the PTX corpus (with
+`spirv-val` when it is on `PATH`), runs opcheck and replays the captures. On
+NVIDIA exact semantics are required; on other vendors approximation-unit
+differences are tolerated. The reference capture sets on the development
+machine are `test-output/bench/capture-all/trace/SampleCloth.exe_*` (all nine
+cloth scenes) and `test-output/bench/fluid-capture/trace/SampleParticleFluid.exe_*`.
+
+Expected results on the reference laptop:
+
+| Captures | RTX 3070 | Intel UHD |
+|---|---|---|
+| SampleCloth (90 launches) | 84 EXACT, 6 ok | 28 EXACT, 56 ok, 6 tolerated BAD |
+| SampleParticleFluid (112 launches) | 112 EXACT | 104 EXACT, 8 ok |
+
+## Testing on another machine
+
+Clone the repository, build, and copy `tmp/extracted-ptx` and the capture
+directories privately (they are proprietary and not in git). Without an
+NVIDIA driver, `check.py` skips opcheck and still compiles the corpus and
+replays the captures, which compares the new GPU against the native NVIDIA
+results recorded in them. Pass the device with `--device <name fragment>`.

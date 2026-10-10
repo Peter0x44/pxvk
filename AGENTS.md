@@ -1,10 +1,15 @@
 # Agent guidance
 
-- Read `docs/charter.md` before making significant changes.
-- Target classic 32-bit GPU PhysX, not general CUDA. Mirror's Edge is the first compatibility target.
-- Prefer evidence from traces and real PhysX/PTX workloads over speculative generality.
-- Do not implement features solely because CUDA supports them.
+- Read `docs/charter.md` and `docs/architecture.md` before significant
+  changes; `docs/roadmap.md` lists open work.
+- Target classic 32-bit GPU PhysX, not general CUDA. Mirror's Edge is the
+  first compatibility target. Do not silently broaden scope.
+- Prefer evidence from traces, captures and real PhysX/PTX workloads over
+  speculative generality. Cite concrete source files and functions.
 - Keep tasks small and independently testable.
-- Cite concrete source files and functions in research findings where applicable.
-- Do not silently broaden project scope.
-- Do not make major architectural decisions before the research phase is complete.
+- Before committing compiler or runtime changes, run the regression check
+  (`docs/testing.md`) on every available GPU; NVIDIA results must stay
+  bit-exact against native.
+- PhysX PTX, captures, samples and game files are proprietary: keep them in
+  `tmp/` or `test-output/` (git-ignored), never in the repository.
+- Keep the docs current when behaviour changes.
