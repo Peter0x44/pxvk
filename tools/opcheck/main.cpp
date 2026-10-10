@@ -89,6 +89,7 @@ const Variant kVariants[] = {
     {"mul.ftz.f32 {d}, {a}, {b};", 'f', "ff"},
     {"fma.rn.ftz.f32 {d}, {a}, {b}, {c};", 'f', "fff"},
     {"div.full.ftz.f32 {d}, {a}, {b};", 'f', "ff"},
+    {"div.approx.ftz.f32 {d}, {a}, {b};", 'f', "ff"},
     {"div.rn.f32 {d}, {a}, {b};", 'f', "ff"},
     {"rcp.approx.ftz.f32 {d}, {a};", 'f', "f"},
     {"rsqrt.approx.ftz.f32 {d}, {a};", 'f', "f"},

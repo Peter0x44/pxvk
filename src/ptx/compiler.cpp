@@ -628,6 +628,12 @@ private:
     {
         if (o.kind == Operand::Kind::symbol && o.name == "_") return; // sink
         if (o.kind != Operand::Kind::reg) throw Error("destination must be a register", line);
+        // PTX sign-extends signed values into a wider destination register.
+        if (type.kind == 's' && type.bits <= 32 && reg(o.name, line).type_id == b_.t_u64()) {
+            if (type.bits < 32) value = sign_extend(value, type.bits);
+            write_reg(o.name, b_.value(SpvOpSConvert, b_.t_u64(), {value}), b_.t_u64(), line);
+            return;
+        }
         write_reg(o.name, value, canonical(type), line);
     }
 
@@ -1024,10 +1030,26 @@ private:
             b_.op(SpvOpStore, {pointer, b_.value(SpvOpBitwiseOr, u32, {kept, bits_in})});
             return;
         }
+        // Replace the bytes with a single compare-and-swap loop, so other
+        // invocations never see a half-written word (an AtomicAnd followed
+        // by an AtomicOr briefly exposed the bytes as zero).
         const std::uint32_t scope = b_.u32(space == Space::shared ? SpvScopeWorkgroup : SpvScopeDevice);
         const std::uint32_t semantics = b_.u32(SpvMemorySemanticsMaskNone);
-        b_.value(SpvOpAtomicAnd, u32, {pointer, scope, semantics, b_.value(SpvOpNot, u32, {mask})});
-        b_.value(SpvOpAtomicOr, u32, {pointer, scope, semantics, bits_in});
+        const std::uint32_t keep = b_.value(SpvOpNot, u32, {mask});
+        const std::uint32_t header = b_.id(), body = b_.id(), cont = b_.id(), merge = b_.id();
+        b_.branch(header);
+        b_.label(header);
+        b_.op(SpvOpLoopMerge, {merge, cont, SpvLoopControlMaskNone});
+        b_.branch(body);
+        b_.label(body);
+        const std::uint32_t old = b_.value(SpvOpAtomicLoad, u32, {pointer, scope, semantics});
+        const std::uint32_t replaced = b_.value(SpvOpBitwiseOr, u32, {b_.value(SpvOpBitwiseAnd, u32, {old, keep}), bits_in});
+        const std::uint32_t seen =
+            b_.value(SpvOpAtomicCompareExchange, u32, {pointer, scope, semantics, semantics, replaced, old});
+        b_.branch_conditional(b_.value(SpvOpIEqual, b_.t_bool(), {seen, old}), merge, cont);
+        b_.label(cont);
+        b_.branch(header);
+        b_.label(merge);
     }
 
     std::uint32_t extract_subword(std::uint32_t word, std::uint32_t address, int bits, bool is_signed)
@@ -1300,6 +1322,10 @@ private:
         if (type.bits != 32) throw Error("only f32 arithmetic is supported", in.line);
         const std::uint32_t f32 = b_.t_f32();
         const std::string &op = in.op;
+        // Only round-to-nearest is implemented; directed rounding would be
+        // silently wrong.
+        if (in.has("rz") || in.has("rm") || in.has("rp"))
+            throw Error("directed rounding is unsupported: " + in.text(), in.line);
         if ((op == "add" || op == "sub") && fused_.count(&in)) {
             fout(in, fused_add(in, fused_.at(&in)));
         } else if (op == "add" || op == "sub" || op == "mul") {
@@ -1318,11 +1344,18 @@ private:
             if (in.has("sat")) throw Error(".sat is unsupported", in.line);
             fout(in, r);
         } else if (op == "fma" || op == "mad") {
+            if (in.has("sat")) throw Error(".sat is unsupported", in.line);
             fout(in, fused_multiply_add(fin(in, 1), fin(in, 2), fin(in, 3)));
         } else if (op == "div") {
-            if (in.has("full") || in.has("approx")) {
-                // NVIDIA hardware evaluates these as a * rcp(b) (with operand
-                // scaling for |b| > 2^126 in the .full form, mirrored here).
+            if (in.has("approx")) {
+                // a * rcp(b), without .full's operand scaling: for
+                // 2^126 < |b| < 2^128 the reciprocal flushes to zero.
+                const std::uint32_t a = fin(in, 1), b = fin(in, 2);
+                const std::uint32_t r = b_.value(SpvOpFDiv, f32, {b_.f32_bits(0x3f800000u), b});
+                fout(in, b_.value(SpvOpFMul, f32, {a, r}));
+            } else if (in.has("full")) {
+                // NVIDIA hardware evaluates div.full as a * rcp(b) with
+                // operand scaling for |b| > 2^126, mirrored here.
                 const std::uint32_t a = fin(in, 1), b = fin(in, 2);
                 const std::uint32_t huge = b_.value(SpvOpFOrdGreaterThan, b_.t_bool(),
                     {b_.ext(f32, GLSLstd450FAbs, {b}), b_.f32_bits(0x7e800000u)});
@@ -1604,11 +1637,30 @@ private:
             write(in.operands[0], b_.value(SpvOpISub, u32, {b_.u32(31), b_.ext(u32, GLSLstd450FindUMsb, {v})}), Type{'u', 32}, line);
             return;
         }
-        if (op == "popc") {
-            write(in.operands[0], b_.value(SpvOpBitCount, b_.t_u32(), {src(1)}), Type{'u', 32}, line);
-            return;
+        if (op == "popc" || op == "brev") {
+            // Vulkan only allows 32-bit operands: split 64-bit values.
+            const std::uint32_t u32 = b_.t_u32(), u64 = b_.t_u64();
+            const std::uint32_t v = src(1);
+            if (type.bits == 64) {
+                const std::uint32_t lo = b_.value(SpvOpUConvert, u32, {v});
+                const std::uint32_t hi = b_.value(SpvOpUConvert, u32, {b_.value(SpvOpShiftRightLogical, u64, {v, b_.u32(32)})});
+                if (op == "popc") {
+                    const std::uint32_t count = b_.value(SpvOpIAdd, u32, {b_.value(SpvOpBitCount, u32, {lo}),
+                                                                           b_.value(SpvOpBitCount, u32, {hi})});
+                    write(in.operands[0], count, Type{'u', 32}, line);
+                    return;
+                }
+                const std::uint32_t new_hi = b_.value(SpvOpUConvert, u64, {b_.value(SpvOpBitReverse, u32, {lo})});
+                const std::uint32_t new_lo = b_.value(SpvOpUConvert, u64, {b_.value(SpvOpBitReverse, u32, {hi})});
+                return result(b_.value(SpvOpBitwiseOr, u64,
+                                       {b_.value(SpvOpShiftLeftLogical, u64, {new_hi, b_.u32(32)}), new_lo}));
+            }
+            if (op == "popc") {
+                write(in.operands[0], b_.value(SpvOpBitCount, u32, {v}), Type{'u', 32}, line);
+                return;
+            }
+            return result(b_.value(SpvOpBitReverse, ty, {v}));
         }
-        if (op == "brev") return result(b_.value(SpvOpBitReverse, ty, {src(1)}));
         throw Error("unsupported instruction " + in.text(), line);
     }
 
@@ -2101,7 +2153,10 @@ private:
             b_.capability(SpvCapabilitySignedZeroInfNanPreserve);
             b_.execution_mode(main_, SpvExecutionModeSignedZeroInfNanPreserve, {32});
         }
-        if (info_.uses_int64) b_.capability(SpvCapabilityInt64);
+        if (info_.uses_int64) {
+            if (!options_.int64) throw Error("kernel uses 64-bit integers, which the device does not support", 0);
+            b_.capability(SpvCapabilityInt64);
+        }
         if (info_.static_shared_bytes != 0 || info_.uses_dynamic_shared) shared_array();
     }
 

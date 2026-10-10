@@ -255,6 +255,7 @@ CUresult initialize(State &s)
     s.options.native_ftz = caps.native_ftz;
     s.options.preserve_nan = caps.preserve_nan;
     s.options.emulate_warps = caps.narrow_subgroups();
+    s.options.int64 = caps.int64;
     s.options.heap_window_shift = caps.heap_window_shift;
     s.options.heap_windows = caps.heap_windows;
     // Leave headroom on the device for the application's own rendering.

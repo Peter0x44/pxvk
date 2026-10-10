@@ -108,9 +108,9 @@ def main():
             differing = [l for l in r.stdout.splitlines() if "mismatches" in l or "failed" in l]
             # div.rn (unused by PhysX) is not correctly rounded in Vulkan. On
             # non-NVIDIA hardware the approximation units (rcp/rsqrt/sqrt and
-            # div.full built on rcp) legitimately differ by a few ULP.
+            # div.full/div.approx built on rcp) legitimately differ by a few ULP.
             nvidia = "NVIDIA" in r.stdout.splitlines()[0] if r.stdout else False
-            allowed = ("div.rn.f32",) if nvidia else ("div.rn.f32", "div.full", "rcp.approx", "rsqrt.approx", "sqrt.approx")
+            allowed = ("div.rn.f32",) if nvidia else ("div.rn.f32", "div.full", "div.approx", "rcp.approx", "rsqrt.approx", "sqrt.approx")
             unexpected = [l for l in differing if not l.startswith(allowed) or "failed" in l]
             print(f"  {device or 'default'}: {len(differing)} differing variant(s), {len(unexpected)} unexpected")
             failures += [f"opcheck {device}: {l}" for l in unexpected]

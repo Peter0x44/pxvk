@@ -61,6 +61,9 @@ struct CompileOptions {
     // contain such code are predicated so that every invocation reaches
     // the barriers. The kernel no longer needs a subgroup size.
     bool emulate_warps = false;
+    // Device supports shaderInt64; kernels with 64-bit integers fail to
+    // compile without it.
+    bool int64 = true;
     // Split heap, for devices whose maxStorageBufferRange is smaller than
     // the CUDA heap: binding 0 is an array of heap_windows descriptors, each
     // covering 2^heap_window_shift bytes of the heap buffer, selected per

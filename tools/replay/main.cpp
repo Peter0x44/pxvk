@@ -182,6 +182,7 @@ int main(int argc, char **argv)
     options.native_ftz = force_native_ftz || (native_ftz && caps.native_ftz);
     options.preserve_nan = caps.preserve_nan;
     options.emulate_warps = force_emulate_warps || caps.narrow_subgroups();
+    options.int64 = caps.int64;
     options.heap_window_shift = caps.heap_window_shift;
     options.heap_windows = caps.heap_windows;
     options.no_contraction = no_contraction;
