@@ -35,7 +35,7 @@ passes `spirv-val`; it does not mean the results were compared with native.
 | 2.8.4 (eight builds, 2.8.4.9 – 2.8.4.12) | 17 modules | 9 kernels in one module fail; **FluidMark validated** (bit-exact replays; it does not launch those kernels) | 64-bit integer atomics |
 | PhysX 3.3 x86 (`PhysX3Gpu_x86` 3.3.0.2, beside APEX Particles and Turbulence) | 5 modules, PTX 5.0 | 2 modules fail to parse | dual-destination `setp`; otherwise untested |
 | GRB x86 (`GRB_1_x86`, GPU rigid bodies) | 22 modules | most fail | texture objects and more |
-| 64-bit: `PhysXCore64` 2.8.3, `PhysX3Gpu_x64` 3.3.1.4 | 64-bit pointers | out of scope | a 64-bit pxvk |
+| 64-bit: `PhysXCore64` 2.8.3, `PhysX3Gpu_x64` 3.3.1.4 | 64-bit pointers | later (charter stage 4) | a 64-bit pxvk |
 
 The whole 2.7/2.8 family is two small instruction additions away from
 compiling completely. To repeat the scan, extract each runtime with
@@ -74,4 +74,4 @@ Duty: Ghosts, Lords of the Fallen (2014); Fallout 4's weapon debris and
 Killing Floor 2's gore use FleX, a separate CUDA library. Their runtimes are
 mostly PhysX 3.x, whose PTX uses 64-bit pointers, which pxvk's design (a
 device pointer is a 32-bit offset into one buffer) does not handle yet. It
-is outside the charter's scope; see the charter before taking it on.
+is the charter's last stage, for later.

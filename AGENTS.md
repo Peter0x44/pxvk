@@ -4,8 +4,9 @@
   changes; `docs/development.md` covers building and tools, and
   `docs/roadmap.md` lists open work. The README is for players: keep it
   non-technical.
-- Target classic 32-bit GPU PhysX, not general CUDA. Mirror's Edge is the
-  first compatibility target. Do not silently broaden scope.
+- Target GPU PhysX, not general CUDA. The charter orders the work in
+  stages; the current one is 32-bit PhysX 2.8.x with Mirror's Edge as the
+  first target. Do not silently move to a later stage.
 - Prefer evidence from traces, captures and real PhysX/PTX workloads over
   speculative generality. Cite concrete source files and functions.
 - Keep tasks small and independently testable.
