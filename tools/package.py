@@ -10,10 +10,11 @@ Creates OUT/NAME/ and OUT/NAME.zip containing:
   environment.md     docs/environment.md
   mirrors-edge.md    docs/mirrors-edge.md
   run-mirrors-edge.cmd  starts the GOG version of Mirror's Edge with a log
+  LICENSE-MIT, LICENSE-APACHE
 
 Links between the packaged documents are kept (install.md becomes
 README.md); links to documents that are not packaged are reduced to their
-text, because the repository is not public. The build must contain only
+text, so the package stands on its own. The build must contain only
 Windows system DLL imports (checked here). Used by CI
 (.github/workflows/build.yml) and usable locally.
 """
@@ -115,6 +116,8 @@ def main():
         text = (ROOT / "docs" / document).read_text(encoding="utf-8")
         (target / packaged).write_text(package_markdown(text), encoding="utf-8", newline="\n")
     (target / "run-mirrors-edge.cmd").write_bytes(LAUNCHER.encode("ascii"))
+    for license_file in ("LICENSE-MIT", "LICENSE-APACHE"):
+        shutil.copy2(ROOT / license_file, target / license_file)
 
     archive = out / f"{name}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:

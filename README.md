@@ -19,9 +19,8 @@ Physics runs as fast as with NVIDIA's own driver or faster, and in heavy
 scenes several times faster than CPU PhysX. Other PhysX 2.8 games may work too but haven't been
 tried.
 
-pxvk is still being tested. It is not yet available as a ready-made download:
-for now you get the files from the developer, or build them yourself
-([`docs/development.md`](docs/development.md)).
+**[Download the latest release](https://github.com/Peter0x44/pxvk/releases/latest)**
+(`pxvk-<version>.zip`).
 
 ## What you need
 
@@ -29,8 +28,9 @@ for now you get the files from the developer, or build them yourself
 - **[NVIDIA PhysX System Software](https://www.nvidia.com/en-us/drivers/physx/physx-9-26-0703-driver/)**
   (9.26.0703 or another 9.x version). It installs on any PC, including ones
   without NVIDIA graphics.
-- The three pxvk files, kept together in one folder, for example `C:\pxvk`:
-  `pxvk-launch.exe`, `nvcuda.dll` and `pxvk-nvapi.dll`.
+- The pxvk release, unzipped into one folder, for example `C:\pxvk`. It
+  contains `pxvk-launch.exe`, `nvcuda.dll` and `pxvk-nvapi.dll` (keep them
+  together) and a setup guide.
 
 ## How to use it
 
@@ -68,3 +68,13 @@ what to include when reporting a problem.
 
 How pxvk works, building it, and the testing tools are in
 [`docs/development.md`](docs/development.md).
+
+## License and credits
+
+pxvk is licensed under either of [MIT](LICENSE-MIT) or
+[Apache-2.0](LICENSE-APACHE), at your option.
+
+pxvk is heavily inspired by [ZLUDA](https://github.com/vosen/ZLUDA), which
+runs CUDA applications on non-NVIDIA GPUs. Its handling of the CUDA runtime's
+private interfaces and its NVAPI implementation informed pxvk's. PhysX and
+CUDA are trademarks of NVIDIA; pxvk is not affiliated with NVIDIA.
