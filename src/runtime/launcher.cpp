@@ -47,6 +47,41 @@ std::wstring quote(const wchar_t *argument)
     return output;
 }
 
+// The part of a command line after its first `count` arguments, verbatim.
+// Games often parse GetCommandLineW() themselves (UE3's ParseParam needs
+// `-windowed` followed by a space, not a quote), so their arguments must be
+// passed on exactly as typed. Follows CommandLineToArgvW's splitting: the
+// program name ends at its closing quote or first whitespace; later
+// arguments end at whitespace outside quotes, and a quote toggles quoting
+// unless an odd number of backslashes precedes it.
+const wchar_t *skip_arguments(const wchar_t *line, int count)
+{
+    const wchar_t *p = line;
+    for (int i = 0; i < count && *p; ++i) {
+        if (i == 0) {
+            if (*p == L'"') {
+                ++p;
+                while (*p && *p != L'"') ++p;
+                if (*p) ++p;
+            }
+            while (*p && *p != L' ' && *p != L'\t') ++p;
+        } else {
+            bool quoted = false;
+            unsigned slashes = 0;
+            for (; *p && (quoted || (*p != L' ' && *p != L'\t')); ++p) {
+                if (*p == L'\\') {
+                    ++slashes;
+                    continue;
+                }
+                if (*p == L'"' && slashes % 2 == 0) quoted = !quoted;
+                slashes = 0;
+            }
+        }
+        while (*p == L' ' || *p == L'\t') ++p;
+    }
+    return p;
+}
+
 std::wstring directory(const std::wstring &path)
 {
     const std::size_t separator = path.find_last_of(L"\\/");
@@ -91,11 +126,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         return fail(L"Cannot resolve the application path", error);
     }
     const std::wstring application(application_buffer);
-    std::wstring command_line;
-    for (int i = application_argument; i < argument_count; ++i) {
-        if (!command_line.empty()) command_line.push_back(L' ');
-        command_line += quote(arguments[i]);
-    }
+    // The application path is quoted; its arguments follow exactly as given.
+    std::wstring command_line = quote(arguments[application_argument]);
+    const wchar_t *rest = skip_arguments(GetCommandLineW(), application_argument + 1);
+    if (*rest) command_line += L" " + std::wstring(rest);
     LocalFree(arguments);
 
     STARTUPINFOW startup{};
