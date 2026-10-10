@@ -11,16 +11,18 @@ on:
 jobs:
   windows-x86:
     runs-on: ubuntu-latest
-    # Arch Linux for a current MinGW GCC (Ubuntu's, even in 26.04, is GCC 13).
-    container: archlinux:latest
+    # Fedora for a current MinGW GCC that still targets msvcrt.dll like
+    # w64devkit (Ubuntu's, even in 26.04, is GCC 13; Arch's targets UCRT).
+    container: fedora:latest
     steps:
-      # i686-w64-mingw32 with the posix thread model, like w64devkit. Every
-      # target links with -static (CMakeLists.txt), so the binaries import
-      # only Windows system DLLs; package.py enforces that.
+      # i686-w64-mingw32 (Fedora's mingw32 target). Every target links with
+      # -static (CMakeLists.txt), so the binaries import only Windows system
+      # DLLs; package.py enforces that.
       - name: Install toolchain
         run: |
-          pacman -Syu --noconfirm --needed git cmake ninja python mingw-w64-gcc
+          dnf -y install git cmake ninja-build python3 mingw32-gcc-c++ mingw32-winpthreads-static
           i686-w64-mingw32-g++ --version | head -1
+          i686-w64-mingw32-g++ -v 2>&1 | grep -E "Thread model|with-default-msvcrt" || true
 
       - uses: actions/checkout@v4
 
