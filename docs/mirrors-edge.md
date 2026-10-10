@@ -8,21 +8,31 @@ tests in `docs/testing.md`.
 
 Status: runs on pxvk on the RTX 3070 development laptop. A session through
 the glass scenes ran 13 distinct kernels and 65,735 launches with no errors
-and a clean shutdown. Not yet compared visually or by capture against native,
-and not yet run on a machine without an NVIDIA driver (see below).
+and a clean shutdown. It also runs on an AMD Radeon 8060S laptop with no
+NVIDIA driver (through `pxvk-nvapi.dll`). There, an outdoor level ran the
+fluid kernels for 83,000 launches with no errors, with PhysX at the game's
+62 fps cap and about 0.6 ms of GPU wait per frame. Not yet compared visually
+or by capture against native.
 
 ## Setup (GOG version)
 
-Installed by default at `C:\GOG Games\Mirror's Edge`.
+Installed by default at `C:\GOG Games\Mirror's Edge`. The tester version of
+these steps, with the required pxvk files and how to check the log, is in
+[`install.md`](install.md).
 
 1. Install the legacy **NVIDIA PhysX System Software** (9.x). It provides the
    PhysX 2.8 runtime under `Program Files (x86)\NVIDIA Corporation\PhysX`.
+   The installer also works without an NVIDIA GPU.
 2. Make the game use that runtime instead of its own obsolete copy, which
-   reports hardware PhysX as unavailable. In `Binaries\`, rename:
+   reports hardware PhysX as unavailable. With the game closed, in
+   `Binaries\`, rename:
    - `PhysXDevice.dll` → `PhysXDevice.dll.bak`
    - `PhysXCore.dll` → `PhysXCore.bak`
    - the `PhysXLocal` directory → `PhysXLocal.bak`
-3. Enable PhysX in the game's video options.
+
+   Keep `PhysXLoader.dll` and `PhysXExtensions.dll`. Rename back to undo.
+3. Enable PhysX in the game's video options (`PhysXEnhanced=True` and
+   `bDisablePhysXHardwareSupport=False` in `TdEngine.ini`).
 
 Optional, for a window instead of fullscreen: the development machine uses
 [dxwrapper](https://github.com/elishacloud/dxwrapper) as `Binaries\d3d9.dll`
@@ -36,8 +46,12 @@ $env:PXVK_LOG = "C:\temp\pxvk.log"
 build\x86\pxvk-launch.exe "C:\GOG Games\Mirror's Edge\Binaries\MirrorsEdge.exe"
 ```
 
-The log shows the context creation, 17 module loads and each kernel's first
-launch; periodic `stats` lines count launches.
+Keep `nvcuda.dll` and `pxvk-nvapi.dll` next to `pxvk-launch.exe`. GOG Galaxy
+cannot start the game through pxvk. The log shows the context creation, 17
+module loads and a 32 MiB allocation at startup, then each kernel's first
+launch once a level with PhysX effects is loaded. Periodic `stats` lines
+count launches, with about one `sync` per PhysX step. If the log has only
+the `init` line, PhysX chose CPU PhysX (see below).
 
 ## Getting to a scene
 
@@ -103,9 +117,15 @@ trace shows it calls only `NvAPI_Initialize`, `NvAPI_GetDisplayDriverVersion`,
 `NvAPI_SYS_GetDriverAndBranchVersion`, `NvAPI_GPU_CudaEnumComputeCapableGpus`
 (which returns an error even natively), `NvAPI_GetGPUIDfromPhysicalGPU`,
 `NvAPI_GetPhysicalGPUFromGPUID` and three private interfaces
-(`0x36e39e6b`, `0x84244524`, `0xcb7b09d2`). Without NVAPI the game is
-expected to fall back to CPU PhysX, so pxvk needs a small `nvapi.dll` shim
-reporting one PhysX-capable GPU. ZLUDA's
-[`nvapi/src/lib.rs`](https://github.com/vosen/ZLUDA/blob/8a7931be87d758835776f54ea2e33d30621c74ce/nvapi/src/lib.rs#L544-L719)
-is a reference implementation. This is the next step in
-`docs/roadmap.md`.
+(`0x36e39e6b`, `0x84244524`, `0xcb7b09d2`). Without NVAPI, PhysX calls
+`cuInit` and then falls back to CPU PhysX.
+
+pxvk handles this with `pxvk-nvapi.dll` (`src/runtime/nvapi.cpp`), which
+follows ZLUDA's
+[`nvapi/src/lib.rs`](https://github.com/vosen/ZLUDA/blob/8a7931be87d758835776f54ea2e33d30621c74ce/nvapi/src/lib.rs#L544-L719).
+It implements the initialize, driver-version, compute-GPU enumeration
+(including `0x36e39e6b`) and GPU id/handle interfaces, and reports one GPU.
+The enumeration, stereo and other two private ids return "no implementation",
+and the game still selects hardware PhysX. The injected `nvcuda.dll` redirects
+only `PhysXDevice.dll`'s and `PhysXCore.dll`'s NVAPI loads to it. The game's
+own NVAPI use is unaffected.

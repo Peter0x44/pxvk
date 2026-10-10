@@ -4,29 +4,34 @@ Open work, roughly in priority order. Known numerical and performance
 limitations of the current design are listed at the end of
 `docs/architecture.md`.
 
-## 1. Run without an NVIDIA driver (NVAPI shim)
+## 1. AMD bit-level validation
 
-The PhysX runtime checks for hardware PhysX through NVAPI before touching
-CUDA, so on AMD/Intel-only machines games most likely fall back to CPU
-PhysX and never reach pxvk. Every test so far ran with the real NVIDIA driver
-installed. Needed:
+Done on the Radeon 8060S (AMD proprietary driver 26.8.1, no NVIDIA driver),
+using `pxvk-nvapi.dll` (`src/runtime/nvapi.cpp`) for PhysX's NVAPI check.
+Without it PhysX called `cuInit` and then chose CPU PhysX.
 
-- a minimal 32-bit `nvapi.dll` exposing `nvapi_QueryInterface` for the dozen
-  interfaces PhysX calls (listed in `docs/mirrors-edge.md`), reporting one
-  GPU, injected by `pxvk-launch` like `nvcuda.dll`;
-- a local reproduction first: disabling the RTX 3070 in Device Manager on
-  the development laptop leaves the Intel GPU driving the display and should
-  show the CPU fallback, then confirm the shim fixes it.
+- `tools/check.py`: all 70 kernels compile and pass `spirv-val`.
+- SampleCloth (9 scenes) and SampleParticleFluid run with no errors, and two
+  runs are pixel-identical. The cloth solver uses storage-backed shared
+  memory (32 KiB device limit). Frame rates are in the README.
+- Mirror's Edge (GOG) selects hardware PhysX and runs the fluid kernels at the
+  game's 62 fps cap with no errors.
 
-## 2. AMD validation
+Remaining: copy the native capture sets to the AMD machine and replay them
+(`docs/testing.md`, "Testing on another machine"). Compared with CPU PhysX,
+SampleCloth scenes 6 (tearing) and 9 (remap mesh) end differently on pxvk:
+part of the rug stays on the bar in scene 6, and the sphere ends crumpled in
+scene 9. GPU and CPU cloth differ in general, so this needs a native NVIDIA
+comparison before it counts as a bug.
 
-Never run on AMD. An AMD laptop with a Radeon 8060S is available; an earlier
-capability probe on it reported Vulkan 1.4, a 4 GiB storage-buffer range,
-native fp32 flush-to-zero, subgroup sizes 32–64 with size control, and 32 KiB
-of shared memory (so the cloth solver will use the storage-backed shared
-memory variant, as on Intel). Plan: build there, run `tools/check.py` with
-the copied PTX corpus and captures (`docs/testing.md`, "Testing on another
-machine"), then the SDK samples and Mirror's Edge once item 1 works.
+## 2. NVAPI coverage
+
+`pxvk-nvapi.dll` implements the eight NVAPI interfaces that ZLUDA implements.
+The native Mirror's Edge trace also calls `NvAPI_EnumLogicalGPUs`,
+`NvAPI_EnumPhysicalGPUs`, `NvAPI_Stereo_IsEnabled` and two private ids
+(`docs/mirrors-edge.md`). These return "no implementation", which has been
+enough for the samples and Mirror's Edge. Add them only if another game needs
+them.
 
 ## 3. Mirror's Edge validation
 
@@ -40,7 +45,8 @@ Confirm which `Escape_p` checkpoint starts at the RPA glass lobby.
 `pxvk-launch` must start the game, which store launchers (GOG Galaxy, Steam,
 EA) do not do. Options: a proxy DLL placed in the game folder that loads pxvk
 before CUDART runs, or patching the game's PhysX runtime to load pxvk's
-`nvcuda.dll`. Also document or automate the PhysX runtime file renames.
+`nvcuda.dll`. The PhysX runtime file renames are documented in
+`docs/install.md`. They could also be automated.
 
 ## 5. Exactness on NVIDIA
 

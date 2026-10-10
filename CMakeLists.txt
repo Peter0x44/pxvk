@@ -85,6 +85,13 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4 AND WIN32)
         target_link_options(nvcuda PRIVATE -static -Wl,--kill-at)
     endif()
 
+    # NVAPI facade so PhysX selects hardware PhysX without an NVIDIA driver.
+    add_library(pxvk-nvapi SHARED src/runtime/nvapi.cpp src/runtime/nvapi.def)
+    set_target_properties(pxvk-nvapi PROPERTIES PREFIX "")
+    if(NOT MSVC)
+        target_link_options(pxvk-nvapi PRIVATE -static -Wl,--kill-at)
+    endif()
+
     add_executable(pxvk-launch WIN32 src/runtime/launcher.cpp)
     target_link_libraries(pxvk-launch PRIVATE shell32)
     if(NOT MSVC)

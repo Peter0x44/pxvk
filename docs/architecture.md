@@ -120,7 +120,18 @@ CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
 
 - `loader.cpp`: CUDART builds an absolute System32 path for `nvcuda.dll`, so
   pxvk is injected by `pxvk-launch.exe` and patches CUDART's
-  `LoadLibraryW/ExW` imports to return itself.
+  `LoadLibraryW/ExW` imports to return itself. It also patches the
+  `LoadLibraryA/W/ExW` imports of `PhysXDevice.dll` and `PhysXCore.dll` so
+  that their `nvapi.dll` loads return `pxvk-nvapi.dll` from the same folder.
+  `PhysXDevice` loads NVAPI with `LOAD_LIBRARY_SEARCH_SYSTEM32`, so an
+  application-local `nvapi.dll` is not found. If `pxvk-nvapi.dll` is absent,
+  NVAPI loads are left alone.
+- `nvapi.cpp` (`pxvk-nvapi.dll`): PhysX picks hardware PhysX only if NVAPI
+  reports a PhysX-capable GPU. This exports `nvapi_QueryInterface` with the
+  eight interfaces ZLUDA implements (initialize/unload, driver version,
+  compute-capable GPU enumeration including the private V2 id `0x36e39e6b`,
+  GPU id ↔ handle) and reports one GPU. Other ids return null ("no
+  implementation").
 - `runtime.cpp`: the driver API plus the six private export tables CUDART
   uses instead of most public entry points (module registration from the
   fatbin wrapper, context creation, context-local storage, ...; GUIDs and

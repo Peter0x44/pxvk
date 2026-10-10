@@ -8,7 +8,8 @@ CUDA implementation (see [`docs/charter.md`](docs/charter.md)).
 
 ## Status
 
-Tested on one laptop (RTX 3070 Laptop + Intel UHD, Windows 11):
+Tested on two laptops: RTX 3070 Laptop + Intel UHD, and AMD Radeon 8060S
+(no NVIDIA driver), both on Windows 11.
 
 - All PhysX 2.8 kernels compile (70 entries in 17 modules; Mirror's Edge
   ships the same 17 modules as the SDK samples) and validate with
@@ -19,21 +20,28 @@ Tested on one laptop (RTX 3070 Laptop + Intel UHD, Windows 11):
 - Replaying real kernel launches captured from native runs: 196 of 202
   SampleCloth launches and all 112 SampleParticleFluid launches are bit-exact
   on the 3070; the rest are within 4 ULP.
-- `SampleCloth` (9 scenes) and `SampleParticleFluid` run on NVIDIA and Intel.
-  On the 3070 every scene runs as fast as native CUDA or faster, and with a
-  warm pipeline cache startup and scene switches are faster than native.
-- Mirror's Edge runs on pxvk on this machine (fluid, glass-related particle
-  and collision kernels), with no errors and a clean shutdown. Visual
+- `SampleCloth` (9 scenes) and `SampleParticleFluid` run on NVIDIA, Intel
+  and AMD. On the 3070 every scene runs as fast as native CUDA or faster, and
+  with a warm pipeline cache startup and scene switches are faster than
+  native. On the 8060S the cloth scenes run at 310–720 fps and the fluid
+  sample at about 670 fps. That is 2–3.6× CPU PhysX on the same machine for
+  the heavy scenes and roughly on par for the light ones (4, 5, 8).
+  Repeated runs are pixel-identical.
+- Mirror's Edge runs on pxvk on both machines (fluid, glass-related particle
+  and collision kernels) with no errors. On the 8060S, PhysX keeps up with
+  the game's 62 fps cap, and GPU waits take about 0.6 ms per frame. Visual
   validation against native is still to do.
+- Machines without an NVIDIA driver work: `pxvk-nvapi.dll` answers the NVAPI
+  queries that PhysX uses to select hardware PhysX.
 
-Not yet working or tested: machines without an NVIDIA driver (PhysX detects
-hardware PhysX through NVAPI first, which pxvk does not provide yet), AMD
-GPUs, and mobile (Adreno) drivers. See [`docs/roadmap.md`](docs/roadmap.md).
+Not yet tested: replaying the native captures on AMD (bit-level comparison)
+and mobile (Adreno) drivers. See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
+| [`docs/install.md`](docs/install.md) | **for testers**: required files, how loading works, running samples and Mirror's Edge, checking and reporting results |
 | [`docs/charter.md`](docs/charter.md) | goal, targets and scope |
 | [`docs/architecture.md`](docs/architecture.md) | design: compiler, Vulkan backend, runtime, Vulkan requirements, known limitations |
 | [`docs/testing.md`](docs/testing.md) | differential testing tools, profiling, regression check |
@@ -51,10 +59,12 @@ cmake -S . -B build/x86 -G Ninja -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc `
 cmake --build build/x86
 ```
 
-Outputs in `build/x86`: `nvcuda.dll` (the runtime), `pxvk-launch.exe`, and
-the developer tools (`pxvk-ptxc`, `pxvk-replay`, `pxvk-opcheck`,
-`pxvk-nativeinfo`, `pxvk-run`, `pxvk-harness.dll`, ...). `nvcuda.dll` and
-`pxvk-launch.exe` depend only on Windows system DLLs.
+Outputs in `build/x86`: the three runtime files `pxvk-launch.exe`,
+`nvcuda.dll` (the runtime) and `pxvk-nvapi.dll` (NVAPI for PhysX's hardware
+check), plus the developer tools (`pxvk-ptxc`, `pxvk-replay`, `pxvk-opcheck`,
+`pxvk-nativeinfo`, `pxvk-run`, `pxvk-harness.dll`, ...). The runtime files
+depend only on Windows system DLLs. To hand pxvk to a tester, give them those
+three files and [`docs/install.md`](docs/install.md).
 
 ## Run an application
 
@@ -64,11 +74,12 @@ CUDART loads `nvcuda.dll` from System32 by absolute path, so pxvk is injected:
 build\x86\pxvk-launch.exe C:\path\to\SampleCloth.exe [arguments]
 ```
 
-Keep `nvcuda.dll` next to `pxvk-launch.exe`. The application must use the
-legacy NVIDIA PhysX System Software runtime (Mirror's Edge needs a small
-change for that; see [`docs/mirrors-edge.md`](docs/mirrors-edge.md)). Kernels
-compile on first use and are cached on disk, so the first run of each scene
-is slower.
+Keep `nvcuda.dll` and `pxvk-nvapi.dll` next to `pxvk-launch.exe`. The
+application must use the legacy NVIDIA PhysX System Software runtime (Mirror's
+Edge needs a small change for that; see [`docs/install.md`](docs/install.md)).
+Kernels compile on first use and are cached on disk, so the first run of each
+scene is slower. [`docs/install.md`](docs/install.md) explains the loading
+steps and how to confirm from the log that hardware PhysX is active.
 
 Environment variables:
 

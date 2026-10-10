@@ -1,0 +1,3 @@
+LIBRARY pxvk-nvapi.dll
+EXPORTS
+    nvapi_QueryInterface
