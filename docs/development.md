@@ -25,9 +25,9 @@ and the developer tools below.
 (`docs/install.md` as `README.md`), `environment.md`, `mirrors-edge.md` and
 `run-mirrors-edge.cmd`. It refuses binaries that import non-system DLLs.
 
-CI (`.github/workflows/build.yml`) builds every push and pull request with
-Ubuntu 26.04's `i686-w64-mingw32` cross compiler (posix threads, as in
-w64devkit) and uploads that package as the
+CI (`.github/workflows/build.yml`) builds every push and pull request in an
+Arch Linux container with its current `i686-w64-mingw32` cross compiler
+(posix threads, as in w64devkit) and uploads that package as the
 `pxvk-<commit>` artifact on the run's page. CI has no GPU, so it does not
 run the GPU tests.
 
