@@ -283,6 +283,19 @@ static bool load_real_driver(void)
 }
 
 static FARPROC WINAPI traced_get_proc_address(HMODULE module, LPCSTR name);
+static HMODULE WINAPI traced_load_library_a(LPCSTR name);
+static HMODULE WINAPI traced_load_library_w(LPCWSTR name);
+static HMODULE WINAPI traced_load_library_ex_a(LPCSTR name, HANDLE file, DWORD flags);
+static HMODULE WINAPI traced_load_library_ex_w(LPCWSTR name, HANDLE file, DWORD flags);
+
+/* Imports replaced in every module: GetProcAddress, so lookups in the real
+ * driver return the traced exports, and LoadLibrary*, so modules loaded
+ * later (PhysX runtimes and their CUDART, e.g. FluidMark's PhysX 2.8.4)
+ * are patched too. */
+static struct {
+    FARPROC original;
+    FARPROC replacement;
+} g_import_hooks[5];
 
 static bool patch_module_get_proc_address(HMODULE module)
 {
@@ -316,20 +329,25 @@ static bool patch_module_get_proc_address(HMODULE module)
             (IMAGE_THUNK_DATA32 *)(base + descriptor->FirstThunk);
         while (thunk->u1.Function != 0) {
             FARPROC current = (FARPROC)(uintptr_t)thunk->u1.Function;
-            if ((uintptr_t)current == (uintptr_t)g_original_get_proc_address) {
+            for (size_t h = 0; h < sizeof(g_import_hooks) / sizeof(g_import_hooks[0]); ++h) {
                 DWORD old_protection;
+                if (g_import_hooks[h].original == NULL ||
+                    (uintptr_t)current != (uintptr_t)g_import_hooks[h].original) {
+                    continue;
+                }
                 if (VirtualProtect(&thunk->u1.Function,
                                    sizeof(thunk->u1.Function),
                                    PAGE_READWRITE,
                                    &old_protection)) {
                     DWORD ignored;
-                    thunk->u1.Function = (DWORD)(uintptr_t)traced_get_proc_address;
+                    thunk->u1.Function = (DWORD)(uintptr_t)g_import_hooks[h].replacement;
                     VirtualProtect(&thunk->u1.Function,
                                    sizeof(thunk->u1.Function),
                                    old_protection,
                                    &ignored);
                     patched = true;
                 }
+                break;
             }
             thunk++;
         }
@@ -344,7 +362,20 @@ static unsigned int install_get_proc_address_hooks(void)
     MODULEENTRY32W module;
     unsigned int patched_modules = 0;
 
-    g_original_get_proc_address = GetProcAddress;
+    if (g_original_get_proc_address == NULL) {
+        HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
+        g_original_get_proc_address = GetProcAddress;
+        g_import_hooks[0].original = (FARPROC)GetProcAddress;
+        g_import_hooks[0].replacement = (FARPROC)traced_get_proc_address;
+        g_import_hooks[1].original = GetProcAddress(kernel, "LoadLibraryA");
+        g_import_hooks[1].replacement = (FARPROC)traced_load_library_a;
+        g_import_hooks[2].original = GetProcAddress(kernel, "LoadLibraryW");
+        g_import_hooks[2].replacement = (FARPROC)traced_load_library_w;
+        g_import_hooks[3].original = GetProcAddress(kernel, "LoadLibraryExA");
+        g_import_hooks[3].replacement = (FARPROC)traced_load_library_ex_a;
+        g_import_hooks[4].original = GetProcAddress(kernel, "LoadLibraryExW");
+        g_import_hooks[4].replacement = (FARPROC)traced_load_library_ex_w;
+    }
     snapshot = CreateToolhelp32Snapshot(
         TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, GetCurrentProcessId());
     if (snapshot == INVALID_HANDLE_VALUE) {
@@ -362,6 +393,22 @@ static unsigned int install_get_proc_address_hooks(void)
     CloseHandle(snapshot);
     return patched_modules;
 }
+
+/* Load, then patch whatever the load brought in (patching is idempotent). */
+#define TRACED_LOAD(original_index, type, call)                                   \
+    {                                                                             \
+        HMODULE result = ((type)g_import_hooks[original_index].original)call;     \
+        if (result != NULL) install_get_proc_address_hooks();                     \
+        return result;                                                            \
+    }
+static HMODULE WINAPI traced_load_library_a(LPCSTR name)
+    TRACED_LOAD(1, HMODULE(WINAPI *)(LPCSTR), (name))
+static HMODULE WINAPI traced_load_library_w(LPCWSTR name)
+    TRACED_LOAD(2, HMODULE(WINAPI *)(LPCWSTR), (name))
+static HMODULE WINAPI traced_load_library_ex_a(LPCSTR name, HANDLE file, DWORD flags)
+    TRACED_LOAD(3, HMODULE(WINAPI *)(LPCSTR, HANDLE, DWORD), (name, file, flags))
+static HMODULE WINAPI traced_load_library_ex_w(LPCWSTR name, HANDLE file, DWORD flags)
+    TRACED_LOAD(4, HMODULE(WINAPI *)(LPCWSTR, HANDLE, DWORD), (name, file, flags))
 
 static FARPROC WINAPI traced_get_proc_address(HMODULE module, LPCSTR name)
 {

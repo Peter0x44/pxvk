@@ -118,6 +118,18 @@ Expected results on the reference laptop:
 |---|---|---|
 | SampleCloth (90 launches) | 88 EXACT, 2 ok | 28 EXACT, 55 ok, 7 tolerated BAD |
 | SampleParticleFluid (112 launches) | 112 EXACT | 104 EXACT, 8 ok |
+| FluidMark 1.5.4 (82 launches) | 82 EXACT | 63 EXACT, 19 ok |
+
+FluidMark uses PhysX 2.8.4 from the PhysX System Software, whose 17 PTX
+modules differ from the samples' (Mirror's Edge uses the samples' modules).
+Capture it by launch ordinal, since it does not run under the harness:
+
+```powershell
+$env:PXVK_CAPTURE_LAUNCHES = "3000-3040,30000-30040"
+build\nvcuda-trace-mingw\pxvk-trace.exe --output test-output\fm-native -- "C:\Program Files (x86)\Geeks3D\Benchmarks\FluidMark\FluidMark.exe" /preset_720 /log_score /noscore /nogui
+```
+
+These 82 captures take 1.9 GB (see the roadmap).
 
 ## lavapipe (no second GPU needed)
 

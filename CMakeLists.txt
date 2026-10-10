@@ -59,6 +59,11 @@ target_link_libraries(pxvk-vk PUBLIC volk::volk_headers Vulkan::Headers)
 
 add_executable(pxvk-replay tools/replay/main.cpp)
 target_link_libraries(pxvk-replay PRIVATE pxvk-ptx pxvk-vk)
+# Replays hold several copies of the captured memory image (FluidMark's is
+# about 260 MiB): allow the 32-bit process 4 GiB of address space.
+if(NOT MSVC)
+    target_link_options(pxvk-replay PRIVATE -Wl,--large-address-aware)
+endif()
 if(NOT MSVC)
     target_link_options(pxvk-replay PRIVATE -static)
 endif()

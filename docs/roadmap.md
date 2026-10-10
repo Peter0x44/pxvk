@@ -115,3 +115,13 @@ remaining Adreno limits before testing on a phone.
 
 Alice: Madness Returns and Mafia II Classic. Trace them natively first: new
 PTX modules or API usage would show up there.
+
+### 11. Smaller launch captures
+
+Every capture stores sparse before and after images of the whole heap: about
+23 MB per FluidMark launch (1.9 GB for 82), and replay needs several copies
+of the image in memory (it is linked large-address-aware for that). A kernel
+changes a small part of the heap, so storing the after image as a diff,
+chaining consecutive captures (the next launch's before image is this one's
+after image plus host copies), compressing, and comparing only written pages
+in replay would cut this to a small fraction.
