@@ -39,19 +39,19 @@ on NVIDIA machines and CPU PhysX elsewhere.
    (`cudart32_65.dll`), pxvk redirects that runtime's request for
    `System32\nvcuda.dll` to itself.
 3. Before it uses CUDA, PhysX (`PhysXDevice.dll`, `PhysXCore.dll`) asks NVAPI
-   whether a PhysX-capable NVIDIA GPU exists. On a machine without an NVIDIA
-   driver, pxvk redirects those NVAPI loads to `pxvk-nvapi.dll`, which
-   reports one GPU. Without this step, the machine silently falls back to
-   CPU PhysX.
+   whether a PhysX-capable NVIDIA GPU exists. pxvk redirects those NVAPI
+   loads to `pxvk-nvapi.dll`, which reports one GPU. Without this step, a
+   machine without an NVIDIA driver silently falls back to CPU PhysX.
 
 Only these loads are redirected, and only in the process started by the
 launcher. Nothing is installed, no system files are changed and no registry
 keys are written. To stop using pxvk, start the application normally.
 
-On a machine with an NVIDIA driver (`nvapi.dll` present in
-`C:\Windows\SysWOW64`), PhysX keeps using the real NVAPI and
-`pxvk-nvapi.dll` is not used. The application's own NVAPI use (driver version,
-stereo, ...) is never redirected.
+This also applies on NVIDIA machines, so PhysX runs on pxvk's Vulkan path
+there too. To use the NVIDIA driver's own NVAPI for this check, set
+`PXVK_NVAPI=system`. Try that if PhysX picks CPU PhysX on an NVIDIA machine.
+The application's own NVAPI use (driver version, stereo, ...) is never
+redirected.
 
 ## Running an application
 
@@ -86,7 +86,7 @@ In the PhysX SDK samples the window title or overlay says `(hardware)` or
 | Log contents | Meaning |
 |---|---|
 | `init device="..."`, `context create`, 17 × `module load`, `first launch ...`, periodic `stats launches=...` | hardware PhysX is running on pxvk |
-| only the `init device=` line | PhysX initialized CUDA but chose CPU PhysX. Check that `pxvk-nvapi.dll` is next to `nvcuda.dll` |
+| only the `init device=` line | PhysX initialized CUDA but chose CPU PhysX. Check that `pxvk-nvapi.dll` is next to `nvcuda.dll` and that `PXVK_NVAPI` is not set |
 | no log file | pxvk was not loaded or never used: the application was not started through `pxvk-launch.exe`, PhysX is disabled in the application, the PhysX System Software is missing, or the application uses its own PhysX copy (see Mirror's Edge below) |
 | `error ...`, `unsupported call ...` or `init failed` lines | a pxvk problem. Please report it with the log |
 

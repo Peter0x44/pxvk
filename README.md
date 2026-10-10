@@ -87,6 +87,7 @@ Environment variables:
 |---|---|
 | `PXVK_DEVICE` | Vulkan device by name fragment (`intel`, `nvidia`, `radeon`) or index |
 | `PXVK_LOG` | log file path (init, module loads, compiles, errors, periodic stats) |
+| `PXVK_NVAPI` | `system`: PhysX's hardware check uses the NVIDIA driver's NVAPI instead of `pxvk-nvapi.dll` |
 | `PXVK_API_LOG` | also log every copy/sync/launch/texture call (with `PXVK_LOG`) |
 | `PXVK_CACHE_DIR` | pipeline cache directory (default `%LOCALAPPDATA%\pxvk`; `off` disables) |
 | `PXVK_PROFILE` | per-kernel GPU timing and fence-wait/pipeline-creation times in the log |

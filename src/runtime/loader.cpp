@@ -9,9 +9,10 @@
 // The same notification patches PhysXCore.dll's and PhysXDevice.dll's
 // LoadLibraryA/W/ExW imports so that their nvapi.dll requests resolve to
 // pxvk-nvapi.dll next to this DLL (see nvapi.cpp). Without it PhysX picks
-// CPU PhysX on machines without an NVIDIA driver. The redirect is used only
-// when the system has no nvapi.dll: with an NVIDIA driver installed, PhysX
-// keeps querying the real NVAPI, as it did before the shim existed. NVAPI
+// CPU PhysX on machines without an NVIDIA driver. The redirect is the
+// default on every machine, so hardware selection behaves the same with or
+// without an NVIDIA driver (including one whose GPU is disabled or
+// unsupported). PXVK_NVAPI=system keeps the real NVAPI instead, and NVAPI
 // loads are also left alone if pxvk-nvapi.dll is absent.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -160,18 +161,16 @@ VOID CALLBACK on_dll_notification(ULONG reason, const void *raw, void *)
 void install_driver_redirect(HMODULE self)
 {
     GetModuleFileNameW(self, g_module_path, static_cast<DWORD>(std::size(g_module_path)));
-    // pxvk-nvapi.dll next to nvcuda.dll, used only when present and when
-    // there is no system NVAPI (in this 32-bit process System32 resolves to
-    // SysWOW64, the directory PhysXDevice's NVAPI load searches).
+    // pxvk-nvapi.dll next to nvcuda.dll, used when present unless
+    // PXVK_NVAPI=system selects the driver's own NVAPI.
     std::wmemcpy(g_nvapi_path, g_module_path, std::size(g_nvapi_path));
     if (wchar_t *slash = std::wcsrchr(g_nvapi_path, L'\\'))
         lstrcpynW(slash + 1, L"pxvk-nvapi.dll", static_cast<int>(std::size(g_nvapi_path) - (slash + 1 - g_nvapi_path)));
-    wchar_t system_nvapi[MAX_PATH + 16]{};
-    const UINT system_length = GetSystemDirectoryW(system_nvapi, MAX_PATH);
-    const bool has_system_nvapi = system_length > 0 && system_length < MAX_PATH &&
-                                  lstrcatW(system_nvapi, L"\\nvapi.dll") &&
-                                  GetFileAttributesW(system_nvapi) != INVALID_FILE_ATTRIBUTES;
-    if (has_system_nvapi || GetFileAttributesW(g_nvapi_path) == INVALID_FILE_ATTRIBUTES) g_nvapi_path[0] = L'\0';
+    wchar_t nvapi_mode[16]{};
+    const DWORD mode_length = GetEnvironmentVariableW(L"PXVK_NVAPI", nvapi_mode, static_cast<DWORD>(std::size(nvapi_mode)));
+    const bool use_system_nvapi = mode_length > 0 && mode_length < std::size(nvapi_mode) &&
+                                  _wcsicmp(nvapi_mode, L"system") == 0;
+    if (use_system_nvapi || GetFileAttributesW(g_nvapi_path) == INVALID_FILE_ATTRIBUTES) g_nvapi_path[0] = L'\0';
     HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     g_load_library_a = reinterpret_cast<LoadLibraryAFn>(reinterpret_cast<void *>(GetProcAddress(kernel, "LoadLibraryA")));

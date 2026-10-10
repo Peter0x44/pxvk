@@ -6,9 +6,9 @@
 // reports one PhysX-capable GPU. loader.cpp redirects only the PhysX DLLs'
 // nvapi.dll loads to it (PhysXDevice uses LOAD_LIBRARY_SEARCH_SYSTEM32, so
 // an application-local nvapi.dll is never found), only in processes
-// started through pxvk-launch, and only when the system has no nvapi.dll
-// (with an NVIDIA driver installed PhysX keeps using the real NVAPI). The
-// application's own NVAPI use is untouched.
+// started through pxvk-launch. This is the default on NVIDIA machines too,
+// so hardware selection is the same everywhere; PXVK_NVAPI=system keeps the
+// driver's NVAPI. The application's own NVAPI use is untouched.
 //
 // NVAPI exports a single function, nvapi_QueryInterface(id), returning a
 // cdecl function pointer or null for an unknown id ("no implementation",
