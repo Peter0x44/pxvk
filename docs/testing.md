@@ -45,7 +45,9 @@ python tools\bench.py sweep captures --mode capture
 build\x86\pxvk-replay.exe --device nvidia test-output\bench\captures\trace\SampleCloth.exe_<pid>
 ```
 
-Replay options: `--verbose` (show wrong words), `--time N` (GPU timing),
+Replay options: `--verbose` (show the first wrong words), `--mismatches`
+(every differing word with its grade: ulp4, near, wrong, wrong-int),
+`--time N` (GPU timing),
 `--storage-shared` (force storage-backed shared memory), `--ptx FILE`
 (override the module PTX, e.g. with hand-inserted probes storing to a
 `.global pxvk_debug[]` symbol, which replay maps to a scratch area and
@@ -131,9 +133,32 @@ approximation units: the cloth kernel without approximate math
 `UberCollision` (`rcp`, `rsqrt`, `sqrt`, `div.full`) stays within 4 ULP,
 and only the iterative `UberSolver` (20 `rcp`, 6 `rsqrt`, 2 `sqrt`, 6
 `div.full`) drifts further, while the same launches are EXACT on NVIDIA.
-The wrong words `pxvk-replay --verbose` prints (the first six per launch) are
-all floats: near-zero residuals such as 4.2e-11 against -7.0e-12, and
-values off in the third or fourth digit such as -0.123394 against -0.123234.
+Of the 222 wrong words in those launches (on Intel), 220 are floats:
+near-zero residuals such as 4.2e-11 against -7.0e-12, and values off in the
+third or fourth digit such as -0.123394 against -0.123234. The summary
+line's `wrong_int=` counts words that look like integers; there are two,
+both in launch 4489, and probes inserted with `--ptx` (2026-10-11) traced
+both to one float comparison:
+
+- The solver sets bit 5 of a particle's flags when its squared movement is
+  below 0.0225 (`setp.geu.ftz.f32` before `or.b32 ..., 32`). For particle
+  flags word `0x29a4ce84`, native computes 0.0224901 and sets it; Intel
+  computes 0.0225006 and does not.
+- The second word is a later copy of that flags word into the packed
+  output (loaded from `0x29a4ce84`), so it differs with it.
+
+The float difference comes from the approximation units. Making `rcp`,
+`rsqrt`, `sqrt` and `div.full` more precise on NVIDIA (one Newton step
+each, an experiment, not a mode) turns the same cloth captures from 88
+EXACT + 2 ok into 28 EXACT + 53 ok + 9 BAD, close to Intel's 28/55/7 with
+the same 28 exact launches, and launch 4489 gets 84 wrong words (Intel:
+92). The same change on Intel moves this particle to 0.0224941, below the
+threshold, and both integer words then match native. Integer flags that
+follow float tests can therefore differ off NVIDIA, which is why
+`check.py` does not reject integer-looking mismatches there; it prints
+their count. The scene-5 launches 6643 and 6646 are especially sensitive:
+with the refined math on NVIDIA they grow to over 5,000 wrong words each,
+318 of them integer-looking (not traced individually).
 
 FluidMark uses PhysX 2.8.4 from the PhysX System Software, whose 17 PTX
 modules differ from the samples' (Mirror's Edge uses the samples' modules).

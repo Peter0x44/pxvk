@@ -136,6 +136,7 @@ def main():
             print("  " + (lines[0] if lines else "no output"))
             print("  " + ", ".join(f"{g}={graded.count(g)}" for g in ("EXACT", "ok", "BAD", "FAIL")))
             nvidia = bool(lines) and "NVIDIA" in lines[0]
+            wrong_int_total = 0
             for l in lines:
                 if " FAIL " in l:
                     failures.append(f"replay {capture} {device}: {l}")
@@ -146,8 +147,14 @@ def main():
                     fields = dict(f.split("=", 1) for f in l.split() if "=" in f)
                     changed = max(1, int(fields.get("changed", "1")))
                     wrong = int(fields.get("wrong", "0"))
+                    # Integer-looking mismatches are tolerated with the rest:
+                    # solver flags follow float tests that the approximation
+                    # units can flip (docs/testing.md). Report their count.
+                    wrong_int_total += int(fields.get("wrong_int", "0"))
                     if nvidia or wrong > changed * 0.005:
                         failures.append(f"replay {capture} {device}: {l}")
+            if wrong_int_total:
+                print(f"  integer-looking wrong words: {wrong_int_total} (pxvk-replay --mismatches lists them)")
 
     step("result")
     for f in failures:

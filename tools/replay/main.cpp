@@ -1,14 +1,17 @@
 // pxvk-replay: differential replay of native CUDA kernel captures on Vulkan.
 //
 //   pxvk-replay [--device N] [--no-native-ftz] [--time N] [--verbose]
-//               <capture-dir> [capture-ordinal...]
+//               [--mismatches] <capture-dir> [capture-ordinal...]
 //
 // Each capture (see tools/nvcuda-trace/src/capture.c) is replayed with the
 // exact native memory image, parameters, texture bindings and module global
 // addresses. The resulting memory is compared with the native result:
 //   exact     words identical to native
 //   close     differing words within 4 ULP when read as fp32
-//   wrong     everything else (reported with the first few addresses)
+//   wrong     everything else (--verbose prints the first few); wrong_int
+//             counts those that look like integers (zero exponent field),
+//             which approximation differences cannot explain
+// --mismatches prints every differing word with its grade.
 #include "compiler.h"
 #include "device.h"
 #include "fatbin.h"
@@ -135,6 +138,7 @@ int main(int argc, char **argv)
     bool force_emulate_warps = false; // emulate warp-synchronous code even with 32-lane subgroups
     bool force_native_ftz = false; // timing experiments: skip FTZ emulation even if unsupported
     bool verbose = false;
+    bool all_mismatches = false;
     bool no_contraction = false;
     bool force_storage_shared = false;
     int timing_runs = 0;
@@ -150,6 +154,7 @@ int main(int argc, char **argv)
         else if (arg == "--no-contract") no_contraction = true;
         else if (arg == "--storage-shared") force_storage_shared = true;
         else if (arg == "--verbose") verbose = true;
+        else if (arg == "--mismatches") all_mismatches = true;
         else if (arg == "--time" && i + 1 < argc) timing_runs = std::atoi(argv[++i]);
         else if (arg == "--ptx" && i + 1 < argc) ptx_override = argv[++i];
         else if (arg == "--spirv-filter" && i + 1 < argc) spirv_filter = argv[++i];
@@ -157,7 +162,7 @@ int main(int argc, char **argv)
         else wanted.push_back(static_cast<unsigned>(std::stoul(arg)));
     }
     if (dir.empty()) {
-        std::fprintf(stderr, "usage: pxvk-replay [--device N] [--no-native-ftz] [--time N] [--verbose] dir [ordinal...]\n");
+        std::fprintf(stderr, "usage: pxvk-replay [--device N] [--no-native-ftz] [--time N] [--verbose] [--mismatches] dir [ordinal...]\n");
         return 2;
     }
     // Missing native captures are an error, not "0/0 failed".
@@ -381,10 +386,19 @@ int main(int argc, char **argv)
         std::vector<std::uint8_t> expected(static_cast<std::size_t>(span), 0), original(static_cast<std::size_t>(span), 0);
         for (const auto &r : after) std::memcpy(expected.data() + (r.address - lo), r.bytes.data(), r.bytes.size());
         for (const auto &r : before) std::memcpy(original.data() + (r.address - lo), r.bytes.data(), r.bytes.size());
-        std::size_t changed = 0, exact_mismatch = 0, close = 0, near = 0, wrong = 0, stray = 0;
+        std::size_t changed = 0, exact_mismatch = 0, close = 0, near = 0, wrong = 0, wrong_int = 0, stray = 0;
         double max_rel = 0;
         int max_ulp = 0;
         std::vector<std::uint32_t> wrong_addresses;
+        // --mismatches: every differing word with its grade.
+        auto report = [&](std::size_t w, std::uint32_t e, std::uint32_t g, std::uint32_t o, const char *grade) {
+            if (!all_mismatches) return;
+            float fe, fg;
+            std::memcpy(&fe, &e, 4);
+            std::memcpy(&fg, &g, 4);
+            std::printf("    %08x %-9s native=%08x (%g) vulkan=%08x (%g) before=%08x\n",
+                        static_cast<unsigned>(lo + w), grade, e, fe, g, fg, o);
+        };
         for (std::size_t w = 0; w + 4 <= debug_address - lo; w += 4) {
             std::uint32_t e, g, o;
             std::memcpy(&e, expected.data() + w, 4);
@@ -405,7 +419,9 @@ int main(int argc, char **argv)
             const bool zeros = is_zero(e) && is_zero(g);
             if (!zeros && ((exponent(e) == 0 && !is_zero(e)) || (exponent(g) == 0 && !is_zero(g)))) {
                 ++wrong;
+                ++wrong_int;
                 if (wrong_addresses.size() < 6) wrong_addresses.push_back(static_cast<std::uint32_t>(lo + w));
+                report(w, e, g, o, "wrong-int");
                 continue;
             }
             const int ulp = ulp_distance(e, g);
@@ -422,6 +438,7 @@ int main(int argc, char **argv)
             if (ulp <= 4) {
                 ++close;
                 max_ulp = std::max(max_ulp, ulp);
+                report(w, e, g, o, "ulp4");
             } else if (std::isfinite(fe) && std::isfinite(fg) &&
                        (rel <= 1e-3 ||
                         // Absolute closeness for float-sized values, and for
@@ -433,9 +450,11 @@ int main(int argc, char **argv)
                          ((exponent(e) >= 0x60u && exponent(g) >= 0x60u) || is_zero(e) || is_zero(g))))) {
                 ++near;
                 max_rel = std::max(max_rel, rel);
+                report(w, e, g, o, "near");
             } else {
                 ++wrong;
                 if (wrong_addresses.size() < 6) wrong_addresses.push_back(static_cast<std::uint32_t>(lo + w));
+                report(w, e, g, o, "wrong");
             }
         }
         for (std::uint64_t a = debug_address; a < hi; a += 4) {
@@ -462,9 +481,10 @@ int main(int argc, char **argv)
         }
         const bool ok = wrong == 0;
         if (!ok) ++failures;
-        std::printf("%06u %-48s %s f=%u changed=%zu mismatched=%zu ulp4=%zu(max %d) near=%zu(rel %.1e) wrong=%zu stray=%zu%s\n",
+        std::printf("%06u %-48s %s f=%u changed=%zu mismatched=%zu ulp4=%zu(max %d) near=%zu(rel %.1e) wrong=%zu wrong_int=%zu stray=%zu%s\n",
                     ordinal, short_name.c_str(), !ok ? "BAD  " : exact_mismatch == 0 ? "EXACT" : "ok   ",
-                    c.frame, changed, exact_mismatch, close, max_ulp, near, max_rel, wrong, stray, timing.c_str());
+                    c.frame, changed, exact_mismatch, close, max_ulp, near, max_rel, wrong, wrong_int, stray,
+                    timing.c_str());
         if (!ok && verbose) {
             for (std::uint32_t a : wrong_addresses) {
                 std::uint32_t e, g, o;

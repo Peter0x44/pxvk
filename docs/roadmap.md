@@ -47,9 +47,10 @@ Sweeps compared with native frames end every cloth and fluid scene the
 same way as native, including cloth scenes 6 and 9, which differ from CPU
 PhysX on native NVIDIA too. Details in `docs/testing.md`.
 
-Remaining: `pxvk-replay --verbose` prints only the first six wrong words per
-launch, which were all floats. Listing all of them (201 in the 7 launches)
-would rule out an integer mismatch among the rest.
+`pxvk-replay --mismatches` and `wrong_int=` then checked every wrong word:
+the two integer-looking ones trace, through probes, to a single particle
+flag decided by a float threshold test that the approximation units flip
+(`docs/testing.md`).
 
 ## Usability
 
