@@ -29,16 +29,22 @@ passes `spirv-val`; it does not mean the results were compared with native.
 |---|---|---|---|
 | 2.3.x – 2.6.x, 2.7.0, 2.7.2 | none (CPU or Ageia PPU only) | not needed | – |
 | 2.7.1, 2.7.3, 2.7.4, 2.7.6 | 17 modules, PTX 4.1 | compiles | – |
-| 2.7.5 | 19 modules | one module fails | `mul24.lo.u32` |
+| 2.7.5 | 19 modules | 12 kernels fail in two modules: a scan helper (`vectorAddUniform4`) and 2 fluid force-field kernels | `mul24.lo.u32`, the `%clock` register |
 | **2.8.0** | 17 modules | **validated**: bit-exact replays, samples pixel-identical, Mirror's Edge runs | – |
 | 2.8.1, 2.8.3 (two builds) | 17–18 modules | compiles | – |
-| 2.8.4 (eight builds, 2.8.4.9 – 2.8.4.12) | 17 modules | 9 kernels in one module fail; **FluidMark validated** (bit-exact replays; it does not launch those kernels) | 64-bit integer atomics |
+| 2.8.4 (eight builds, 2.8.4.9 – 2.8.4.12) | 17 modules | 9 GPU cloth normal kernels (`PxgCudaDeformable(Uber)PreCalNormals`) fail; **FluidMark validated** (bit-exact replays; it does not launch them) | float atomic add (`atom.global/shared.add.f32`, new in 2.8.4) |
 | PhysX 3.3 x86 (`PhysX3Gpu_x86` 3.3.0.2, beside APEX Particles and Turbulence) | 5 modules, PTX 5.0 | 2 modules fail to parse | dual-destination `setp`; otherwise untested |
 | GRB x86 (`GRB_1_x86`, GPU rigid bodies) | 22 modules | most fail | texture objects and more |
 | 64-bit: `PhysXCore64` 2.8.3, `PhysX3Gpu_x64` 3.3.1.4 | 64-bit pointers | later (charter stage 4) | a 64-bit pxvk |
 
-The whole 2.7/2.8 family is two small instruction additions away from
-compiling completely. To repeat the scan, extract each runtime with
+The whole 2.7/2.8 family is three small additions away from compiling
+completely: float atomic add (which 2.8.4 games with GPU cloth will need),
+`mul24` and `%clock` (2.7.5 only). Neither was refactored away. 2.7.5 is
+an outlier with two extra modules (eleven more variants of a scan helper,
+the `mul24` users, and fluid force-field kernels, the `%clock` users) that
+neither 2.7.4 nor 2.7.6 and later have. 2.8.4 is the first runtime with
+GPU cloth normal kernels, which accumulate vertex normals with float atomic
+adds; earlier runtimes have no such kernels. To repeat the scan, extract each runtime with
 `tools/extract-physx-ptx.py` into `tmp/` and compile the modules with
 `pxvk-ptxc` (the runtimes are proprietary; keep them out of the repository).
 
