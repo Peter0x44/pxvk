@@ -32,14 +32,14 @@ passes `spirv-val`; it does not mean the results were compared with native.
 | 2.7.5 | 19 modules | 12 kernels fail in two modules: a scan helper (`vectorAddUniform4`) and 2 fluid force-field kernels | `mul24.lo.u32`, the `%clock` register |
 | **2.8.0** | 17 modules | **validated**: bit-exact replays, samples pixel-identical, Mirror's Edge runs | – |
 | 2.8.1, 2.8.3 (two builds) | 17–18 modules | compiles | – |
-| 2.8.4 (eight builds, 2.8.4.9 – 2.8.4.12) | 17 modules | 9 GPU cloth normal kernels (`PxgCudaDeformable(Uber)PreCalNormals`) fail; **FluidMark validated** (bit-exact replays; it does not launch them) | float atomic add (`atom.global/shared.add.f32`, new in 2.8.4) |
+| 2.8.4 (eight builds, 2.8.4.9 – 2.8.4.12) | 17 modules | compiles (float atomic add, new in 2.8.4 for the GPU cloth normal kernels `PxgCudaDeformable(Uber)PreCalNormals`, is supported); **FluidMark validated** (bit-exact replays; it does not launch the cloth normal kernels) | – |
 | PhysX 3.3 x86 (`PhysX3Gpu_x86` 3.3.0.2, beside APEX Particles and Turbulence) | 5 modules, PTX 5.0 | 2 modules fail to parse | dual-destination `setp`; otherwise untested |
 | GRB x86 (`GRB_1_x86`, GPU rigid bodies) | 22 modules | most fail | texture objects and more |
 | 64-bit: `PhysXCore64` 2.8.3, `PhysX3Gpu_x64` 3.3.1.4 | 64-bit pointers | later (charter stage 4) | a 64-bit pxvk |
 
-The whole 2.7/2.8 family is three small additions away from compiling
-completely: float atomic add (which 2.8.4 games with GPU cloth will need),
-`mul24` and `%clock` (2.7.5 only). Neither was refactored away. 2.7.5 is
+The whole 2.7/2.8 family compiles except 2.7.5, which needs `mul24` and
+`%clock`. Float atomic add, which 2.8.4 games with GPU cloth will need, is
+supported (October 2026). Neither was refactored away. 2.7.5 is
 an outlier with two extra modules (eleven more variants of a scan helper,
 the `mul24` users, and fluid force-field kernels, the `%clock` users) that
 neither 2.7.4 nor 2.7.6 and later have. 2.8.4 is the first runtime with

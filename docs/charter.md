@@ -24,7 +24,9 @@ them). Stages are taken on one at a time, in this order:
    except for three features:
    - float atomic add (`atom.global/shared.add.f32`): every 2.8.4 build's
      GPU cloth normal kernels, so likely any 2.8.4 game with GPU cloth;
-     results depend on thread order, so these kernels cannot be bit-exact;
+     results depend on thread order, so these kernels cannot be bit-exact.
+     Done: every 2.8.4 build now compiles, and opcheck matches the native
+     driver for the instruction and for the kernels' accumulation pattern;
    - `mul24` and the `%clock` register: only 2.7.5, in kernels no other
      runtime has (a generic scan helper and fluid force fields).
 

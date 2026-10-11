@@ -180,6 +180,17 @@ const Variant kVariants[] = {
     {"mul.ftz.f32 %f7, {a}, {b}; setp.gt.ftz.f32 %p6, %f7, 0f00000000; add.ftz.f32 %f6, %f7, {c}; selp.f32 {d}, %f6, %f7, %p6;", 'f', "fff"},
     {"mul.ftz.f32 %f7, {a}, {b}; add.ftz.f32 %f6, %f7, {c}; max.ftz.f32 {d}, %f6, %f7;", 'f', "fff"},
     {"mul.ftz.f32 %f7, {a}, {b}; add.ftz.f32 %f6, %f7, {c}; st.global.f32 [%r8+12], %f7; mov.f32 {d}, %f6;", 'f', "fff"},
+    // Float atomic add (PhysX 2.8.4 cloth normals): sum, returned old value,
+    // red, shared memory, and a contended shared counter that must be exact.
+    {"st.global.f32 [%r8+12], {a}; atom.global.add.f32 %f6, [%r8+12], {b}; ld.global.f32 {d}, [%r8+12];", 'f', "ff"},
+    {"st.global.f32 [%r8+12], {a}; atom.global.add.f32 {d}, [%r8+12], {b};", 'f', "ff"},
+    {"st.global.f32 [%r8+12], {a}; red.global.add.f32 [%r8+12], {b}; ld.global.f32 {d}, [%r8+12];", 'f', "ff"},
+    // Shared float atomics keep subnormal inputs on NVIDIA; pxvk flushes
+    // them. PhysX's cloth normals start shared slots at 0 and add only
+    // results of .ftz arithmetic, then add the sums into global memory:
+    // test that shape.
+    {".shared .align 4 .f32 opsh[1024]; mov.u32 %r12, opsh; shl.b32 %r13, %r3, 2; add.u32 %r12, %r12, %r13; st.shared.f32 [%r12], 0f00000000; mul.ftz.f32 %f3, {a}, 0f3F800000; mul.ftz.f32 %f4, {b}, 0f3F800000; red.shared.add.f32 [%r12], %f3; atom.shared.add.f32 %f6, [%r12], %f4; ld.shared.f32 %f5, [%r12]; st.global.f32 [%r8+12], 0f00000000; red.global.add.f32 [%r8+12], %f5; ld.global.f32 {d}, [%r8+12];", 'f', "ff"},
+    {".shared .align 4 .f32 opcnt; setp.ne.u32 %p6, %r3, 0; @!%p6 st.shared.f32 [opcnt], 0f00000000; bar.sync 0; atom.shared.add.f32 %f6, [opcnt], 0f3F800000; bar.sync 0; ld.shared.f32 %f5, [opcnt]; add.ftz.f32 {d}, %f5, {a};", 'f', "f"},
     {"mul.ftz.f32 %f7, {a}, {b}; neg.ftz.f32 %f6, %f7; add.ftz.f32 {d}, %f6, {c};", 'f', "fff"},
     {"mul.ftz.f32 %f7, {a}, {b}; add.ftz.f32 %f6, %f7, {c}; add.ftz.f32 {d}, %f6, %f7;", 'f', "fff"},
     {"mul.ftz.f32 %f7, {a}, {a}; fma.rn.ftz.f32 %f6, {b}, {b}, %f7; add.ftz.f32 {d}, %f6, {c};", 'f', "fff"},

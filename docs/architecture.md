@@ -211,7 +211,8 @@ Required: Vulkan 1.1 with a compute queue, `robustBufferAccess` and
 128 MiB pool, FluidMark a 256 MB one) needs either a `maxStorageBufferRange`
 that covers it or non-uniform storage-buffer descriptor indexing for the
 split heap. No buffer device address, 8/16-bit storage or float atomics are
-used.
+used: PTX's float atomic add is a compare-and-swap loop on 32-bit integer
+atomics.
 
 Optional, with fallbacks:
 
@@ -234,6 +235,16 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
 
 - `div.rn`/`sqrt.rn` are not correctly rounded (Vulkan precision); PhysX
   does not use them.
+- Float atomic add (`atom`/`red .add.f32`) is a compare-and-swap loop that
+  rounds to nearest and, in global memory, flushes subnormals as NVIDIA
+  does. In shared memory NVIDIA keeps subnormal inputs and pxvk flushes
+  them (NVIDIA's Vulkan driver cannot preserve subnormals). PhysX 2.8.4's
+  cloth normal kernels start shared sums at 0 and add only flushed values,
+  and opcheck shows that pattern bit-exact; they could differ only if a
+  partial sum cancelled to a subnormal and a later addend were near
+  10^-38, which would need triangle edges around 10^-15. Accumulation
+  order follows thread scheduling, natively too, so these kernels are not
+  bit-exact against native in practice.
 - On non-NVIDIA GPUs `rcp`/`rsqrt`/`sqrt` differ from NVIDIA hardware by
   1–2 ULP; iterative solvers amplify this into small numerical drift.
 - Results are not yet fully 1:1 with native on NVIDIA: every instruction

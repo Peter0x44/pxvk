@@ -1707,12 +1707,58 @@ private:
         throw Error("unsupported instruction " + in.text(), line);
     }
 
-    // atom/red on 32-bit integers in global or shared memory.
+    // atom/red.add.f32: a compare-and-swap loop on the word's bits. It rounds
+    // to nearest; on global memory it also flushes subnormal inputs and
+    // results to sign-preserving zero, while on shared memory NVIDIA keeps
+    // them (both verified with pxvk-opcheck). Vulkan's float atomics promise
+    // neither, so the add is done here. PhysX 2.8.4 accumulates cloth normals
+    // this way; the result depends on the order threads arrive, as natively.
+    // On devices with native flush-to-zero the shared form flushes too.
+    void lower_float_atomic_add(const Instruction &in, Space space, std::uint32_t pointer, std::size_t value_index)
+    {
+        const std::uint32_t u32 = b_.t_u32(), f32 = b_.t_f32();
+        const std::uint32_t scope = b_.u32(space == Space::shared ? SpvScopeWorkgroup : SpvScopeDevice);
+        const std::uint32_t semantics = b_.u32(SpvMemorySemanticsMaskNone);
+        const bool ftz = space == Space::global;
+        const auto flush = [&](std::uint32_t v) { return ftz ? this->flush(v) : v; };
+        const std::uint32_t addend = flush(operand(in.operands[value_index], Type{'f', 32}, in.line));
+        const std::uint32_t header = b_.id(), body = b_.id(), cont = b_.id(), merge = b_.id();
+        b_.branch(header);
+        b_.label(header);
+        b_.op(SpvOpLoopMerge, {merge, cont, SpvLoopControlMaskNone});
+        b_.branch(body);
+        b_.label(body);
+        const std::uint32_t old = b_.value(SpvOpAtomicLoad, u32, {pointer, scope, semantics});
+        const std::uint32_t old_f = flush(b_.value(SpvOpBitcast, f32, {old}));
+        const std::uint32_t sum = b_.value(SpvOpFAdd, f32, {old_f, addend});
+        b_.decorate(sum, SpvDecorationNoContraction);
+        const std::uint32_t replaced = b_.value(SpvOpBitcast, u32, {flush(sum)});
+        const std::uint32_t seen =
+            b_.value(SpvOpAtomicCompareExchange, u32, {pointer, scope, semantics, semantics, replaced, old});
+        b_.branch_conditional(b_.value(SpvOpIEqual, b_.t_bool(), {seen, old}), merge, cont);
+        b_.label(cont);
+        b_.branch(header);
+        b_.label(merge);
+        if (in.op != "red") write(in.operands[0], b_.value(SpvOpBitcast, f32, {old}), Type{'f', 32}, in.line);
+    }
+
+    // atom/red on 32-bit integers in global or shared memory, and add.f32.
     void lower_atomic(const Instruction &in)
     {
         const Type type = last_type(in);
+        if (type.kind == 'f' && type.bits == 32 && in.has("add")) {
+            const bool is_red = in.op == "red";
+            const std::size_t addr_index = is_red ? 0 : 1;
+            Space space = memory_space(in);
+            if (space == Space::none) space = resolve_generic(in.operands[addr_index], in.line);
+            if (space != Space::global && space != Space::shared)
+                throw Error("atomics are only supported on global and shared memory", in.line);
+            const std::uint32_t pointer = word_pointer(space, address(in.operands[addr_index], in.line));
+            lower_float_atomic_add(in, space, pointer, addr_index + 1);
+            return;
+        }
         if (type.bits != 32 || type.kind == 'f')
-            throw Error("only 32-bit integer atomics are supported", in.line);
+            throw Error("only 32-bit integer atomics and add.f32 are supported", in.line);
         const bool is_red = in.op == "red";
         const std::size_t addr_index = is_red ? 0 : 1;
         Space space = memory_space(in);
