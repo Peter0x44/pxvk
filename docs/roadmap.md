@@ -24,11 +24,16 @@ matching run with `tools/capture-diff.py`.
 
 ### 2. Mirror's Edge against native
 
-pxvk runs the game without errors, but nothing has been compared with native.
-Capture launches from the glass (server room) and cloth (subway) scenes with
-`tools/nvcuda-trace`, replay them, and compare the scenes side by side.
-Confirm which `Escape_p` checkpoint starts at the RPA glass lobby
-(`docs/mirrors-edge.md`).
+Done for the charter's first stage: a tester ran the game on pxvk and on
+native GPU PhysX on an NVIDIA card (October 2026). The effects looked the
+same and frame rates matched, about 72 FPS on pxvk against 70 natively in a
+GPU-bound path-traced scene with cloth, where most of the cost is rendering.
+The game's kernels are the 2.8.0 runtime's, which replay bit-exact.
+
+Still useful later: native launch captures from the glass (server room) and
+cloth (subway) scenes with `tools/nvcuda-trace`, for regression replays of
+the game itself. Confirm which `Escape_p` checkpoint starts at the RPA glass
+lobby (`docs/mirrors-edge.md`).
 
 ### 3. AMD bit-level validation
 

@@ -10,12 +10,14 @@ general CUDA-on-Vulkan implementation.
 The long-term aim is every GPU PhysX game (`docs/compatibility.md` lists
 them). Stages are taken on one at a time, in this order:
 
-1. **32-bit PhysX 2.8.0: Mirror's Edge.** Mirror's Edge (2009) is the first
-   target; it and the PhysX 2.8 SDK samples (`SampleCloth`,
-   `SampleParticleFluid`) use the 2.8.0 runtime, and FluidMark (a 2.8.4
-   build) is a further test workload. Kernels, replays and sample sweeps
-   are validated against native; what remains is comparing Mirror's Edge
-   itself with native, side by side.
+1. **Done (October 2026): 32-bit PhysX 2.8.0, Mirror's Edge.** Mirror's
+   Edge (2009) was the first target; it and the PhysX 2.8 SDK samples
+   (`SampleCloth`, `SampleParticleFluid`) use the 2.8.0 runtime, and
+   FluidMark (a 2.8.4 build) is a further test workload. Kernels, replays
+   and sample sweeps are validated against native, and a tester compared
+   Mirror's Edge on pxvk with native GPU PhysX on an NVIDIA card: the
+   effects looked the same and frame rates matched (about 72 against 70
+   FPS in a GPU-bound path-traced scene with cloth).
 2. **Now: the rest of 32-bit PhysX 2.x.** Every 2.7.x and 2.8.x runtime in
    the PhysX System Software, which covers most of the 32-bit game list.
    An offline scan (`docs/compatibility.md`) found all of them compiling
