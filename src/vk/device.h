@@ -27,6 +27,9 @@ struct Capabilities {
     bool preserve_nan = false;     // fp32 SignedZeroInfNanPreserve execution mode
     bool subgroup_control = false; // can require a subgroup size of 32
     std::uint32_t subgroup_size = 0;
+    // VK_EXT_shader_atomic_float buffer float32 atomic add (enabled; off with
+    // PXVK_NO_FLOAT_ATOMICS).
+    bool float_atomic_add = false;
     std::uint32_t max_workgroup_subgroups = 0; // with subgroup_control, at the required size of 32
     std::uint32_t min_subgroup_size = 0; // smallest size compute may run with (no size control)
     // Compute may run with subgroups narrower than a CUDA warp and cannot be

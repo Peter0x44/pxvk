@@ -64,6 +64,10 @@ struct CompileOptions {
     // Device supports shaderInt64; kernels with 64-bit integers fail to
     // compile without it.
     bool int64 = true;
+    // Device supports VK_EXT_shader_atomic_float's shaderBufferFloat32AtomicAdd:
+    // global atom/red.add.f32 use OpAtomicFAddEXT instead of a compare-and-swap
+    // loop (not with a split heap; shared memory always uses the loop).
+    bool float_atomic_add = false;
     // Split heap, for devices whose maxStorageBufferRange is smaller than
     // the CUDA heap: binding 0 is an array of heap_windows descriptors, each
     // covering 2^heap_window_shift bytes of the heap buffer, selected per

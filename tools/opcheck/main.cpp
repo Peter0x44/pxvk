@@ -317,6 +317,7 @@ int main(int argc, char **argv)
     pxvk::ptx::CompileOptions options;
     options.native_ftz = device.caps().native_ftz;
     options.preserve_nan = device.caps().preserve_nan;
+    options.float_atomic_add = device.caps().float_atomic_add;
     options.no_contraction = no_contraction;
 
     const std::size_t bytes = count * 16;

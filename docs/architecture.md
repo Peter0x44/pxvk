@@ -210,9 +210,11 @@ Required: Vulkan 1.1 with a compute queue, `robustBufferAccess` and
 768-invocation workgroups. The CUDA heap (PhysX cloth alone allocates a
 128 MiB pool, FluidMark a 256 MB one) needs either a `maxStorageBufferRange`
 that covers it or non-uniform storage-buffer descriptor indexing for the
-split heap. No buffer device address, 8/16-bit storage or float atomics are
-used: PTX's float atomic add is a compare-and-swap loop on 32-bit integer
-atomics.
+split heap. No buffer device address or 8/16-bit storage is used. Float
+atomics are optional: where the device has `VK_EXT_shader_atomic_float`'s
+`shaderBufferFloat32AtomicAdd` (NVIDIA, lavapipe), global float atomic adds
+use it; otherwise, and always in shared memory, they are a compare-and-swap
+loop on 32-bit integer atomics.
 
 Optional, with fallbacks:
 
@@ -235,9 +237,11 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
 
 - `div.rn`/`sqrt.rn` are not correctly rounded (Vulkan precision); PhysX
   does not use them.
-- Float atomic add (`atom`/`red .add.f32`) is a compare-and-swap loop that
-  rounds to nearest and, in global memory, flushes subnormals as NVIDIA
-  does. In shared memory NVIDIA keeps subnormal inputs and pxvk flushes
+- Float atomic add (`atom`/`red .add.f32`) rounds to nearest and, in
+  global memory, flushes subnormals as NVIDIA does, both with the native
+  Vulkan float atomic (where available, global memory only) and with the
+  compare-and-swap loop (opcheck exact on NVIDIA, Intel and lavapipe, with
+  `PXVK_NO_FLOAT_ATOMICS` forcing the loop). In shared memory NVIDIA keeps subnormal inputs and pxvk flushes
   them (NVIDIA's Vulkan driver cannot preserve subnormals). PhysX 2.8.4's
   cloth normal kernels start shared sums at 0 and add only flushed values,
   and opcheck shows that pattern bit-exact; they could differ only if a

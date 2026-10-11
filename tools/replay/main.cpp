@@ -180,14 +180,15 @@ int main(int argc, char **argv)
         return 2;
     }
     const auto &caps = device.caps();
-    std::printf("device: %s (subgroup %u, native ftz %d, subgroup control %d, max heap %llu MiB)\n",
-                caps.name.c_str(), caps.subgroup_size, caps.native_ftz, caps.subgroup_control,
+    std::printf("device: %s (subgroup %u, native ftz %d, subgroup control %d, float atomics %d, max heap %llu MiB)\n",
+                caps.name.c_str(), caps.subgroup_size, caps.native_ftz, caps.subgroup_control, caps.float_atomic_add,
                 static_cast<unsigned long long>(caps.max_heap_bytes >> 20));
     pxvk::ptx::CompileOptions options;
     options.native_ftz = force_native_ftz || (native_ftz && caps.native_ftz);
     options.preserve_nan = caps.preserve_nan;
     options.emulate_warps = force_emulate_warps || caps.narrow_subgroups();
     options.int64 = caps.int64;
+    options.float_atomic_add = caps.float_atomic_add;
     options.heap_window_shift = caps.heap_window_shift;
     options.heap_windows = caps.heap_windows;
     options.no_contraction = no_contraction;

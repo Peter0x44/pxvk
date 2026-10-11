@@ -849,6 +849,27 @@ private:
         return var;
     }
 
+    // A float32 view of the heap at binding 0, for OpAtomicFAddEXT (which
+    // needs a float pointer); it aliases the 32-bit integer view.
+    std::uint32_t heap_float_pointer(const Address &address)
+    {
+        const std::uint32_t f32 = b_.t_f32();
+        if (heap_float_ == 0) {
+            const std::uint32_t rta = b_.unique_type(SpvOpTypeRuntimeArray, {f32});
+            b_.decorate(rta, SpvDecorationArrayStride, {4});
+            const std::uint32_t block = b_.unique_type(SpvOpTypeStruct, {rta});
+            b_.decorate(block, SpvDecorationBlock);
+            b_.member_decorate(block, 0, SpvDecorationOffset, {0});
+            heap_float_ = b_.global_variable(b_.t_ptr(SpvStorageClassStorageBuffer, block), SpvStorageClassStorageBuffer);
+            b_.decorate(heap_float_, SpvDecorationDescriptorSet, {0});
+            b_.decorate(heap_float_, SpvDecorationBinding, {kBindingHeap});
+            b_.decorate(heap_float_, SpvDecorationAliased);
+        }
+        const Address relative{b_.value(SpvOpISub, b_.t_u32(), {address.base, heap_base()}), address.offset};
+        return b_.value(SpvOpAccessChain, b_.t_ptr(SpvStorageClassStorageBuffer, f32),
+                        {heap_float_, b_.u32(0), element_index(relative, 2u)});
+    }
+
     std::uint32_t heap_base()
     {
         if (heap_base_ == 0) heap_base_ = b_.spec_u32(kSpecHeapBase, 0);
@@ -1753,8 +1774,20 @@ private:
             if (space == Space::none) space = resolve_generic(in.operands[addr_index], in.line);
             if (space != Space::global && space != Space::shared)
                 throw Error("atomics are only supported on global and shared memory", in.line);
-            const std::uint32_t pointer = word_pointer(space, address(in.operands[addr_index], in.line));
-            lower_float_atomic_add(in, space, pointer, addr_index + 1);
+            const Address target = address(in.operands[addr_index], in.line);
+            if (space == Space::global && options_.float_atomic_add && !split_heap()) {
+                // Native float atomic add (VK_EXT_shader_atomic_float). Like
+                // NVIDIA's global form it flushes subnormals on NVIDIA; the
+                // addend is flushed here too (verified with pxvk-opcheck).
+                b_.extension("SPV_EXT_shader_atomic_float_add");
+                b_.capability(SpvCapabilityAtomicFloat32AddEXT);
+                const std::uint32_t addend = flush(operand(in.operands[addr_index + 1], Type{'f', 32}, in.line));
+                const std::uint32_t old = b_.value(SpvOpAtomicFAddEXT, b_.t_f32(),
+                    {heap_float_pointer(target), b_.u32(SpvScopeDevice), b_.u32(SpvMemorySemanticsMaskNone), addend});
+                if (!is_red) write(in.operands[0], old, Type{'f', 32}, in.line);
+                return;
+            }
+            lower_float_atomic_add(in, space, word_pointer(space, target), addr_index + 1);
             return;
         }
         if (type.bits != 32 || type.kind == 'f')
@@ -2269,6 +2302,7 @@ private:
     std::uint32_t workgroup_size_[3] = {0, 0, 0};
     std::uint32_t heap_[3] = {0, 0, 0};
     std::uint32_t heap_element_[3] = {0, 0, 0};
+    std::uint32_t heap_float_ = 0; // float32 heap view for native float atomics
     std::uint32_t heap_base_ = 0, launch_ = 0, shared_ = 0, local_ = 0, pending_ = 0, scratch_base_ = 0;
     const Cfg *cfg_ = nullptr;
     std::vector<bool> is_loop_;

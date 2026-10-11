@@ -29,6 +29,15 @@ struct Buffer {
     void *mapped = nullptr;
 };
 
+// A switch is on when set to anything but empty, 0, off, false or no
+// (docs/environment.md).
+bool env_switch(const char *name)
+{
+    const char *value = std::getenv(name);
+    return value != nullptr && *value != '\0' && std::strcmp(value, "0") != 0 && _stricmp(value, "off") != 0 &&
+           _stricmp(value, "false") != 0 && _stricmp(value, "no") != 0;
+}
+
 std::string vk_error(const char *what, VkResult result)
 {
     return std::string(what) + " failed (VkResult " + std::to_string(static_cast<int>(result)) + ")";
@@ -598,8 +607,17 @@ bool Device::initialize(int index, std::string &error)
         *feature_tail = &subgroup_features;
         feature_tail = &subgroup_features.pNext;
     }
-    if (indexing_ext) *feature_tail = &indexing_features;
+    if (indexing_ext) {
+        *feature_tail = &indexing_features;
+        feature_tail = &indexing_features.pNext;
+    }
+    VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic_float_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT};
+    const bool atomic_float_ext = has_extension(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+    if (atomic_float_ext) *feature_tail = &atomic_float_features;
     vkGetPhysicalDeviceFeatures2(d.physical, &features2);
+    c.float_atomic_add = atomic_float_ext && atomic_float_features.shaderBufferFloat32AtomicAdd &&
+                         !env_switch("PXVK_NO_FLOAT_ATOMICS");
     c.int64 = features2.features.shaderInt64;
     c.max_workgroup_subgroups = subgroup_ext ? subgroup_props.maxComputeWorkgroupSubgroups : 0;
     c.subgroup_control = subgroup_ext && subgroup_features.subgroupSizeControl &&
@@ -685,12 +703,17 @@ bool Device::initialize(int index, std::string &error)
         enable.pNext = &enable_indexing;
         if (!api12) enabled_extensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
     }
+    VkPhysicalDeviceShaderAtomicFloatFeaturesEXT enable_atomic_float{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT};
+    if (c.float_atomic_add) {
+        enable_atomic_float.shaderBufferFloat32AtomicAdd = VK_TRUE;
+        enable_atomic_float.pNext = enable.pNext;
+        enable.pNext = &enable_atomic_float;
+        enabled_extensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+    }
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enable_executable_info{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
-    const char *stats_switch = std::getenv("PXVK_PIPELINE_STATS"); // a switch, as in docs/environment.md
-    const bool want_stats = stats_switch != nullptr && *stats_switch != '\0' && std::strcmp(stats_switch, "0") != 0 &&
-                            _stricmp(stats_switch, "off") != 0 && _stricmp(stats_switch, "false") != 0 &&
-                            _stricmp(stats_switch, "no") != 0;
+    const bool want_stats = env_switch("PXVK_PIPELINE_STATS");
     if (want_stats && has_extension(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)) {
         d.pipeline_stats = true;
         enable_executable_info.pipelineExecutableInfo = VK_TRUE;
