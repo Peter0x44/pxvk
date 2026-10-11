@@ -90,6 +90,15 @@ Frame rates match or beat native on the RTX 3070. Remaining: the cloth
 64-thread launches pay 30–80% for `.ftz` emulation on NVIDIA. NVIDIA's Vulkan
 driver does not expose compiled machine code, which limits further analysis.
 
+On Intel UHD, PhysX 2.8.4's cloth normal kernel spends up to three quarters
+of its time in the shared-memory float atomic add loop (180 µs for a
+1024-vertex cloth against a 43 µs floor; `docs/testing.md`). Intel has no
+native shared float atomic add. Neighbouring triangles, which sit in the
+same subgroup, add to the same vertices, so the loop's retries are likely
+the cost; combining equal addresses within a subgroup before the atomic
+might help. Worth measuring once a 2.8.4 cloth game shows how many such
+launches a frame has.
+
 ### 8. NVAPI coverage
 
 `pxvk-nvapi.dll` implements the eight NVAPI interfaces that ZLUDA implements.

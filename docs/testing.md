@@ -68,6 +68,15 @@ are latency-bound, so instruction count on the dependency chain matters.
 - `pxvk-nativeinfo module.ptx` prints the native driver's function
   attributes (registers, local memory) and writes the native JIT cubin to
   `module.ptx.cubin`; `nvdisasm -c` from the CUDA toolkit disassembles it.
+- `tools/synth-cloth-normals.py` builds captures of the 2.8.4 cloth normal
+  kernel on a generated cloth grid, with expected normals computed on the
+  CPU. Measured with them (October 2026, 64–1024-vertex cloths, minimum of
+  300 runs): on the RTX 3070 a launch takes 4–7 µs whatever the atomics;
+  making its shared adds free (non-atomic, wrong results) would save at
+  most 1 µs, so native shared float atomics
+  (`VK_KHR_workgroup_memory_explicit_layout`) were not added. On the Intel
+  UHD the shared compare-and-swap loop dominates: 43–180 µs against a
+  21–43 µs floor.
 - In-game, `PXVK_PROFILE=1` (pxvk) and `PXVK_TRACE_TIMING=1` (tracer, native)
   log per-kernel GPU time per 500 launches.
 

@@ -59,6 +59,7 @@ run the GPU tests.
 | `tools/check.py` | regression check: corpus, opcheck, replays |
 | `tools/package.py` | build the tester package (`dist/pxvk-<commit>.zip`) |
 | `tools/bench.py` | native/pxvk sample runs, frame rates and image comparison |
+| `tools/synth-cloth-normals.py` | synthetic captures of PhysX 2.8.4's cloth normal kernel (float atomics) for replay and timing |
 | `tools/capture-diff.py` | find the first diverging launch between native and pxvk captures |
 | `tools/extract-physx-ptx.py` | extract the PTX corpus from a PhysX DLL |
 | `tools/gen-stubs.py` | regenerate `src/runtime/stubs.cpp` from `unsupported-exports.txt` (needs the CUDA toolkit headers) |

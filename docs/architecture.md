@@ -214,7 +214,9 @@ split heap. No buffer device address or 8/16-bit storage is used. Float
 atomics are optional: where the device has `VK_EXT_shader_atomic_float`'s
 `shaderBufferFloat32AtomicAdd` (NVIDIA, lavapipe), global float atomic adds
 use it; otherwise, and always in shared memory, they are a compare-and-swap
-loop on 32-bit integer atomics.
+loop on 32-bit integer atomics. Native shared float atomics would need
+`VK_KHR_workgroup_memory_explicit_layout` and were measured not to be worth
+it (at most 1 µs per cloth normal launch on the RTX 3070; `docs/testing.md`).
 
 Optional, with fallbacks:
 
