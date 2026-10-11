@@ -112,13 +112,28 @@ device) makes the check fail. The reference capture sets on the development
 machine are `test-output/bench/capture-all/trace/SampleCloth.exe_*` (all nine
 cloth scenes) and `test-output/bench/fluid-capture/trace/SampleParticleFluid.exe_*`.
 
-Expected results on the reference laptop:
+Expected results on the reference laptop, and on the Radeon 8060S laptop
+(driver 26.9.1, no NVIDIA driver):
 
-| Captures | RTX 3070 | Intel UHD |
-|---|---|---|
-| SampleCloth (90 launches) | 88 EXACT, 2 ok | 28 EXACT, 55 ok, 7 tolerated BAD |
-| SampleParticleFluid (112 launches) | 112 EXACT | 104 EXACT, 8 ok |
-| FluidMark 1.5.4 (82 launches) | 82 EXACT | 63 EXACT, 19 ok |
+| Captures | RTX 3070 | Intel UHD | Radeon 8060S |
+|---|---|---|---|
+| SampleCloth (90 launches) | 88 EXACT, 2 ok | 28 EXACT, 55 ok, 7 tolerated BAD | the same as Intel |
+| SampleParticleFluid (112 launches) | 112 EXACT | 104 EXACT, 8 ok | the same as Intel |
+| FluidMark 1.5.4 (82 launches) | 82 EXACT | 63 EXACT, 19 ok | the same as Intel |
+
+The tolerated BAD launches are all `KernelDeformableUberSolver` (scenes 1,
+3, 4 and 9). A launch is BAD when any word is "wrong": over 4 ULP and over
+1e-3 relative, or a mismatch in a word that looks like an integer. Off
+NVIDIA, `check.py` accepts it while wrong words stay under 0.5% of the words
+the kernel changed; here they are 0.003–0.14%. The cause is the
+approximation units: the cloth kernel without approximate math
+(`PxgCudaDeformableUpdate`) is EXACT on every GPU, the single-pass
+`UberCollision` (`rcp`, `rsqrt`, `sqrt`, `div.full`) stays within 4 ULP,
+and only the iterative `UberSolver` (20 `rcp`, 6 `rsqrt`, 2 `sqrt`, 6
+`div.full`) drifts further, while the same launches are EXACT on NVIDIA.
+The wrong words `pxvk-replay --verbose` prints (the first six per launch) are
+all floats: near-zero residuals such as 4.2e-11 against -7.0e-12, and
+values off in the third or fourth digit such as -0.123394 against -0.123234.
 
 FluidMark uses PhysX 2.8.4 from the PhysX System Software, whose 17 PTX
 modules differ from the samples' (Mirror's Edge uses the samples' modules).
@@ -157,3 +172,19 @@ capture directories privately (they are proprietary and not in git). Without an
 NVIDIA driver, `check.py` skips opcheck and still compiles the corpus and
 replays the captures, which compares the new GPU against the native NVIDIA
 results recorded in them. Pass the device with `--device <name fragment>`.
+
+To compare whole runs with native, also copy native sweep frames
+(`bench.py sweep <name> --mode native` on the NVIDIA machine), run the same
+sweep with `--mode pxvk` and use `bench.py compare`. Pixels never match
+across vendors, because OpenGL renders slightly differently and the
+approximation units let cloth drift, so look at the frames side by side.
+
+On the Radeon 8060S (2026-10-11), against RTX 3070 native frames, 3 per
+scene: SampleCloth differs by 0.9–9.6% of the pixels (29.6% on the last
+frame of scene 9, a large patterned rug that has shifted slightly) and
+SampleParticleFluid by 0.16–6.7%, constant within some scenes (4.41%
+throughout fluid scene 1), which points to rendering rather than physics.
+Every scene ends the same way as native. In particular, part of the rug
+stays on the bar in cloth scene 6 and the sphere ends crumpled in scene 9
+on native NVIDIA too, so those differences from CPU PhysX are GPU PhysX
+behaviour, not pxvk bugs.

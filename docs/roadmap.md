@@ -39,12 +39,17 @@ repeated runs are pixel-identical (the cloth solver uses storage-backed shared
 memory, 32 KiB device limit); Mirror's Edge selects hardware PhysX and holds
 its 62 fps cap.
 
-Remaining: copy the native capture sets to the AMD machine and replay them
-(`docs/testing.md`, "Testing on another machine"). Compared with CPU PhysX,
-SampleCloth scenes 6 (tearing) and 9 (remap mesh) end differently on pxvk:
-part of the rug stays on the bar in scene 6, and the sphere ends crumpled in
-scene 9. GPU and CPU cloth differ in general, so compare with native NVIDIA
-before treating it as a bug.
+The native RTX 3070 captures were then replayed on the Radeon (driver
+26.9.1): SampleCloth, SampleParticleFluid and FluidMark give exactly the
+Intel UHD results, and `check.py` passes. All 7 tolerated BAD launches are
+the iterative cloth `UberSolver`, drifting through the approximation units.
+Sweeps compared with native frames end every cloth and fluid scene the
+same way as native, including cloth scenes 6 and 9, which differ from CPU
+PhysX on native NVIDIA too. Details in `docs/testing.md`.
+
+Remaining: `pxvk-replay --verbose` prints only the first six wrong words per
+launch, which were all floats. Listing all of them (201 in the 7 launches)
+would rule out an integer mismatch among the rest.
 
 ## Usability
 
