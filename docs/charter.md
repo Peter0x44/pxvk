@@ -8,15 +8,31 @@ dropped 32-bit CUDA (RTX 50). This is a focused compatibility project, not a
 general CUDA-on-Vulkan implementation.
 
 The long-term aim is every GPU PhysX game (`docs/compatibility.md` lists
-them). The current focus is narrower: classic 32-bit PhysX 2.8.x. Later
-stages are taken on one at a time, in this order:
+them). Stages are taken on one at a time, in this order:
 
-1. **Now: 32-bit PhysX 2.8.x.** Mirror's Edge (2009) is the first target.
-   The PhysX 2.8 SDK samples (`SampleCloth`, `SampleParticleFluid`) and
-   FluidMark are the day-to-day test workloads.
-2. **Later: the rest of 32-bit PhysX 2.x.** Every 2.7.x and 2.8.x runtime in
-   the PhysX System Software, which covers most of the 32-bit game list
-   (Alice: Madness Returns and Mafia II Classic first).
+1. **32-bit PhysX 2.8.0: Mirror's Edge.** Mirror's Edge (2009) is the first
+   target; it and the PhysX 2.8 SDK samples (`SampleCloth`,
+   `SampleParticleFluid`) use the 2.8.0 runtime, and FluidMark (a 2.8.4
+   build) is a further test workload. Kernels, replays and sample sweeps
+   are validated against native; what remains is comparing Mirror's Edge
+   itself with native, side by side.
+2. **Now: the rest of 32-bit PhysX 2.x.** Every 2.7.x and 2.8.x runtime in
+   the PhysX System Software, which covers most of the 32-bit game list.
+   An offline scan (`docs/compatibility.md`) found all of them compiling
+   except for three features:
+   - float atomic add (`atom.global/shared.add.f32`): every 2.8.4 build's
+     GPU cloth normal kernels, so likely any 2.8.4 game with GPU cloth;
+     results depend on thread order, so these kernels cannot be bit-exact;
+   - `mul24` and the `%clock` register: only 2.7.5, in kernels no other
+     runtime has (a generic scan helper and fluid force fields).
+
+   Compiler support comes first and is checked offline (every runtime
+   compiles and validates; opcheck compares the new instructions with the
+   native driver). Then validation against native traces of real games: a
+   2.8.4 game with GPU cloth (Alice: Madness Returns or Mafia II Classic),
+   and a 2.7.5 game if one is identified (likely an Ageia-era title such as
+   Unreal Tournament 3 or Ghost Recon Advanced Warfighter 2; a game's
+   `PhysXLoader.dll` version tells).
 3. **Later: 32-bit PhysX 3.x and APEX.** The GPU runtime of the late 32-bit
    titles (likely Assassin's Creed IV, Batman: Arkham Origins), APEX
    Particles/Turbulence and GPU rigid bodies (GRB), plus whatever graphics
@@ -51,9 +67,9 @@ warp size remains 32.
 
 ## Out of scope
 
-Out of scope for the current stage (2.8.x) until a target workload requires
-them or the stage changes: later-stage items above (other runtimes, PhysX
-3.x, APEX, GRB, 64-bit, D3D/OpenGL–CUDA graphics interop).
+Out of scope for the current stage (the rest of 32-bit PhysX 2.x) until a
+target workload requires them or the stage changes: later-stage items above
+(PhysX 3.x, APEX, GRB, 64-bit, D3D/OpenGL–CUDA graphics interop).
 
 Out of scope for good: general CUDA support, and NVIDIA libraries other
 than PhysX (FleX, Flow, OptiX) unless a game on the list needs one for its
