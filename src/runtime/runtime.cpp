@@ -258,6 +258,7 @@ CUresult initialize(State &s)
     s.options.emulate_warps = caps.narrow_subgroups();
     s.options.int64 = caps.int64;
     s.options.float_atomic_add = caps.float_atomic_add;
+    s.options.shader_clock = caps.shader_clock;
     s.options.heap_window_shift = caps.heap_window_shift;
     s.options.heap_windows = caps.heap_windows;
     s.heap_limit = caps.max_heap_bytes;

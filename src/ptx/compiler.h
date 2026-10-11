@@ -68,6 +68,9 @@ struct CompileOptions {
     // global atom/red.add.f32 use OpAtomicFAddEXT instead of a compare-and-swap
     // loop (not with a split heap; shared memory always uses the loop).
     bool float_atomic_add = false;
+    // Device supports VK_KHR_shader_clock's shaderSubgroupClock: %clock reads
+    // it (otherwise %clock is 0).
+    bool shader_clock = false;
     // Split heap, for devices whose maxStorageBufferRange is smaller than
     // the CUDA heap: binding 0 is an array of heap_windows descriptors, each
     // covering 2^heap_window_shift bytes of the heap buffer, selected per

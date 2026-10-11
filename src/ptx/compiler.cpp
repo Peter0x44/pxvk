@@ -722,6 +722,17 @@ private:
         if (base == "%nctaid") return component(SpvBuiltInNumWorkgroups);
         if (base == "%ntid") return workgroup_size_component(c);
         if (base == "%warpsize") return b_.u32(32);
+        if (base == "%clock") {
+            // A free-running counter; PhysX 2.7.5 seeds a random number
+            // generator with it, so native results vary anyway. Without
+            // VK_KHR_shader_clock a constant has to do.
+            if (!options_.shader_clock) return b_.u32(0);
+            b_.extension("SPV_KHR_shader_clock");
+            b_.capability(SpvCapabilityShaderClockKHR);
+            const std::uint32_t v2 = b_.t_vec(b_.t_u32(), 2);
+            const std::uint32_t clock = b_.value(SpvOpReadClockKHR, v2, {b_.u32(SpvScopeSubgroup)});
+            return b_.value(SpvOpCompositeExtract, b_.t_u32(), {clock, 0});
+        }
         throw Error("unsupported special register " + name, line);
     }
 
@@ -1660,6 +1671,17 @@ private:
                 product = b_.value(SpvOpIMul, ty, {src(1), src(2)});
             }
             if (op == "mad") product = b_.value(SpvOpIAdd, ty, {product, src(3)});
+            return result(product);
+        }
+        if (op == "mul24" || op == "mad24") {
+            // Low 32 bits of the product of the operands' low 24 bits
+            // (sign-extended for .s32); used by PhysX 2.7.5's scan helper.
+            if (type.bits != 32 || !in.has("lo")) throw Error("unsupported " + in.text(), line);
+            const auto low24 = [&](std::uint32_t v) {
+                return is_signed ? sign_extend(v, 24) : mask_bits(v, 24);
+            };
+            std::uint32_t product = b_.value(SpvOpIMul, ty, {low24(src(1)), low24(src(2))});
+            if (op == "mad24") product = b_.value(SpvOpIAdd, ty, {product, src(3)});
             return result(product);
         }
         if (op == "div" || op == "rem") {

@@ -614,10 +614,17 @@ bool Device::initialize(int index, std::string &error)
     VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic_float_features{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT};
     const bool atomic_float_ext = has_extension(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
-    if (atomic_float_ext) *feature_tail = &atomic_float_features;
+    if (atomic_float_ext) {
+        *feature_tail = &atomic_float_features;
+        feature_tail = &atomic_float_features.pNext;
+    }
+    VkPhysicalDeviceShaderClockFeaturesKHR clock_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR};
+    const bool clock_ext = has_extension(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
+    if (clock_ext) *feature_tail = &clock_features;
     vkGetPhysicalDeviceFeatures2(d.physical, &features2);
     c.float_atomic_add = atomic_float_ext && atomic_float_features.shaderBufferFloat32AtomicAdd &&
                          !env_switch("PXVK_NO_FLOAT_ATOMICS");
+    c.shader_clock = clock_ext && clock_features.shaderSubgroupClock;
     c.int64 = features2.features.shaderInt64;
     c.max_workgroup_subgroups = subgroup_ext ? subgroup_props.maxComputeWorkgroupSubgroups : 0;
     c.subgroup_control = subgroup_ext && subgroup_features.subgroupSizeControl &&
@@ -710,6 +717,13 @@ bool Device::initialize(int index, std::string &error)
         enable_atomic_float.pNext = enable.pNext;
         enable.pNext = &enable_atomic_float;
         enabled_extensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+    }
+    VkPhysicalDeviceShaderClockFeaturesKHR enable_clock{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR};
+    if (c.shader_clock) {
+        enable_clock.shaderSubgroupClock = VK_TRUE;
+        enable_clock.pNext = enable.pNext;
+        enable.pNext = &enable_clock;
+        enabled_extensions.push_back(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
     }
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enable_executable_info{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};

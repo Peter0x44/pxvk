@@ -28,7 +28,12 @@ them). Stages are taken on one at a time, in this order:
      Done: every 2.8.4 build now compiles, and opcheck matches the native
      driver for the instruction and for the kernels' accumulation pattern;
    - `mul24` and the `%clock` register: only 2.7.5, in kernels no other
-     runtime has (a generic scan helper and fluid force fields).
+     runtime has (a generic scan helper and fluid force fields). Done:
+     `mul24` matches the native driver; `%clock` (a random seed) reads
+     `VK_KHR_shader_clock` where available.
+
+   With these every 2.7/2.8 runtime compiles; what remains of the stage is
+   validation against real games.
 
    Compiler support comes first and is checked offline (every runtime
    compiles and validates; opcheck compares the new instructions with the

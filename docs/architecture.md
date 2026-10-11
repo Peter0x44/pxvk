@@ -239,6 +239,9 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
 
 - `div.rn`/`sqrt.rn` are not correctly rounded (Vulkan precision); PhysX
   does not use them.
+- `%clock` reads the subgroup clock of `VK_KHR_shader_clock` and is 0 on
+  devices without it. Only PhysX 2.7.5 uses it, to seed the random numbers
+  of fluid force fields, which differ between runs natively too.
 - Float atomic add (`atom`/`red .add.f32`) rounds to nearest and, in
   global memory, flushes subnormals as NVIDIA does, both with the native
   Vulkan float atomic (where available, global memory only) and with the

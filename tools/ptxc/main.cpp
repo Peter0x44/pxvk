@@ -24,11 +24,12 @@ int main(int argc, char **argv)
         else if (arg == "--native-ftz") options.native_ftz = true;
         else if (arg == "--emulate-warps") options.emulate_warps = true;
         else if (arg == "--float-atomics") options.float_atomic_add = true;
+        else if (arg == "--shader-clock") options.shader_clock = true;
         else if (arg == "--split-heap") options.heap_window_shift = 27, options.heap_windows = 8; // as on a 128 MiB device
         else input = arg;
     }
     if (input.empty()) {
-        std::fprintf(stderr, "usage: pxvk-ptxc [--native-ftz] [--emulate-warps] [--float-atomics] [--split-heap] [-o dir] [--entry name]... module.ptx\n");
+        std::fprintf(stderr, "usage: pxvk-ptxc [--native-ftz] [--emulate-warps] [--float-atomics] [--shader-clock] [--split-heap] [-o dir] [--entry name]... module.ptx\n");
         return 2;
     }
     std::ifstream file(input, std::ios::binary);

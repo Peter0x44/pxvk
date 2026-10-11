@@ -29,7 +29,7 @@ passes `spirv-val`; it does not mean the results were compared with native.
 |---|---|---|---|
 | 2.3.x – 2.6.x, 2.7.0, 2.7.2 | none (CPU or Ageia PPU only) | not needed | – |
 | 2.7.1, 2.7.3, 2.7.4, 2.7.6 | 17 modules, PTX 4.1 | compiles | – |
-| 2.7.5 | 19 modules | 12 kernels fail in two modules: a scan helper (`vectorAddUniform4`) and 2 fluid force-field kernels | `mul24.lo.u32`, the `%clock` register |
+| 2.7.5 | 19 modules | compiles (`mul24` for a generic scan helper, `%clock` for fluid force fields' random seeds, both supported) | – |
 | **2.8.0** | 17 modules | **validated**: bit-exact replays, samples pixel-identical, Mirror's Edge runs | – |
 | 2.8.1, 2.8.3 (two builds) | 17–18 modules | compiles | – |
 | 2.8.4 (eight builds, 2.8.4.9 – 2.8.4.12) | 17 modules | compiles (float atomic add, new in 2.8.4 for the GPU cloth normal kernels `PxgCudaDeformable(Uber)PreCalNormals`, is supported); **FluidMark validated** (bit-exact replays; it does not launch the cloth normal kernels) | – |
@@ -37,9 +37,10 @@ passes `spirv-val`; it does not mean the results were compared with native.
 | GRB x86 (`GRB_1_x86`, GPU rigid bodies) | 22 modules | most fail | texture objects and more |
 | 64-bit: `PhysXCore64` 2.8.3, `PhysX3Gpu_x64` 3.3.1.4 | 64-bit pointers | later (charter stage 4) | a 64-bit pxvk |
 
-The whole 2.7/2.8 family compiles except 2.7.5, which needs `mul24` and
-`%clock`. Float atomic add, which 2.8.4 games with GPU cloth will need, is
-supported (October 2026). Neither was refactored away. 2.7.5 is
+The whole 2.7/2.8 family compiles: all 17 GPU runtimes, 1,824 kernels,
+every one passing `spirv-val` (October 2026). The last gaps were float
+atomic add, which 2.8.4 games with GPU cloth will need, and `mul24` and
+`%clock` for 2.7.5. Neither of the latter was refactored away. 2.7.5 is
 an outlier with two extra modules (eleven more variants of a scan helper,
 the `mul24` users, and fluid force-field kernels, the `%clock` users) that
 neither 2.7.4 nor 2.7.6 and later have. 2.8.4 is the first runtime with

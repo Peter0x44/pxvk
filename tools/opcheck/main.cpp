@@ -116,6 +116,10 @@ const Variant kVariants[] = {
     {"sub.s32 {d}, {a}, {b};", 'i', "ii"},
     {"mul.lo.s32 {d}, {a}, {b};", 'i', "ii"},
     {"mad.lo.s32 {d}, {a}, {b}, {c};", 'i', "iii"},
+    {"mul24.lo.u32 {d}, {a}, {b};", 'i', "ii"},
+    {"mul24.lo.s32 {d}, {a}, {b};", 'i', "ii"},
+    // %clock varies by design; check that reading it compiles and runs.
+    {"mov.u32 %i5, %clock; and.b32 %i6, %i5, 0; or.b32 {d}, %i6, {a};", 'i', "i"},
     {"mul.wide.s16 {d}, {a}, {b};", 'i', "hh"},
     {"neg.s32 {d}, {a};", 'i', "i"},
     {"min.s32 {d}, {a}, {b};", 'i', "ii"},
@@ -318,6 +322,7 @@ int main(int argc, char **argv)
     options.native_ftz = device.caps().native_ftz;
     options.preserve_nan = device.caps().preserve_nan;
     options.float_atomic_add = device.caps().float_atomic_add;
+    options.shader_clock = device.caps().shader_clock;
     options.no_contraction = no_contraction;
 
     const std::size_t bytes = count * 16;
