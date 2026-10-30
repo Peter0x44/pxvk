@@ -62,6 +62,16 @@ Only Mirror's Edge's runtime is confirmed (by hash). The other runtime
 assignments are unverified estimates from release dates and engines; check
 each game's `PhysXLoader.dll` before relying on them.
 
+Borderlands 2 (Steam) is checked statically but not yet run: it ships its
+own PhysX build (`PhysXSDK\2.8.4\Special\Borderlands2`, `PhysXCore.dll`
+2.8.4.6, CUDA 4.1 `cudart32_41_22.dll`) whose 17 fatbins hold only
+precompiled sm_10/11/20/30 code and **no PTX**, so pxvk cannot compile it.
+Its `PhysXLoader.dll` asks `PhysXUpdateLoader` for GUIDs `BE9042F0-…` and
+`8F2594AC-…`, which the System Software (9.x) does not register, so the
+bundled core is always used. The System Software's 2.8.4.10 runtime
+(`Engine\6FE164B5308A`) has PTX for all 105 of its kernels, with the same
+names, parameter sizes and shared-memory sizes.
+
 | Likely runtime | Games |
 |---|---|
 | 2.7.x / early 2.8 | Ghost Recon Advanced Warfighter 2, Monster Madness: Battle for Suburbia, Warmonger: Operation Downtown Destruction, Unreal Tournament 3, Crazy Machines 2, Armageddon Riders |
