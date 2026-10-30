@@ -114,8 +114,10 @@ Files in the driver package relevant here:
 
 ## The allow-list
 
-The gate is DRS setting `0x5067ecc4`, set to 1 on exactly 13 of the driver's
-8,045 application profiles. Those 13 are NVIDIA's nine announced titles,
+The gate is DRS setting `0x5067ecc4`, which NVIDIA Profile Inspector names
+"PhysX - Enable 32-bits GPU Acceleration (RTX 50)" (minimum driver 591.44,
+[name list][npi-csn]). It is set to 1 on exactly 13 of the driver's 8,045
+application profiles. Those 13 are NVIDIA's nine announced titles,
 Batman: Arkham Asylum (announced for 2026), and two extras: Just Cause 2
 (which uses CUDA for water, not PhysX) and QQ Dance. Profiles match by
 executable name, so renaming any 32-bit program to a listed name gives it
@@ -158,8 +160,18 @@ The game names appear nowhere in `nvcuda32.dll`; they are only in the
 profile database (`nvdrsdb.bin` in the package, `nvdrsdb0.bin` and
 `nvdrsdb1.bin` under `ProgramData\NVIDIA Corporation\Drs`).
 
-A second setting, `0x10e3293a = 1`, sits on 17 profiles of older PhysX
-games:
+`nvcuda32.dll` reads the flag itself during `cuInit`, through its own
+profile reader (`0x100d6ea0` in this build), and keeps the result in a flag
+byte. The older driver package still in the driver store (592.07, file
+version 32.0.15.9207) has the same check, with the flag on 11 profiles.
+
+## The second setting: a PhysX application marker
+
+`0x10e3293a` marks GPU PhysX titles; it does not enable anything in CUDA.
+NVIDIA Profile Inspector's reference list names it "Physx Enable", "Set for
+PhysX applications" ([reference list][npi-ref]). It is set to 1 on 17
+profiles:
+
 - Cryostasis, Sacred 2, Dark Void, Darkest of Days and The Bureau: XCOM
   Declassified;
 - Borderlands 2, Borderlands: The Pre-Sequel and Planetside 2;
@@ -167,9 +179,52 @@ games:
 - Assassin's Creed IV (SP), Rogue and Freedom Cry;
 - Mirror's Edge, Alice: Madness Returns and Mafia II.
 
-It does **not** unlock 32-bit CUDA: `cryostasis.exe`, `sacred2.exe`,
-`thebureau.exe` and `borderlandspresequel.exe` all get
-`CUDA_ERROR_NO_DEVICE`. Its purpose is unknown.
+```mermaid
+flowchart LR
+    s1[("0x5067ecc4<br/>32-bit GPU acceleration (RTX 50)<br/>13 profiles")]
+    s2[("0x10e3293a<br/>PhysX application marker<br/>17 profiles")]
+    cuda["nvcuda32.dll cuInit<br/>own profile reader"]
+    nv1["NvAPI private 0xb7bcf50d<br/>(nvapi_impl.dll)"]
+    nv2["NvAPI private 0x8545513e<br/>(nvapi_impl.dll, nvapi64_impl.dll)"]
+    s1 --> cuda --> gate["GPU visible or<br/>CUDA_ERROR_NO_DEVICE"]
+    s1 --> nv1
+    s2 --> nv2 --> ans["returns 1, or -160<br/>NVAPI_SETTING_NOT_FOUND"]
+    ans -.-> who["caller: none among the installed<br/>driver, PhysX and game files"]
+```
+
+What was measured:
+
+- **Not a CUDA gate.** `cryostasis.exe`, `sacred2.exe`, `thebureau.exe` and
+  `borderlandspresequel.exe` all get `CUDA_ERROR_NO_DEVICE`, and the CUDA
+  driver never reads this setting.
+- **One reader: a private NvAPI query.** Only `nvapi_impl.dll` and
+  `nvapi64_impl.dll` refer to the ID (in 592.07, the unsplit `nvapi.dll` and
+  `nvapi64.dll`). The function behind private interface `0x8545513e`
+  allocates an `NVDRS_SETTING`, reads `0x10e3293a` for the current
+  application and writes 1 to its single output argument when the value is
+  1.
+- **It answers per executable.** Called from a 32-bit test program,
+  `0x8545513e` returns status 0 and value 1 as `cryostasis.exe`,
+  `sacred2.exe`, `thebureau.exe`, `borderlandspresequel.exe`,
+  `planetside2.exe`, `borderlands2.exe`, `tdgame.exe` and `mafia2.exe`. It
+  returns `-160` (`NVAPI_SETTING_NOT_FOUND`) under its own name and as
+  `justcause2.exe`, `metro2033.exe`, `metroll.exe` and `qqdance.exe`. Those
+  have the CUDA flag but not the marker.
+- **No caller found.** The ID also appears in `PhysXDevice.dll` (System
+  Software 9.26.0904), `nvcuda32.dll`, `nvopencl32.dll`, NVML and other
+  driver DLLs, three times each: NvAPI's statically linked wrapper for every
+  interface. In `PhysXDevice.dll` that wrapper has no caller and nothing
+  points to it; in `nvcuda32.dll` nothing calls it directly. The other DLLs
+  were not disassembled. BL2's own `PhysXDevice.dll` and every PhysX runtime
+  ask NvAPI only for private IDs `0x84244524` and `0xcb7b09d2`.
+
+So `0x10e3293a` is NVIDIA's long-standing "this is a GPU PhysX title" tag,
+readable through NvAPI. Nothing on this machine consumes it, so its effect
+is unknown. Plausible consumers are tools that are not installed here, such
+as the NVIDIA App. It is older than the RTX 50 change: 592.07 already had it
+on the same 17 profiles. It is not the 32-bit restore list: Metro 2033,
+Metro: Last Light and Just Cause 2 have the CUDA flag without the marker,
+while Cryostasis, Sacred 2 and others have the marker without the flag.
 
 ## Kernels: PTX only, no translation of old machine code
 
@@ -221,9 +276,9 @@ driver.
   10–13 titles.
 - **The restriction is a choice.** The full 32-bit driver already runs any
   32-bit CUDA program on Blackwell; the profile flag alone decides who gets
-  it. Renaming an executable unlocks it, and setting `0x5067ecc4` on a
-  custom profile (for example with NVIDIA Profile Inspector) probably would
-  too, though that is untested.
+  it. Renaming an executable unlocks it. NVIDIA Profile Inspector already
+  lists `0x5067ecc4` by name, so users can set it on any profile; whether
+  that unlocks 32-bit CUDA for another program is untested.
 - **Coverage is narrow even on the list.** A listed game whose bundled PhysX
   has no PTX, like Borderlands 2's, gets nothing from the driver change
   alone.
@@ -282,6 +337,13 @@ proprietary.
   4116 bytes (profile), 12296 (application) and 12320 (setting); a wrong
   size returns `-9` (incompatible structure version). Undocumented setting
   IDs come back with unrelated display names, so compare IDs only.
+- **Marker query.** A 32-bit program calls `NvAPI_Initialize` and then the
+  private interface `0x8545513e` as `int f(unsigned *out)` (cdecl), under
+  different executable names.
+- **Finding readers.** Search binaries for the setting ID as a
+  little-endian 32-bit value. In a disassembly the reads are `push
+  <id>`; NvAPI's dispatch table in `nvapi_impl.dll` pairs each function
+  address with its interface ID.
 
 ## Open questions
 
@@ -292,9 +354,10 @@ proprietary.
       laptop, where 32-bit CUDA is expected to work for any program.
 - [ ] Does setting `0x5067ecc4` on a custom profile unlock 32-bit CUDA for
       any program? Untested: it changes a driver setting.
-- [ ] What does `0x10e3293a` do, and do 32-bit kernels use the `texemu`
-      code? A native trace of a texture-using PhysX kernel on RTX 50 would
-      show it.
+- [ ] What calls NvAPI `0x8545513e`, and so what the PhysX marker
+      `0x10e3293a` changes? Search the NVIDIA App's files once installed.
+- [ ] Do 32-bit kernels use the `texemu` code? A native trace of a
+      texture-using PhysX kernel on RTX 50 would show it.
 
 ## Sources
 
@@ -305,7 +368,13 @@ proprietary.
   and the per-title profiles.
 - [PC Gamer][pcgamer] and [TweakTown][tweaktown] coverage of driver 591.44
   (headlines only; full text not read).
+- [NVIDIA Profile Inspector][npi]'s [`CustomSettingNames.xml`][npi-csn] and
+  [`Reference.xml`][npi-ref]: community names for `0x5067ecc4` and
+  `0x10e3293a`.
 
 [pcworld]: https://www.pcworld.com/article/3002325/surprise-nvidia-brings-physx-back-to-geforce-rtx-50-gpus-kind-of.html
 [pcgamer]: https://www.pcgamer.com/hardware/graphics-cards/in-a-surprise-change-of-heart-nvidias-brought-32-bit-physx-support-back-to-rtx-50-series-graphics-cards-though-only-for-a-select-number-of-games
 [tweaktown]: https://tweaktown.com/news/109210/nvidia-restores-32-bit-physx-support-for-geforce-rtx-50-series-graphics-cards/index.html
+[npi]: https://github.com/Orbmu2k/nvidiaProfileInspector
+[npi-csn]: https://github.com/Orbmu2k/nvidiaProfileInspector/blob/master/nvidiaProfileInspector/CustomSettingNames.xml
+[npi-ref]: https://github.com/Orbmu2k/nvidiaProfileInspector/blob/master/nvidiaProfileInspector/Reference.xml
