@@ -13,7 +13,8 @@ from pathlib import Path
 
 FATBIN_MAGIC = b"\x50\xed\x55\xba"
 FATBIN_VERSION = 1
-FILE_HEADER_VERSION = 0x101
+FILE_HEADER_VERSION = 0x101  # CUDA 5+
+FILE_HEADER_VERSION_CUDA4 = 0x100  # CUDA 4.x (e.g. Borderlands 2's PhysX 2.8.4.6)
 FILE_KIND_PTX = 1
 FLAG_COMPRESSED_LZ4 = 0x2000
 FLAG_COMPRESSED_ZSTD = 0x8000
@@ -136,10 +137,14 @@ def extract_modules(binary: bytes) -> tuple[list[Module], dict[str, bytes]]:
                 _unknown5,
                 uncompressed_size,
             ) = struct.unpack_from("<HHIIIIIIIIIQQQ", binary, file_offset)
+            if file_version == FILE_HEADER_VERSION_CUDA4:
+                # Longer headers that append the source file name; no compression.
+                compressed_size = 0
+                flags = 0
             stored_size = max(payload_size, compressed_size)
             record_end = file_offset + file_header_size + stored_size
             if (
-                file_version != FILE_HEADER_VERSION
+                file_version not in (FILE_HEADER_VERSION, FILE_HEADER_VERSION_CUDA4)
                 or file_header_size < 64
                 or record_end > fatbin_end
             ):
@@ -213,6 +218,11 @@ def main() -> int:
     except ValueError as error:
         raise SystemExit(f"invalid embedded fatbin: {error}") from error
     if not modules:
+        if FATBIN_MAGIC in binary:
+            raise SystemExit(
+                f"{binary_path} has CUDA fatbins but only precompiled GPU code "
+                "(cubins), no PTX"
+            )
         raise SystemExit(f"no embedded CUDA fatbin PTX records found in {binary_path}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
