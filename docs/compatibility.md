@@ -79,6 +79,36 @@ current System Software. The 2.8.4.10 core has PTX for all 105 of the
 bundled core's kernels, with the same names, parameter sizes and
 shared-memory sizes. Details in [`nvidia-32bit-physx.md`](nvidia-32bit-physx.md).
 
+Borderlands 2 runs on pxvk (November 2026, RTX 5070 laptop and its Intel
+iGPU, PhysX High). Its PhysX benchmark map is a repeatable workload: start
+the game as `Borderlands2.exe benchmark` (or under `pxvk-launch`) and an
+85.8 s fly-through with fluid and cloth plays, then the main menu loads. It
+launches 64 of the core's kernels about 250,000 times; the 2.8.4 cloth
+normal kernels (float atomics) are not among them. Results:
+
+- **Correctness.** No pxvk errors on either GPU; the scene looked right to
+  the tester. Four native captures of the cloth solver
+  `KernelDeformableHybridUberSolver<1024,true>` replay EXACT on NVIDIA. On
+  Intel they are BAD: up to 4 ULP on most changed words, plus 1–6
+  integer-looking words. That is the known approximation drift of the
+  iterative cloth solvers (`testing.md`).
+- **Frame rate**, with the game's 62 fps cap off (`bSmoothFrameRate=FALSE`
+  in `WillowEngine.ini`). Present times were recorded by a small injected
+  D3D9 hook over the fly-through, mean of two runs:
+
+  | PhysX on | Avg fps | Median frame | 1% low fps |
+  |---|---|---|---|
+  | RTX 5070, native 32-bit CUDA (driver 621.01) | 137.9 | 7.3 ms | 65.6 |
+  | RTX 5070, pxvk | 189.4 | 5.1 ms | 63.2 |
+  | Intel iGPU, pxvk (one run) | 177.9 | 5.4 ms | 50.8 |
+
+  pxvk on the same GPU is about 37% faster than NVIDIA's 32-bit driver. The
+  iGPU result shows the frame rate is not mainly bound by PhysX GPU time, so
+  the native deficit is likely per-launch or synchronisation overhead in the
+  32-bit driver (not measured). The first run after new kernel variants
+  appear still stalls once per variant for pipeline creation (0.5 s in
+  total); later runs use the pipeline cache.
+
 | Likely runtime | Games |
 |---|---|
 | 2.7.x / early 2.8 | Ghost Recon Advanced Warfighter 2, Monster Madness: Battle for Suburbia, Warmonger: Operation Downtown Destruction, Unreal Tournament 3, Crazy Machines 2, Armageddon Riders |

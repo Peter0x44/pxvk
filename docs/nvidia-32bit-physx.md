@@ -298,9 +298,10 @@ for RTX 50. The bundled 2.8.4.6 core, built with CUDA 4.1 for the September
 2012 release, is only the fallback without that update: it covers GPUs up to
 Kepler.
 
-Whether the kernels actually run on the 5070 was not traced: the game was
-inspected while running, not under `tools/nvcuda-trace`. The CUDA driver and
-its kernel-interface DLL being loaded shows a CUDA context exists.
+They do run natively on the 5070. Under `tools/nvcuda-trace`, the game's
+PhysX benchmark (`Borderlands2.exe benchmark`, PhysX on High) loaded all 17
+modules of the 2.8.4.10 core through CUDART's module loader and made 246,825
+kernel launches (64 distinct kernels) with none failing.
 
 ## What this means for pxvk
 
@@ -385,8 +386,7 @@ proprietary.
 
 ## Open questions
 
-- [ ] Do Borderlands 2's kernels run natively on RTX 50? Trace the game with
-      `tools/nvcuda-trace` on the 5070 with PhysX on High.- [ ] Is the gate RTX 50-only? Repeat the rename test on the RTX 3070
+- [ ] Is the gate RTX 50-only? Repeat the rename test on the RTX 3070
       laptop, where 32-bit CUDA is expected to work for any program.
 - [ ] Does setting `0x5067ecc4` on a custom profile unlock 32-bit CUDA for
       any program? Untested: it changes a driver setting.
