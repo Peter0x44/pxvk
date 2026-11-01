@@ -16,9 +16,18 @@
 // without an NVIDIA driver (including one whose GPU is disabled or
 // unsupported). PXVK_NVAPI=system keeps the real NVAPI instead, and NVAPI
 // loads are also left alone if pxvk-nvapi.dll is absent.
+//
+// pxvk also follows the process's 32-bit child processes, so that a store
+// or game launcher started through pxvk-launch (a Steam launch option)
+// passes pxvk on to the game it starts. Every module's CreateProcessA/W
+// imports are patched (kernel32's and shell32's too, which covers
+// ShellExecute); a 32-bit child is created suspended, this DLL is injected
+// into it like pxvk-launch does, and it is resumed. PXVK_CHILDREN=0 turns
+// this off.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include "inject.h"
 #include "runtime.h"
 
 #include <algorithm>
@@ -35,6 +44,11 @@ using LoadLibraryExWFn = HMODULE(WINAPI *)(LPCWSTR, HANDLE, DWORD);
 using LdrDllNotificationFn = VOID(CALLBACK *)(ULONG, const void *, void *);
 using LdrRegisterDllNotificationFn = LONG(NTAPI *)(ULONG, LdrDllNotificationFn, void *, void **);
 using LdrUnregisterDllNotificationFn = LONG(NTAPI *)(void *);
+using CreateProcessWFn = BOOL(WINAPI *)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD,
+                                        LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
+using CreateProcessAFn = BOOL(WINAPI *)(LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD,
+                                        LPVOID, LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
+using EnumProcessModulesFn = BOOL(WINAPI *)(HANDLE, HMODULE *, DWORD, LPDWORD);
 
 struct UnicodeString {
     USHORT length;
@@ -58,6 +72,9 @@ LoadLibraryWFn g_load_library_w = nullptr;
 LoadLibraryExWFn g_load_library_ex_w = nullptr;
 LdrUnregisterDllNotificationFn g_unregister = nullptr;
 void *g_cookie = nullptr;
+CreateProcessWFn g_create_process_w = nullptr; // kernelbase's, never a patched slot
+CreateProcessAFn g_create_process_a = nullptr;
+HMODULE g_self = nullptr;
 
 // Whether the file name part of a path equals `name` (case-insensitive).
 bool has_file_name(LPCWSTR path, const wchar_t *name)
@@ -114,7 +131,70 @@ void patch_slot(void **slot, void *replacement)
     FlushInstructionCache(GetCurrentProcess(), slot, sizeof(*slot));
 }
 
-void patch_imports(void *module_base)
+// An export's address read from the module's export table. GetProcAddress
+// is not used for the real CreateProcess: in a process started suspended,
+// the compatibility shim engine can answer it with its own stub, which calls
+// CreateProcessW through an import slot patched here and so loops back.
+void *find_export(HMODULE module, const char *wanted)
+{
+    auto *base = reinterpret_cast<unsigned char *>(module);
+    if (base == nullptr) return nullptr;
+    const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(base);
+    const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS32 *>(base + dos->e_lfanew);
+    const IMAGE_DATA_DIRECTORY &dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+    if (dir.VirtualAddress == 0) return nullptr;
+    const auto *exports = reinterpret_cast<const IMAGE_EXPORT_DIRECTORY *>(base + dir.VirtualAddress);
+    const auto *names = reinterpret_cast<const DWORD *>(base + exports->AddressOfNames);
+    const auto *ordinals = reinterpret_cast<const WORD *>(base + exports->AddressOfNameOrdinals);
+    const auto *functions = reinterpret_cast<const DWORD *>(base + exports->AddressOfFunctions);
+    for (DWORD i = 0; i < exports->NumberOfNames; ++i) {
+        if (std::strcmp(reinterpret_cast<const char *>(base + names[i]), wanted) != 0) continue;
+        const DWORD rva = functions[ordinals[i]];
+        // An address inside the export directory is a forwarder string.
+        if (rva >= dir.VirtualAddress && rva < dir.VirtualAddress + dir.Size) return nullptr;
+        return base + rva;
+    }
+    return nullptr;
+}
+
+// A new 32-bit child gets this DLL before it runs; others are only resumed.
+void follow_child(const PROCESS_INFORMATION &child, DWORD flags)
+{
+    BOOL self_wow64 = FALSE, child_wow64 = FALSE;
+    IsWow64Process(GetCurrentProcess(), &self_wow64);
+    if (IsWow64Process(child.hProcess, &child_wow64) && child_wow64 == self_wow64 &&
+        !(flags & (DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS)))
+        inject_library(child.hProcess, g_module_path);
+    if (!(flags & CREATE_SUSPENDED)) ResumeThread(child.hThread);
+}
+
+BOOL WINAPI follow_create_process_w(LPCWSTR application, LPWSTR command, LPSECURITY_ATTRIBUTES process_attributes,
+                                    LPSECURITY_ATTRIBUTES thread_attributes, BOOL inherit, DWORD flags,
+                                    LPVOID environment, LPCWSTR directory, LPSTARTUPINFOW startup,
+                                    LPPROCESS_INFORMATION information)
+{
+    if (!g_create_process_w(application, command, process_attributes, thread_attributes, inherit,
+                            flags | CREATE_SUSPENDED, environment, directory, startup, information))
+        return FALSE;
+    follow_child(*information, flags);
+    return TRUE;
+}
+
+BOOL WINAPI follow_create_process_a(LPCSTR application, LPSTR command, LPSECURITY_ATTRIBUTES process_attributes,
+                                    LPSECURITY_ATTRIBUTES thread_attributes, BOOL inherit, DWORD flags,
+                                    LPVOID environment, LPCSTR directory, LPSTARTUPINFOA startup,
+                                    LPPROCESS_INFORMATION information)
+{
+    if (!g_create_process_a(application, command, process_attributes, thread_attributes, inherit,
+                            flags | CREATE_SUSPENDED, environment, directory, startup, information))
+        return FALSE;
+    follow_child(*information, flags);
+    return TRUE;
+}
+
+enum ImportSet : unsigned { kLoadLibrary = 1, kCreateProcess = 2 };
+
+void patch_imports(void *module_base, unsigned sets)
 {
     auto *base = static_cast<unsigned char *>(module_base);
     const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(base);
@@ -131,14 +211,30 @@ void patch_imports(void *module_base)
             if (IMAGE_SNAP_BY_ORDINAL32(names->u1.Ordinal)) continue;
             const auto *import = reinterpret_cast<const IMAGE_IMPORT_BY_NAME *>(base + names->u1.AddressOfData);
             const char *name = reinterpret_cast<const char *>(import->Name);
-            if (std::strcmp(name, "LoadLibraryA") == 0)
-                patch_slot(reinterpret_cast<void **>(&slots->u1.Function), reinterpret_cast<void *>(&redirect_load_library_a));
-            else if (std::strcmp(name, "LoadLibraryW") == 0)
-                patch_slot(reinterpret_cast<void **>(&slots->u1.Function), reinterpret_cast<void *>(&redirect_load_library_w));
-            else if (std::strcmp(name, "LoadLibraryExW") == 0)
-                patch_slot(reinterpret_cast<void **>(&slots->u1.Function), reinterpret_cast<void *>(&redirect_load_library_ex_w));
+            void **slot = reinterpret_cast<void **>(&slots->u1.Function);
+            if (sets & kLoadLibrary) {
+                if (std::strcmp(name, "LoadLibraryA") == 0)
+                    patch_slot(slot, reinterpret_cast<void *>(&redirect_load_library_a));
+                else if (std::strcmp(name, "LoadLibraryW") == 0)
+                    patch_slot(slot, reinterpret_cast<void *>(&redirect_load_library_w));
+                else if (std::strcmp(name, "LoadLibraryExW") == 0)
+                    patch_slot(slot, reinterpret_cast<void *>(&redirect_load_library_ex_w));
+            }
+            if (sets & kCreateProcess) {
+                if (std::strcmp(name, "CreateProcessW") == 0)
+                    patch_slot(slot, reinterpret_cast<void *>(&follow_create_process_w));
+                else if (std::strcmp(name, "CreateProcessA") == 0)
+                    patch_slot(slot, reinterpret_cast<void *>(&follow_create_process_a));
+            }
         }
     }
+}
+
+// Every module but kernelbase (the real CreateProcess) and this one.
+bool follows_children(void *base, const wchar_t *name)
+{
+    return g_create_process_w && g_create_process_a && base != static_cast<void *>(g_self) &&
+           _wcsicmp(name, L"kernelbase.dll") != 0 && _wcsicmp(name, L"ntdll.dll") != 0;
 }
 
 bool is_cudart(const wchar_t *name)
@@ -156,16 +252,34 @@ VOID CALLBACK on_dll_notification(ULONG reason, const void *raw, void *)
     wchar_t name[64]{};
     const std::size_t count = std::min<std::size_t>(data->base_name->length / sizeof(wchar_t), std::size(name) - 1);
     std::wmemcpy(name, data->base_name->buffer, count);
-    if (is_cudart(name)) patch_imports(data->base);
-    else if (_wcsicmp(name, L"PhysXCore.dll") == 0 || _wcsicmp(name, L"PhysXDevice.dll") == 0)
-        patch_imports(data->base);
+    unsigned sets = follows_children(data->base, name) ? kCreateProcess : 0u;
+    if (is_cudart(name) || _wcsicmp(name, L"PhysXCore.dll") == 0 || _wcsicmp(name, L"PhysXDevice.dll") == 0)
+        sets |= kLoadLibrary;
+    if (sets) patch_imports(data->base, sets);
+}
+
+bool switch_off(const wchar_t *variable)
+{
+    wchar_t value[16]{};
+    const DWORD length = GetEnvironmentVariableW(variable, value, static_cast<DWORD>(std::size(value)));
+    if (length == 0 || length >= std::size(value)) return false;
+    return _wcsicmp(value, L"0") == 0 || _wcsicmp(value, L"off") == 0 || _wcsicmp(value, L"false") == 0 ||
+           _wcsicmp(value, L"no") == 0;
 }
 
 } // namespace
 
 void install_driver_redirect(HMODULE self)
 {
+    g_self = self;
     GetModuleFileNameW(self, g_module_path, static_cast<DWORD>(std::size(g_module_path)));
+    if (!switch_off(L"PXVK_CHILDREN")) {
+        // kernelbase.dll implements CreateProcess (Windows 7 and later);
+        // kernel32's exports only jump through its own, patched, imports.
+        HMODULE kernelbase = GetModuleHandleW(L"kernelbase.dll");
+        g_create_process_w = reinterpret_cast<CreateProcessWFn>(find_export(kernelbase, "CreateProcessW"));
+        g_create_process_a = reinterpret_cast<CreateProcessAFn>(find_export(kernelbase, "CreateProcessA"));
+    }
     // pxvk-nvapi.dll next to nvcuda.dll, used when present unless
     // PXVK_NVAPI=system selects the driver's own NVAPI.
     std::wmemcpy(g_nvapi_path, g_module_path, std::size(g_nvapi_path));
@@ -193,7 +307,21 @@ void install_driver_redirect(HMODULE self)
     for (const wchar_t *name : {L"cudart32_65.dll", L"cudart32_60.dll", L"cudart32_55.dll", L"cudart32_50_35.dll",
                                 L"cudart32_42_9.dll", L"cudart32_41_28.dll", L"cudart32_40_17.dll",
                                 L"cudart32_32_16.dll", L"cudart32_31_4.dll", L"cudart32_30_14.dll"})
-        if (HMODULE loaded = GetModuleHandleW(name)) patch_imports(loaded);
+        if (HMODULE loaded = GetModuleHandleW(name)) patch_imports(loaded, kLoadLibrary);
+    // Modules already loaded (the executable, kernel32, shell32, ...) for
+    // child processes; later ones come through the notification.
+    auto enum_modules = reinterpret_cast<EnumProcessModulesFn>(
+        reinterpret_cast<void *>(GetProcAddress(kernel, "K32EnumProcessModules")));
+    HMODULE modules[512];
+    DWORD bytes = 0;
+    if (enum_modules && enum_modules(GetCurrentProcess(), modules, sizeof(modules), &bytes)) {
+        for (DWORD i = 0; i < std::min<DWORD>(bytes / sizeof(HMODULE), static_cast<DWORD>(std::size(modules))); ++i) {
+            wchar_t path[MAX_PATH]{};
+            GetModuleFileNameW(modules[i], path, MAX_PATH);
+            const wchar_t *slash = std::wcsrchr(path, L'\\');
+            if (follows_children(modules[i], slash ? slash + 1 : path)) patch_imports(modules[i], kCreateProcess);
+        }
+    }
 }
 
 const char *nvapi_mode()

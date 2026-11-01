@@ -1,6 +1,14 @@
+// pxvk-launch.exe [--inject-dll <path>] [--] <32-bit application> [arguments]
+//
+// Starts the application suspended, loads pxvk's nvcuda.dll (or the given
+// DLL) into it and resumes it. pxvk then follows the application's 32-bit
+// child processes itself (loader.cpp), so store launchers work: as a Steam
+// launch option, `"C:\pxvk\pxvk-launch.exe" %command%` (or `-- %command%`).
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+
+#include "inject.h"
 
 #include <iterator>
 #include <string>
@@ -95,7 +103,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     int argument_count = 0;
     wchar_t **arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
     if (arguments == nullptr || argument_count < 2)
-        return fail(L"Usage: pxvk-launch.exe [--inject-dll <path>] "
+        return fail(L"Usage: pxvk-launch.exe [--inject-dll <path>] [--] "
                     L"<32-bit application> [arguments]");
 
     int application_argument = 1;
@@ -115,6 +123,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         }
         injected_path = injected_buffer;
         application_argument = 3;
+    }
+    // An optional "--" before the application, as in `pxvk-launch -- %command%`.
+    if (application_argument < argument_count && lstrcmpW(arguments[application_argument], L"--") == 0)
+        ++application_argument;
+    if (application_argument >= argument_count) {
+        LocalFree(arguments);
+        return fail(L"No application given");
     }
 
     wchar_t application_buffer[32768]{};
@@ -151,47 +166,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         injected_path.empty()
             ? directory(launcher_path) + L"\\nvcuda.dll"
             : injected_path;
-    const SIZE_T path_bytes = (runtime_path.size() + 1u) * sizeof(wchar_t);
-    void *remote_path = VirtualAllocEx(process.hProcess, nullptr, path_bytes,
-                                       MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    if (remote_path == nullptr) {
+    const DWORD error = pxvk::runtime::inject_library(process.hProcess, runtime_path.c_str());
+    if (error != 0) {
         TerminateProcess(process.hProcess, 2);
         CloseHandle(process.hThread);
         CloseHandle(process.hProcess);
-        return fail(L"Cannot allocate the injected DLL path", GetLastError());
-    }
-    SIZE_T written = 0;
-    if (WriteProcessMemory(process.hProcess, remote_path, runtime_path.c_str(),
-                           path_bytes, &written) == FALSE || written != path_bytes) {
-        TerminateProcess(process.hProcess, 2);
-        VirtualFreeEx(process.hProcess, remote_path, 0, MEM_RELEASE);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        return fail(L"Cannot write the injected DLL path", GetLastError());
-    }
-
-    HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
-    const auto load_library = reinterpret_cast<LPTHREAD_START_ROUTINE>(
-        GetProcAddress(kernel, "LoadLibraryW"));
-    HANDLE injection = CreateRemoteThread(process.hProcess, nullptr, 0, load_library,
-                                          remote_path, 0, nullptr);
-    if (injection == nullptr) {
-        TerminateProcess(process.hProcess, 2);
-        VirtualFreeEx(process.hProcess, remote_path, 0, MEM_RELEASE);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        return fail(L"Cannot inject the selected DLL", GetLastError());
-    }
-    WaitForSingleObject(injection, INFINITE);
-    DWORD injected_module = 0;
-    GetExitCodeThread(injection, &injected_module);
-    CloseHandle(injection);
-    VirtualFreeEx(process.hProcess, remote_path, 0, MEM_RELEASE);
-    if (injected_module == 0u) {
-        TerminateProcess(process.hProcess, 2);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        return fail(L"The target process rejected the selected DLL");
+        return error == ERROR_DLL_INIT_FAILED ? fail(L"The target process rejected the selected DLL")
+                                              : fail(L"Cannot inject the selected DLL", error);
     }
 
     ResumeThread(process.hThread);

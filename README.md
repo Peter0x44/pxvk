@@ -34,8 +34,22 @@ tried.
 
 ## How to use it
 
-Start the game **through `pxvk-launch.exe`**, not through Steam, GOG Galaxy or
-a desktop shortcut. For example, in PowerShell:
+The game has to start **through `pxvk-launch.exe`**.
+
+**Steam games:** right-click the game in your Library, choose
+**Properties**, and on the **General** tab paste this into **Launch
+Options** (with your pxvk folder):
+
+```
+"C:\pxvk\pxvk-launch.exe" %command%
+```
+
+Then play from Steam as usual. This also works for games that open their own
+launcher first (such as Borderlands 2's 2K launcher). To stop using pxvk,
+clear the Launch Options box.
+
+**Other games:** start them with `pxvk-launch.exe` and the game's path, for
+example in PowerShell:
 
 ```powershell
 C:\pxvk\pxvk-launch.exe "C:\GOG Games\Mirror's Edge\Binaries\MirrorsEdge.exe"
@@ -59,8 +73,9 @@ what to include when reporting a problem.
 
 ## Known limitations
 
-- Games must be started with `pxvk-launch.exe`; store launchers (Steam, GOG
-  Galaxy, EA) don't use pxvk yet.
+- Games must be started with `pxvk-launch.exe`: on Steam through the launch
+  option above. GOG Galaxy and the EA app can't start games through pxvk
+  yet; start those games with `pxvk-launch.exe` directly.
 - Only 32-bit PhysX 2.x games. Newer PhysX 3/4/5 games are not supported.
 - Not yet available for phones or handhelds through Winlator.
 

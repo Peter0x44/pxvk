@@ -176,7 +176,16 @@ CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
   every machine, NVIDIA included, so hardware selection does not depend on
   the installed driver or on whether its GPU is enabled. `PXVK_NVAPI=system`
   keeps the driver's NVAPI. The redirect also does not apply if
-  `pxvk-nvapi.dll` is absent.
+  `pxvk-nvapi.dll` is absent. It also follows child processes, so that a
+  game launcher (a Steam launch option starts the launcher, not the game)
+  passes pxvk on: every module's `CreateProcessA/W` imports are patched
+  (kernel32's and shell32's too, which covers `ShellExecute`), and a 32-bit
+  child is created suspended, gets pxvk through `inject.h` as
+  `pxvk-launch.exe` does, and is resumed (`PXVK_CHILDREN=0` disables this).
+  The original `CreateProcess` is read from kernelbase's export table, not
+  with `GetProcAddress`: in a process started suspended, the compatibility
+  shim engine can answer `GetProcAddress` with a stub that calls back
+  through a patched slot.
 - `nvapi.cpp` (`pxvk-nvapi.dll`): PhysX picks hardware PhysX only if NVAPI
   reports a PhysX-capable GPU. This exports `nvapi_QueryInterface` with the
   eight interfaces ZLUDA implements (initialize/unload, driver version,

@@ -29,13 +29,17 @@ driver (AMD, Intel or NVIDIA), and an NVIDIA driver is not required.
 
 ## How loading works
 
-You must start the application through `pxvk-launch.exe`. Starting it normally,
-or through Steam, GOG Galaxy or EA, gives the original behavior: native CUDA
-on NVIDIA machines and CPU PhysX elsewhere.
+You must start the application through `pxvk-launch.exe`, directly or as a
+Steam launch option (below). Starting it normally, or through GOG Galaxy or
+EA, gives the original behavior: native CUDA on NVIDIA machines and CPU
+PhysX elsewhere.
 
 1. `pxvk-launch.exe` starts the application suspended and loads
    `nvcuda.dll` from its own folder into the process. Then it resumes the
    application. The application's working directory is its own folder.
+   pxvk also loads itself into every 32-bit program that application starts,
+   so a game launcher (such as Borderlands 2's 2K launcher, which Steam
+   starts) passes it on to the game. `PXVK_CHILDREN=0` turns this off.
 2. When the PhysX runtime loads NVIDIA's CUDA runtime
    (`cudart32_65.dll`), pxvk redirects that runtime's request for
    `System32\nvcuda.dll` to itself.
@@ -45,8 +49,9 @@ on NVIDIA machines and CPU PhysX elsewhere.
    machine without an NVIDIA driver silently falls back to CPU PhysX.
 
 Only these loads are redirected, and only in the process started by the
-launcher. Nothing is installed, no system files are changed and no registry
-keys are written. To stop using pxvk, start the application normally.
+launcher and the 32-bit programs it starts. Nothing is installed, no system
+files are changed and no registry keys are written. To stop using pxvk,
+start the application normally.
 
 This also applies on NVIDIA machines, so PhysX runs on pxvk's Vulkan path
 there too. To use the NVIDIA driver's own NVAPI for this check, set
@@ -69,6 +74,27 @@ C:\pxvk\pxvk-launch.exe "C:\path\to\Application.exe"
 
 From `cmd.exe`, run `set PXVK_LOG=C:\temp\pxvk.log` first. A shortcut can
 point at `pxvk-launch.exe` with the application path as its argument.
+
+### Steam
+
+In the Steam Library, right-click the game, choose **Properties**, and on
+the **General** tab set **Launch Options** to:
+
+```
+"C:\pxvk\pxvk-launch.exe" %command%
+```
+
+Steam replaces `%command%` with the game's own command line, so it starts the
+game (or the game's launcher) through `pxvk-launch.exe`. The form
+`"C:\pxvk\pxvk-launch.exe" -- %command%` also works. Clear the box to go back
+to normal. Tested with Borderlands 2, whose Steam entry starts the 2K
+`Launcher.exe`, which starts `Borderlands2.exe` when you press Play.
+
+Launch options cannot set environment variables on Windows. For a log, add
+`PXVK_LOG` (and any other variable from [`environment.md`](environment.md))
+as a user environment variable: Start menu, "Edit environment variables for
+your account". Then restart Steam completely (Steam, Exit), since programs
+only see variables that existed when they started.
 
 On a machine with several GPUs, pxvk uses the first discrete GPU unless you
 set `PXVK_DEVICE` to part of the device name (`radeon`, `nvidia`, `intel`) or
@@ -182,8 +208,10 @@ debugging variables are listed in [`environment.md`](environment.md).
 
 - Some antivirus software may block or flag `pxvk-launch.exe`, because it
   loads a DLL into another process. This has not been observed so far.
-- Store launchers cannot start the game through pxvk yet
-  ([`roadmap.md`](roadmap.md), "Easier installation").
+- GOG Galaxy and the EA app cannot start games through pxvk yet; start
+  those games with `pxvk-launch.exe` directly ([`roadmap.md`](roadmap.md),
+  "Starting games from store launchers"). Steam works through a launch
+  option.
 - On non-NVIDIA GPUs the hardware square-root and reciprocal approximations
   differ from NVIDIA's by 1–2 ULP. The results are therefore not bit-identical
   to native, and long cloth simulations can drift visibly from a native run
