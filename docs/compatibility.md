@@ -58,26 +58,34 @@ with Batman: Arkham Asylum announced for 2026; the others run PhysX on the
 CPU on RTX 50 cards. pxvk is relevant to all of them on AMD, Intel and
 other Vulkan devices.
 
-Only Mirror's Edge's runtime is confirmed (by hash). The other runtime
-assignments are unverified estimates from release dates and engines; check
-each game's `PhysXLoader.dll` before relying on them.
+Only Mirror's Edge's runtime (by hash) and Borderlands 2's (from the running
+game's loaded modules) are confirmed. The other runtime assignments are
+unverified estimates from release dates and engines. A game's
+`PhysXLoader.dll` alone does not decide it: the update loader can swap in a
+System Software core for a GUID the game passes, so check what a running
+game actually loads.
 
-Borderlands 2 (Steam) is checked statically but not yet run: it ships its
-own PhysX build (`PhysXSDK\2.8.4\Special\Borderlands2`, `PhysXCore.dll`
-2.8.4.6, CUDA 4.1 `cudart32_41_22.dll`) whose 17 fatbins hold only
-precompiled sm_10/11/20/30 code and **no PTX**, so pxvk cannot compile it.
-Its `PhysXLoader.dll` asks `PhysXUpdateLoader` for GUIDs `BE9042F0-…` and
-`8F2594AC-…`, which the System Software (9.x) does not register, so the
-bundled core is always used. The System Software's 2.8.4.10 runtime
-(`Engine\6FE164B5308A`) has PTX for all 105 of its kernels, with the same
-names, parameter sizes and shared-memory sizes.
+Borderlands 2 (Steam) uses the System Software's 2.8.4.10 runtime
+(`Engine\6FE164B5308A`, confirmed from the running game's loaded modules),
+not its bundled core. It ships its own PhysX build
+(`PhysXSDK\2.8.4\Special\Borderlands2`, `PhysXCore.dll` 2.8.4.6, CUDA 4.1
+`cudart32_41_22.dll`) whose 17 fatbins hold only precompiled sm_10/11/20/30
+code and **no PTX**. But `Borderlands2.exe` passes its own GUID
+(`26097F37-…`) as the last argument of `NxCreatePhysicsSDK`, the loader
+forwards it to `PhysXUpdateLoader`, and every System Software release
+since 9.13.1220 (December 2013) maps that GUID to the 2.8.4.10 core. The
+bundled core, which pxvk cannot compile, is only the fallback without a
+current System Software. The 2.8.4.10 core has PTX for all 105 of the
+bundled core's kernels, with the same names, parameter sizes and
+shared-memory sizes. Details in [`nvidia-32bit-physx.md`](nvidia-32bit-physx.md).
 
 | Likely runtime | Games |
 |---|---|
 | 2.7.x / early 2.8 | Ghost Recon Advanced Warfighter 2, Monster Madness: Battle for Suburbia, Warmonger: Operation Downtown Destruction, Unreal Tournament 3, Crazy Machines 2, Armageddon Riders |
 | 2.8.0 (confirmed) | Mirror's Edge ★ |
+| 2.8.4.10 (confirmed, through the update loader) | Borderlands 2 ★ |
 | 2.8.1 – 2.8.3 | Sacred 2: Fallen Angel and Ice & Blood, Cryostasis, Darkest of Days, Batman: Arkham Asylum, Shattered Horizon, Metro 2033 ★, Dark Void, Mafia II ★, Blur |
-| 2.8.4, often with APEX | Alice: Madness Returns ★, Batman: Arkham City ★, Borderlands 2 ★, The Bureau: XCOM Declassified, Metro: Last Light ★, Hydrophobia: Prophecy, The Secret World, Rise of the Triad, Mars: War Logs, Gas Guzzlers: Combat Carnage, Deep Black, Depth Hunter |
+| 2.8.4, often with APEX | Alice: Madness Returns ★, Batman: Arkham City ★, The Bureau: XCOM Declassified, Metro: Last Light ★, Hydrophobia: Prophecy, The Secret World, Rise of the Triad, Mars: War Logs, Gas Guzzlers: Combat Carnage, Deep Black, Depth Hunter |
 | possibly PhysX 3.3 (APEX Turbulence) | Assassin's Creed IV: Black Flag ★, Batman: Arkham Origins ★ |
 | unknown | Star Trek D-A-C, Star Trek (2013), 7554, QQ Dance and QQ Dance 2, Hot Dance Party and Hot Dance Party II, Jianxia 3, MStar, Continent of the Ninth, Passion Leads Army |
 

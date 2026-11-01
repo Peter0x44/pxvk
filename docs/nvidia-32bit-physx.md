@@ -20,10 +20,11 @@ undocumented setting, `0x5067ecc4 = 1`.
   choice again, and dropping it is possible.
 - **The allow-list is policy, not capability.** The same test program gets
   the GPU when renamed `borderlands2.exe` and "no device" under its own name.
-- **Cubin-only runtimes still fail.** Inside an allowed process, all 17 of
-  Borderlands 2's bundled PhysX modules (sm_10–sm_30 machine code, no PTX)
-  are refused with `CUDA_ERROR_NO_BINARY_FOR_GPU`. Runtimes carrying PTX
-  load fine.
+- **PTX only.** Inside an allowed process, all 17 modules of Borderlands 2's
+  bundled PhysX core (sm_10–sm_30 machine code, no PTX) are refused with
+  `CUDA_ERROR_NO_BINARY_FOR_GPU`. The game doesn't need them: it asks
+  NVIDIA's update loader for its own GUID and gets the System Software's
+  PhysX 2.8.4.10 core, whose PTX loads fine.
 
 pxvk depends on none of this: it replaces `nvcuda.dll` in the game process
 and compiles PTX to SPIR-V on any Vulkan device. Like NVIDIA's driver, it
@@ -36,8 +37,8 @@ needs PTX.
 | GPU | NVIDIA GeForce RTX 5070 Laptop GPU (sm_120), plus an Intel iGPU |
 | Driver | 621.01 (file version 32.0.16.2101, branch `r620_97`), package `nvlti.inf_amd64_360580ba71c61256` |
 | PhysX System Software | 9.26.0904 |
-| Game | Borderlands 2 (Steam): bundled `PhysXCore.dll` 2.8.4.6 |
-| Comparison runtime | System Software PhysX 2.8.4.10 (`Engine\6FE164B5308A`) |
+| Game | Borderlands 2 (Steam), PhysX set to High; bundled `PhysXCore.dll` 2.8.4.6 |
+| Runtime the game uses | System Software PhysX 2.8.4.10 (`Engine\6FE164B5308A`) |
 
 Methods:
 
@@ -226,7 +227,7 @@ on the same 17 profiles. It is not the 32-bit restore list: Metro 2033,
 Metro: Last Light and Just Cause 2 have the CUDA flag without the marker,
 while Cryostasis, Sacred 2 and others have the marker without the flag.
 
-## Kernels: PTX only, no translation of old machine code
+## Kernels: PTX only, and how Borderlands 2 gets it
 
 The driver does not translate old cubins. In a process named
 `borderlands2.exe`, every module of Borderlands 2's bundled PhysX core is
@@ -237,32 +238,69 @@ refused, through both load paths PhysX can use:
 | Borderlands 2's own core, PhysX 2.8.4.6 (`Special\Borderlands2` build, CUDA 4.1) | sm_10/11, sm_20, sm_30 cubins; no PTX | 0 of 17 (`CUDA_ERROR_NO_BINARY_FOR_GPU`) | 0 of 17 |
 | System Software PhysX 2.8.4.10 | PTX plus sm_20–sm_52 cubins | 17 of 17 (PTX JIT) | 17 of 17 |
 
-So on an RTX 50, GPU PhysX depends on the runtime carrying PTX. On a stock
-install Borderlands 2 always uses its bundled core:
+The running game does not use its bundled core, though. With PhysX set to
+High, its loaded modules (read from the live process) are the System
+Software's `Engine\6FE164B5308A\PhysXCore.dll` (2.8.4.10, with PTX) and
+`Common\cudart32_65.dll`, plus `nvcuda32.dll` and `nvdxgdmal32.dll`. The
+game's own `PhysXLoader.dll` and `PhysXCooking.dll` stay in use.
 
 ```mermaid
 flowchart TB
-    game["Borderlands2.exe"] --> pl["PhysXLoader.dll 2.8.4.6"]
-    pl --> ul["PhysXUpdateLoader.dll (System Software)<br/>GetUpdatedModule(PhysXCore.dll, BE9042F0-...)"]
+    game["Borderlands2.exe<br/>NxCreatePhysicsSDK(..., GUID 26097F37-...)"] --> pl["PhysXLoader.dll 2.8.4.6 (game's)"]
+    pl --> ul["PhysXUpdateLoader.dll (System Software)<br/>GetUpdatedModule(PhysXCore.dll, GUID)"]
     ul --> tbl{"GUID in the update loader's<br/>DllTable (registry)?"}
-    tbl -- "yes (not on 9.26.0904)" --> upd["updated core from a hashed Engine folder"]
-    tbl -- no --> local["game's own PhysXCore.dll 2.8.4.6<br/>17 fatbins: sm_10–sm_30 cubins, no PTX"]
-    local --> native["native RTX 50: CUDA_ERROR_NO_BINARY_FOR_GPU<br/>(expected: CPU PhysX)"]
-    local --> pxvk["pxvk: no PTX to compile<br/>(needs the 2.8.4.10 PTX twin)"]
+    tbl -- "yes: 26097F37-... since 9.13.1220 (Dec 2013)" --> upd["Engine/6FE164B5308A/PhysXCore.dll<br/>2.8.4.10, PTX"]
+    tbl -- "no: older or missing System Software" --> local["game's own PhysXCore.dll 2.8.4.6<br/>sm_10–sm_30 cubins, no PTX"]
+    upd --> rtx50["RTX 50: PTX JIT, GPU PhysX"]
+    upd --> pxvk["pxvk: compiles the same PTX"]
+    local --> old["runs only up to Kepler (GTX 600/700)"]
 ```
 
-The loader asks the update loader for its own GUIDs (`BE9042F0-ADC4-4b12-
-A93E-DB8A731FDBD5` for the core, `8F2594AC-F8B3-47f2-BDFC-86310FED9255` for
-cooking), which 9.26.0904 does not register. The update loader then loads
-the local DLL. Only if that fails does the loader try `PhysXCore.dll` on the
-search path and then a version folder under the System Software's
-`PhysXCore Path`, which does not exist (`docs/compatibility.md`).
+- **The game passes its GUID to `NxCreatePhysicsSDK`.** `Borderlands2.exe`
+  imports `PhysXLoader.dll` delay-loaded, by name only `NxCreatePhysicsSDK`
+  and `NxGetCookingLib`. At `0xb1dc6e` it calls
+  `NxCreatePhysicsSDK(0x2080400, allocator, outputStream, &desc, &error,
+  "26097F37-C68B-4fc0-AA37-6FE164B5308A")`. That string is the update-table
+  key whose entry points at `Engine\6FE164B5308A\PhysXCore.dll`.
+- **How the loader uses it.** In BL2's `PhysXLoader.dll` the three entry
+  points pass these GUIDs to the update loader's `GetUpdatedModule`:
 
-As measured, native Borderlands 2 on an RTX 50 should therefore fall back to
-CPU PhysX despite being on NVIDIA's list. Not confirmed by running the game:
-its first launch failed on missing DirectX and VC++ redistributables, which
-Steam installs on a first launch from the client. Listed games whose runtime
-carries PTX should load their kernels; not checked game by game.
+  | Export | RVA | GUID requested |
+  |---|---|---|
+  | `NxCreatePhysicsSDK` | `0xa4f0` | its 6th argument, from the game |
+  | `NxCreatePhysicsSDKWithID` | `0xa590` | fixed `BE9042F0-ADC4-4b12-A93E-DB8A731FDBD5` |
+  | `NxGetCookingLib` | `0xa530` | fixed `8F2594AC-F8B3-47f2-BDFC-86310FED9255` (`PhysXCooking.dll`) |
+
+  The two fixed GUIDs are generic: the System Software's 2.8.4.10
+  `Common\PhysXLoader.dll` uses the same pair, and no release registers
+  them. So cooking always comes from the game's own `PhysXCooking.dll`,
+  which matches the running game. An earlier test that called the loader's
+  internal core routine (RVA `0xa3b0`) with the fixed core GUID got the
+  bundled core, which is not what the game does.
+- **When the update arrived.** The update table in every System Software
+  release still on NVIDIA's download server, read without installing (MSI
+  string pools, or the 7-Zip archive inside the `.exe`):
+
+  | System Software | Date | DllTable entries | `26097F37-…` (BL2) | `BE9042F0-…` (generic) |
+  |---|---|---|---|---|
+  | 9.12.0613, 9.12.1031 | 2012 | 6 | no | no |
+  | 9.13.0604 | 2013 | 7 | no | no |
+  | 9.13.1220 | 2013 | 8 | yes | no |
+  | 9.14.0702, 9.15.0428 | 2014–2015 | 11 | yes | no |
+  | 9.16.0318 – 9.26.0703 (8 releases) | 2016–2026 | 12 | yes | no |
+  | 9.26.0904 (installed) | 2026 | 11 in the registry | yes | no |
+
+So from December 2013 on, Borderlands 2 with a current System Software has
+run the 2.8.4.10 core and its PTX. That is how it gets GPU PhysX on Maxwell
+and later (reports of a GTX 960 in a [2018 Steam thread][bl2-steam] and a GTX
+980 Ti in a [video][bl2-980ti], title only read), and why NVIDIA can list it
+for RTX 50. The bundled 2.8.4.6 core, built with CUDA 4.1 for the September
+2012 release, is only the fallback without that update: it covers GPUs up to
+Kepler.
+
+Whether the kernels actually run on the 5070 was not traced: the game was
+inspected while running, not under `tools/nvcuda-trace`. The CUDA driver and
+its kernel-interface DLL being loaded shows a CUDA context exists.
 
 ## What this means for pxvk
 
@@ -279,9 +317,10 @@ driver.
   it. Renaming an executable unlocks it. NVIDIA Profile Inspector already
   lists `0x5067ecc4` by name, so users can set it on any profile; whether
   that unlocks 32-bit CUDA for another program is untested.
-- **Coverage is narrow even on the list.** A listed game whose bundled PhysX
-  has no PTX, like Borderlands 2's, gets nothing from the driver change
-  alone.
+- **It relies on the System Software.** A listed game whose bundled PhysX
+  has no PTX, like Borderlands 2's, gets GPU PhysX only through the System
+  Software's updated core; without it, the driver change alone does
+  nothing.
 
 For pxvk:
 
@@ -289,14 +328,13 @@ For pxvk:
   only, and must be rebuilt for every GPU generation. pxvk covers every game
   using a supported runtime, on any Vulkan device, whatever NVIDIA ships
   next.
-- **The same PTX limit.** Both compile PTX. A cubin-only runtime like
-  Borderlands 2's needs a PTX source in pxvk too: the System Software's
-  2.8.4.10 runtime matches all 105 of its kernels by name, parameter size and
+- **The same PTX limit, the same answer.** Both compile PTX, and both rely on
+  the System Software's updated core for games like Borderlands 2, so
+  installing the System Software is enough for pxvk too. Its 2.8.4.10 core
+  matches all 105 of the bundled core's kernels by name, parameter size and
   shared-memory size.
 - **Behaviours worth copying.** The driver caches JIT results (pxvk already
-  caches pipelines) and keys support on per-application profiles. A pxvk
-  table of known runtimes could map cubin-only builds, such as Borderlands
-  2's, to their PTX twins.
+  caches pipelines) and keys support on per-application profiles.
 
 ## Reproducing
 
@@ -347,10 +385,8 @@ proprietary.
 
 ## Open questions
 
-- [ ] Does native Borderlands 2 really fall back to CPU PhysX on RTX 50?
-      Install its redistributables (one launch from Steam), set PhysX to
-      High, and trace it with `tools/nvcuda-trace`.
-- [ ] Is the gate RTX 50-only? Repeat the rename test on the RTX 3070
+- [ ] Do Borderlands 2's kernels run natively on RTX 50? Trace the game with
+      `tools/nvcuda-trace` on the 5070 with PhysX on High.- [ ] Is the gate RTX 50-only? Repeat the rename test on the RTX 3070
       laptop, where 32-bit CUDA is expected to work for any program.
 - [ ] Does setting `0x5067ecc4` on a custom profile unlock 32-bit CUDA for
       any program? Untested: it changes a driver setting.
@@ -371,6 +407,12 @@ proprietary.
 - [NVIDIA Profile Inspector][npi]'s [`CustomSettingNames.xml`][npi-csn] and
   [`Reference.xml`][npi-ref]: community names for `0x5067ecc4` and
   `0x10e3293a`.
+- PhysX System Software 9.12.0613 to 9.26.0703, downloaded from
+  `us.download.nvidia.com/Windows/<version>/`, for the update-table history.
+- ["Physx using cpu instead of gpu"][bl2-steam], Steam discussion, 9 November
+  2018: a GTX 960 owner's PhysX indicator report.
+- ["980Ti vs RTX 5080 PhysX Performance - Mirrors Edge & Borderlands
+  2"][bl2-980ti], YouTube (title only; the video was not watched).
 
 [pcworld]: https://www.pcworld.com/article/3002325/surprise-nvidia-brings-physx-back-to-geforce-rtx-50-gpus-kind-of.html
 [pcgamer]: https://www.pcgamer.com/hardware/graphics-cards/in-a-surprise-change-of-heart-nvidias-brought-32-bit-physx-support-back-to-rtx-50-series-graphics-cards-though-only-for-a-select-number-of-games
@@ -378,3 +420,5 @@ proprietary.
 [npi]: https://github.com/Orbmu2k/nvidiaProfileInspector
 [npi-csn]: https://github.com/Orbmu2k/nvidiaProfileInspector/blob/master/nvidiaProfileInspector/CustomSettingNames.xml
 [npi-ref]: https://github.com/Orbmu2k/nvidiaProfileInspector/blob/master/nvidiaProfileInspector/Reference.xml
+[bl2-steam]: https://steamcommunity.com/app/49520/discussions/0/1752358461531554037
+[bl2-980ti]: https://www.youtube.com/watch?v=RsJKNAvaC1Y
