@@ -12,6 +12,8 @@ needs no NVIDIA driver.
 ## What works
 
 - **Mirror's Edge** (tested with the GOG version): smoke and breaking glass.
+- **Borderlands 2** (Steam): fluids and cloth, including its built-in PhysX
+  benchmark.
 - **Geeks3D FluidMark** benchmark.
 - The **PhysX 2.8 SDK samples** (cloth and fluid demos).
 
