@@ -105,6 +105,25 @@ python tools\bench.py compare test-output\bench\native test-output\bench\pxvk
 Native runs force OpenGL onto the NVIDIA GPU (`SHIM_MCCOMPAT`), as loading
 pxvk's Vulkan device does on Optimus laptops, so images are comparable.
 
+### Games: `tools/game-bench.py`
+
+For Direct3D 9 games, `pxvk-framelog.dll` (`tools/framelog`) records the time
+of every `IDirect3DDevice9::Present`, without administrator rights (which
+PresentMon needs). `game-bench.py run` starts the game through
+`pxvk-launch --inject-dll` with it, natively or with pxvk (the DLL then
+loads pxvk's `nvcuda.dll` itself), closes the game after `--seconds`, and
+`report` gives frame statistics for the longest stretch between loading
+stalls. Borderlands 2's PhysX benchmark is the reference workload (results
+in `docs/compatibility.md`); turn its 62 fps cap off first
+(`bSmoothFrameRate=FALSE` in `WillowEngine.ini`):
+
+```powershell
+$bl2 = "C:\Program Files (x86)\Steam\steamapps\common\Borderlands 2\Binaries\Win32\Borderlands2.exe"
+python tools\game-bench.py run native-1 --mode native --seconds 110 --exe $bl2 -- benchmark
+python tools\game-bench.py run pxvk-1 --mode pxvk --seconds 110 --exe $bl2 -- benchmark
+python tools\game-bench.py report native-1 pxvk-1
+```
+
 ## Regression check
 
 The PTX corpus is extracted from a PhysX runtime DLL; this needs no NVIDIA

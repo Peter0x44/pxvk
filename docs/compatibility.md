@@ -93,8 +93,8 @@ normal kernels (float atomics) are not among them. Results:
   integer-looking words. That is the known approximation drift of the
   iterative cloth solvers (`testing.md`).
 - **Frame rate**, with the game's 62 fps cap off (`bSmoothFrameRate=FALSE`
-  in `WillowEngine.ini`). Present times were recorded by a small injected
-  D3D9 hook over the fly-through, mean of two runs:
+  in `WillowEngine.ini`). Present times over the fly-through, recorded with
+  `tools/game-bench.py` (`testing.md`), mean of two runs:
 
   | PhysX on | Avg fps | Median frame | 1% low fps |
   |---|---|---|---|

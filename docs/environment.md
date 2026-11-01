@@ -68,6 +68,15 @@ not part of what testers use.
 | `PXVK_HARNESS_VSYNC` | switch | Keeps vsync on. By default the harness turns it off to measure throughput. |
 | `PXVK_FRAME` | (set by the harness) | The current frame number, which the harness publishes for capture selection and API-log tagging. Do not set it yourself. |
 
+## Game frame-time logger (`pxvk-framelog.dll`)
+
+`tools/game-bench.py` sets these.
+
+| Variable | Values | Effect |
+|---|---|---|
+| `PXVK_FRAMELOG_OUT` | file path | Where the injected logger writes one `IDirect3DDevice9::Present` time per line, in microseconds. |
+| `PXVK_FRAMELOG_LOAD` | DLL path | A DLL the logger loads first; pxvk's `nvcuda.dll` for pxvk runs, because `pxvk-launch --inject-dll` injects the logger instead of pxvk. |
+
 `bench.py` also sets `SHIM_MCCOMPAT=0x800000001` for native runs. This is a
 Windows/NVIDIA Optimus setting, not a pxvk variable. It forces OpenGL onto
 the NVIDIA GPU, so native and pxvk images come from the same GPU.
