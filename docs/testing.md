@@ -23,8 +23,10 @@ build\x86\pxvk-opcheck.exe --device intel --filter f32
 
 `tools/nvcuda-trace` is a native proxy driver with its own CMake project. It
 forwards to the real `nvcuda.dll` and logs every call; with
-`PXVK_CAPTURE_FRAMES` (frame numbers published by the harness) or
-`PXVK_CAPTURE_LAUNCHES` (launch ordinals, e.g. `100-120,500`) it snapshots
+`PXVK_CAPTURE_FRAMES` (frame numbers published by the harness),
+`PXVK_CAPTURE_LAUNCHES` (launch ordinals, e.g. `100-120,500`) or
+`PXVK_CAPTURE_KERNEL` (the first `PXVK_CAPTURE_COUNT` launches of a kernel
+whose name contains this text, for games whose ordinals vary) it snapshots
 all device memory around selected launches and records parameters, texture
 bindings and module globals. Capturing needs an NVIDIA GPU; replaying works
 on any Vulkan device.

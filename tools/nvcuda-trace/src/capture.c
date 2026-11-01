@@ -1,6 +1,8 @@
 /* Kernel launch capture for differential testing.
  *
- * With PXVK_CAPTURE_LAUNCHES="a-b,c,..." (1-based launch ordinals) each
+ * With PXVK_CAPTURE_LAUNCHES="a-b,c,..." (1-based launch ordinals), or
+ * PXVK_CAPTURE_KERNEL=<name substring> (the first PXVK_CAPTURE_COUNT matching
+ * launches, default 4), each
  * selected cuLaunchKernel is bracketed by full snapshots of every live device
  * allocation and module global. A capture is three files:
  *
@@ -42,6 +44,8 @@ static unsigned int g_range_count;
 static unsigned int g_frames[CAPTURE_MAX_RANGES];
 static unsigned int g_frame_count;
 static volatile LONG g_launch_ordinal;
+static char g_kernel_filter[256]; /* PXVK_CAPTURE_KERNEL: name substring */
+static unsigned int g_kernel_limit, g_kernel_taken;
 static record *g_modules, *g_functions, *g_allocations, *g_globals, *g_texrefs;
 static wchar_t g_directory[1024];
 static capture_sync_fn g_sync;
@@ -90,6 +94,14 @@ void capture_initialize(const wchar_t *directory, capture_sync_fn sync, capture_
         if (*cursor != '\0')
             fprintf(stderr, "pxvk-trace: PXVK_CAPTURE_FRAMES: only the first %u frames are used\n", g_frame_count);
         g_capture_enabled = g_frame_count != 0;
+    }
+    length = GetEnvironmentVariableA("PXVK_CAPTURE_KERNEL", g_kernel_filter, sizeof(g_kernel_filter));
+    if (length >= sizeof(g_kernel_filter)) g_kernel_filter[0] = '\0';
+    if (g_kernel_filter[0] != '\0') {
+        g_kernel_limit = 4;
+        length = GetEnvironmentVariableA("PXVK_CAPTURE_COUNT", spec, sizeof(spec));
+        if (length != 0 && length < sizeof(spec)) g_kernel_limit = (unsigned int)strtoul(spec, NULL, 10);
+        g_capture_enabled = true;
     }
     length = GetEnvironmentVariableA("PXVK_CAPTURE_LAUNCHES", spec, sizeof(spec));
     if (length == 0 || length >= sizeof(spec)) return;
@@ -328,8 +340,22 @@ unsigned int capture_launch_begin(void *function, const unsigned int grid[3], co
     const unsigned int ordinal = (unsigned int)InterlockedIncrement(&g_launch_ordinal);
     FILE *meta;
     record *fn, *module;
-    if (!g_capture_enabled || !selected(ordinal)) return 0;
-    EnterCriticalSection(&g_capture_lock);
+    if (!g_capture_enabled) return 0;
+    if (g_kernel_filter[0] != '\0') {
+        /* By name: the first PXVK_CAPTURE_COUNT matching launches, within the
+         * PXVK_CAPTURE_LAUNCHES ranges when those are also given. */
+        if (g_range_count != 0 && !selected(ordinal)) return 0;
+        EnterCriticalSection(&g_capture_lock);
+        fn = find(g_functions, (uintptr_t)function);
+        if (fn == NULL || strstr(fn->name, g_kernel_filter) == NULL || g_kernel_taken >= g_kernel_limit) {
+            LeaveCriticalSection(&g_capture_lock);
+            return 0;
+        }
+        ++g_kernel_taken;
+    } else {
+        if (!selected(ordinal)) return 0;
+        EnterCriticalSection(&g_capture_lock);
+    }
     g_sync();
     fn = find(g_functions, (uintptr_t)function);
     module = fn != NULL ? find(g_modules, fn->owner) : NULL;

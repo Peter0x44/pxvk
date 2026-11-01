@@ -46,6 +46,8 @@ See [`testing.md`](testing.md). pxvk and the native tracer
 | `PXVK_CAPTURE_DIR` | pxvk | folder path | Destination for pxvk's captures. Capturing requires both this and `PXVK_CAPTURE_FRAMES`. |
 | `PXVK_CAPTURE_FRAMES` | pxvk, tracer | comma-separated frame numbers, e.g. `150,450,750` | Snapshots device memory around every launch in these frames, as numbered by the harness (`PXVK_FRAME`). Only works under the harness. |
 | `PXVK_CAPTURE_LAUNCHES` | tracer only | launch ordinals and ranges, e.g. `100-120,500` | Snapshots these launches by ordinal. Use it for applications without the harness, such as games. pxvk itself selects only by frame. |
+| `PXVK_CAPTURE_KERNEL` | tracer only | part of a kernel's (mangled) name, e.g. `HybridUberSolverILj1024ELb1` | Snapshots the first `PXVK_CAPTURE_COUNT` launches of matching kernels, for kernels whose ordinals vary from run to run. With `PXVK_CAPTURE_LAUNCHES` also set, only matches inside those ordinal ranges count. |
+| `PXVK_CAPTURE_COUNT` | tracer only | number | How many matching launches `PXVK_CAPTURE_KERNEL` captures. Default `4`. |
 | `PXVK_TRACE_DIR` | tracer | folder path | Tracer output folder. Defaults to `%TEMP%\pxvk-nvcuda-trace`. `pxvk-trace.exe --output DIR` sets it. |
 | `PXVK_TRACE_TIMING` | tracer | switch | Logs native per-kernel GPU times, the counterpart of `PXVK_PROFILE`. |
 | `PXVK_API_LOG` | tracer | switch | Per-call log in the trace folder with the same `api f=<frame> t=<thread>` prefix as pxvk's, for sequence comparison. Individual messages are close but not identical (the tracer logs what native CUDA was asked, pxvk what it did). |
