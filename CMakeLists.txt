@@ -97,6 +97,14 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4 AND WIN32)
         target_link_options(pxvk-nvapi PRIVATE -static -Wl,--kill-at)
     endif()
 
+    # dinput8.dll proxy for the game folder (src/proxy/dinput8.c), built
+    # into build/x86/game-folder/ so it never sits next to pxvk-launch.
+    add_library(pxvk-proxy-dinput8 SHARED src/proxy/dinput8.c)
+    set_target_properties(pxvk-proxy-dinput8 PROPERTIES PREFIX "" OUTPUT_NAME "dinput8" C_STANDARD 99
+                          RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/game-folder")
+    if(NOT MSVC)
+        target_link_options(pxvk-proxy-dinput8 PRIVATE -static -Wl,--kill-at)
+    endif()
     add_executable(pxvk-launch WIN32 src/runtime/launcher.cpp)
     target_link_libraries(pxvk-launch PRIVATE shell32)
     if(NOT MSVC)

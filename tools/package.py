@@ -6,6 +6,8 @@
 Creates OUT/NAME/ and OUT/NAME.zip containing:
 
   pxvk-launch.exe, nvcuda.dll, pxvk-nvapi.dll   from the build directory
+  game-folder/       dinput8.dll (the proxy) with nvcuda.dll and
+                     pxvk-nvapi.dll, to copy into a game's folder
   README.md          docs/install.md (the tester guide)
   environment.md     docs/environment.md
   mirrors-edge.md    docs/mirrors-edge.md
@@ -29,6 +31,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BINARIES = ["pxvk-launch.exe", "nvcuda.dll", "pxvk-nvapi.dll"]
+# Copied into a game's executable folder, which then loads pxvk by itself.
+GAME_FOLDER = ["game-folder/dinput8.dll", "nvcuda.dll", "pxvk-nvapi.dll"]
 DOCUMENTS = {"install.md": "README.md", "environment.md": "environment.md", "mirrors-edge.md": "mirrors-edge.md"}
 # DLLs present on every supported Windows installation.
 SYSTEM_DLLS = {"kernel32.dll", "user32.dll", "shell32.dll", "advapi32.dll", "gdi32.dll", "msvcrt.dll",
@@ -104,14 +108,16 @@ def main():
         shutil.rmtree(target)
     target.mkdir(parents=True)
 
-    for binary in BINARIES:
+    (target / "game-folder").mkdir()
+    for binary, destination in [(b, target / b) for b in BINARIES] + \
+            [(b, target / "game-folder" / Path(b).name) for b in GAME_FOLDER]:
         source = build / binary
         if not source.exists():
             raise SystemExit(f"missing {source}; build first")
         foreign = [dll for dll in imported_dlls(source) if dll.lower() not in SYSTEM_DLLS]
         if foreign:
             raise SystemExit(f"{binary} imports non-system DLLs: {', '.join(foreign)} (link statically)")
-        shutil.copy2(source, target / binary)
+        shutil.copy2(source, destination)
     for document, packaged in DOCUMENTS.items():
         text = (ROOT / "docs" / document).read_text(encoding="utf-8")
         (target / packaged).write_text(package_markdown(text), encoding="utf-8", newline="\n")
@@ -121,8 +127,8 @@ def main():
 
     archive = out / f"{name}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
-        for path in sorted(target.iterdir()):
-            zf.write(path, f"{name}/{path.name}")
+        for path in sorted(p for p in target.rglob("*") if p.is_file()):
+            zf.write(path, f"{name}/{path.relative_to(target).as_posix()}")
     print(f"{target}\n{archive}")
 
 

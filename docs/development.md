@@ -20,7 +20,8 @@ cmake --build build/x86
 
 `build/x86` then contains the three runtime files (`pxvk-launch.exe`,
 `nvcuda.dll`, `pxvk-nvapi.dll`), which depend only on Windows system DLLs,
-and the developer tools below.
+the drop-in proxy `game-folder/dinput8.dll` (`src/proxy`), and the
+developer tools below.
 
 `python tools/package.py` turns a build into the tester package
 (`dist/pxvk-<commit>/` and `.zip`): the runtime files, the tester guide

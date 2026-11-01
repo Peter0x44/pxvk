@@ -24,15 +24,39 @@ driver (AMD, Intel or NVIDIA), and an NVIDIA driver is not required.
   | `pxvk-nvapi.dll` | minimal NVAPI so PhysX selects hardware PhysX |
 
   These are built into `build\x86` (see [`development.md`](development.md)). They depend only on
-  Windows system DLLs. Do **not** copy `nvcuda.dll` into System32 or into the
-  game folder, because it is not loaded from there.
+  Windows system DLLs. Do **not** copy `nvcuda.dll` into System32: it is not
+  loaded from there. (The game folder works only together with the proxy
+  `dinput8.dll`, below.)
+- Alternatively, the **`game-folder`** files (`dinput8.dll`, `nvcuda.dll`,
+  `pxvk-nvapi.dll`) for the drop-in method below.
+
+## Two ways to start a game on pxvk
+
+1. **Drop-in (any store or shortcut).** Copy the three files from
+   `game-folder` (built into `build\x86\game-folder\dinput8.dll` plus
+   `build\x86\nvcuda.dll` and `build\x86\pxvk-nvapi.dll`) into the folder
+   that contains the game's executable, for example
+   `...\Borderlands 2\Binaries\Win32`. Then start the game however you
+   normally do: Steam, GOG Galaxy, the EA app or a shortcut. Games that
+   import DirectInput 8 (`DINPUT8.dll`), which includes most Unreal Engine 3
+   games, load the proxy `dinput8.dll` from their folder at startup. It loads
+   pxvk from the same folder and passes DirectInput calls on to Windows' own
+   `dinput8.dll`. It writes `pxvk.log` next to the game unless `PXVK_LOG` is
+   set. To undo, delete the three files. Check first that the game folder
+   has no `dinput8.dll` of its own (some mods use the same trick); do not
+   overwrite one.
+2. **`pxvk-launch.exe`** for games that do not import DirectInput 8 (test it:
+   no `pxvk.log` appears), directly or as a Steam launch option (below).
+
+Tested with Borderlands 2 started from Steam through its 2K launcher, both
+ways.
 
 ## How loading works
 
-You must start the application through `pxvk-launch.exe`, directly or as a
-Steam launch option (below). Starting it normally, or through GOG Galaxy or
-EA, gives the original behavior: native CUDA on NVIDIA machines and CPU
-PhysX elsewhere.
+pxvk has to be in the game process before PhysX starts, either loaded by the
+proxy `dinput8.dll` or started through `pxvk-launch.exe`. Starting a game
+normally without either gives the original behavior: native CUDA on NVIDIA
+machines and CPU PhysX elsewhere.
 
 1. `pxvk-launch.exe` starts the application suspended and loads
    `nvcuda.dll` from its own folder into the process. Then it resumes the
@@ -208,10 +232,10 @@ debugging variables are listed in [`environment.md`](environment.md).
 
 - Some antivirus software may block or flag `pxvk-launch.exe`, because it
   loads a DLL into another process. This has not been observed so far.
-- GOG Galaxy and the EA app cannot start games through pxvk yet; start
-  those games with `pxvk-launch.exe` directly ([`roadmap.md`](roadmap.md),
-  "Starting games from store launchers"). Steam works through a launch
-  option.
+- The drop-in `dinput8.dll` only works for games that import DirectInput 8.
+  Other games need `pxvk-launch.exe` (directly, or as a Steam launch
+  option), which GOG Galaxy and the EA app cannot use
+  ([`roadmap.md`](roadmap.md), "Starting games from store launchers").
 - On non-NVIDIA GPUs the hardware square-root and reciprocal approximations
   differ from NVIDIA's by 1–2 ULP. The results are therefore not bit-identical
   to native, and long cloth simulations can drift visibly from a native run

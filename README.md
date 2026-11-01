@@ -30,13 +30,21 @@ tried.
   without NVIDIA graphics.
 - The pxvk release, unzipped into one folder, for example `C:\pxvk`. It
   contains `pxvk-launch.exe`, `nvcuda.dll` and `pxvk-nvapi.dll` (keep them
-  together) and a setup guide.
+  together), a `game-folder` folder and a setup guide.
 
 ## How to use it
 
-The game has to start **through `pxvk-launch.exe`**.
+**Easiest: copy three files into the game.** Copy everything in pxvk's
+`game-folder` folder (`dinput8.dll`, `nvcuda.dll`, `pxvk-nvapi.dll`) into
+the folder that contains the game's `.exe` (for Borderlands 2:
+`Borderlands 2\Binaries\Win32`). Then start the game however you normally
+do: Steam, GOG Galaxy, the EA app or a shortcut. If a `pxvk.log` file
+appears next to the game after it starts, pxvk is running. To undo, delete
+the three files. This works for most games built on Unreal Engine 3; if no
+`pxvk.log` appears, use one of the ways below instead. Don't overwrite a
+`dinput8.dll` the game folder already has (some mods use the same name).
 
-**Steam games:** right-click the game in your Library, choose
+**Steam games, without copying files:** right-click the game in your Library, choose
 **Properties**, and on the **General** tab paste this into **Launch
 Options** (with your pxvk folder):
 
@@ -73,9 +81,10 @@ what to include when reporting a problem.
 
 ## Known limitations
 
-- Games must be started with `pxvk-launch.exe`: on Steam through the launch
-  option above. GOG Galaxy and the EA app can't start games through pxvk
-  yet; start those games with `pxvk-launch.exe` directly.
+- The copy-into-the-game method only works for games that use DirectInput 8
+  (most Unreal Engine 3 games). Other games need `pxvk-launch.exe`: on Steam
+  through the launch option above, otherwise started directly, since GOG
+  Galaxy and the EA app can't start games through it.
 - Only 32-bit PhysX 2.x games. Newer PhysX 3/4/5 games are not supported.
 - Not yet available for phones or handhelds through Winlator.
 

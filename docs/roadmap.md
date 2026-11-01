@@ -61,19 +61,23 @@ flag decided by a float threshold test that the approximation units flip
 
 ### 4. Starting games from store launchers
 
-Steam works: the launch option `"C:\pxvk\pxvk-launch.exe" %command%`
-starts the game through pxvk, and pxvk follows 32-bit child processes, so
-game launchers pass it on (tested with Borderlands 2's 2K launcher,
-`docs/install.md`).
+Two ways work (`docs/install.md`), both tested with Borderlands 2 started
+from Steam through its 2K launcher:
+
+- A proxy `dinput8.dll` copied into the game folder with `nvcuda.dll` and
+  `pxvk-nvapi.dll` loads pxvk at startup, from any store or shortcut, and
+  writes `pxvk.log` there unless `PXVK_LOG` is set.
+- The Steam launch option `"C:\pxvk\pxvk-launch.exe" %command%`; pxvk
+  follows 32-bit child processes, so game launchers pass it on.
 
 Remaining:
 
-- GOG Galaxy and the EA app, which have no launch-option wrapper. A proxy
-  DLL in the game folder (e.g. `dinput8.dll` or `version.dll`, forwarding to
-  the system DLL) that loads pxvk before CUDART runs would cover every store
-  and desktop shortcuts too, with nothing to configure.
-- Logging without environment variables, e.g. `pxvk-launch --log <file>`,
-  since launch options cannot set variables on Windows.
+- Games that do not import `DINPUT8.dll`, started from GOG Galaxy or the EA
+  app. A proxy for another DLL they import (`version.dll`, `winmm.dll`,
+  `xinput1_3.dll`, ...) would cover them; check each game's imports.
+- Logging under `pxvk-launch` without environment variables, e.g.
+  `pxvk-launch --log <file>`, since launch options cannot set variables on
+  Windows.
 - Automating the Mirror's Edge PhysX runtime renames documented in
   `docs/install.md`.
 

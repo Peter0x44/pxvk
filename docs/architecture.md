@@ -186,6 +186,13 @@ CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
   with `GetProcAddress`: in a process started suspended, the compatibility
   shim engine can answer `GetProcAddress` with a stub that calls back
   through a patched slot.
+- `src/proxy/dinput8.c` (`game-folder/dinput8.dll`): the drop-in way to load
+  pxvk without `pxvk-launch.exe`. Games importing `DINPUT8.dll` load it from
+  their folder at startup (it is not a KnownDLL), before PhysX. Its
+  `DllMain` loads `nvcuda.dll` from its own folder, unless an `nvcuda.dll`
+  is already loaded (started through `pxvk-launch`), and sets `PXVK_LOG` to
+  `pxvk.log` there when unset. Its six exports call the system
+  `dinput8.dll`, loaded on first use rather than in `DllMain`.
 - `nvapi.cpp` (`pxvk-nvapi.dll`): PhysX picks hardware PhysX only if NVAPI
   reports a PhysX-capable GPU. This exports `nvapi_QueryInterface` with the
   eight interfaces ZLUDA implements (initialize/unload, driver version,
