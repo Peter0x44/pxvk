@@ -49,7 +49,8 @@ driver (AMD, Intel or NVIDIA), and an NVIDIA driver is not required.
    no `pxvk.log` appears), directly or as a Steam launch option (below).
 
 Tested with Borderlands 2 started from Steam through its 2K launcher, both
-ways.
+ways, and with the drop-in on GOG's Batman: Arkham City, started directly and
+through its own launcher.
 
 ## How loading works
 
@@ -212,6 +213,34 @@ Start it this way, not through GOG Galaxy. The log should show the context,
 a level with PhysX effects is loaded. Smoke and steam appear in most outdoor
 levels. [`mirrors-edge.md`](mirrors-edge.md) describes how to jump to the
 cloth and glass scenes.
+
+## Batman: Arkham City (GOG)
+
+Install the PhysX System Software first: the game's bundled PhysX cannot run
+on pxvk. Then copy the `game-folder` files into `Binaries\Win32`.
+
+The game has no PhysX option of its own, and a fresh install can start with
+PhysX off on any GPU. It is set in the launcher, `Binaries\Win32\BmLauncher.exe`, under
+**Display**: Off, Normal or High. The GPU hints shown there are only advice,
+and the option is not hidden on other GPUs. A warning may appear on them, but
+it only warns. GOG's Play button starts the game directly, and the launcher is
+the Settings entry.
+
+If the launcher crashes on start with a .NET error about
+`Microsoft.DirectX.Direct3D`, the game's DirectX components were not installed.
+Run `Setup\DxRedist\DXSETUP.exe` from the game folder.
+
+The launcher saves the setting as `PhysXLevel` (0, 1 or 2) in
+`Documents\WB Games\Batman Arkham City GOTY\BmGame\Config\UserEngine.ini`.
+To change it by hand, edit that line (the file is UTF-16; Notepad keeps that).
+The game copies it over `BmEngine.ini` in the same folder at every start, so
+edit `BmEngine.ini` only if the launcher has never run and `UserEngine.ini`
+has no such line.
+The drop-in works whether the game is started from the launcher or directly.
+Look for `pxvk.log` in `Binaries\Win32` to check that
+PhysX runs on pxvk ("Checking that hardware PhysX is active" above). Kernel
+launches start in-game or in the benchmark (Graphics settings), not at the
+menu. Tested on an RTX 5070 laptop and its Intel GPU; AMD is untested.
 
 ## Reporting results
 

@@ -60,8 +60,8 @@ with Batman: Arkham Asylum announced for 2026; the others run PhysX on the
 CPU on RTX 50 cards. pxvk is relevant to all of them on AMD, Intel and
 other Vulkan devices.
 
-Only Mirror's Edge's runtime (by hash) and Borderlands 2's (from the running
-game's loaded modules) are confirmed. The other runtime assignments are
+Only the runtimes of Mirror's Edge (by hash), Borderlands 2 and Batman:
+Arkham City (from the running games' loaded modules) are confirmed. The other runtime assignments are
 unverified estimates from release dates and engines. A game's
 `PhysXLoader.dll` alone does not decide it: the update loader can swap in a
 System Software core for a GUID the game passes, so check what a running
@@ -111,13 +111,45 @@ normal kernels (float atomics) are not among them. Results:
   appear still stalls once per variant for pipeline creation (0.5 s in
   total); later runs use the pipeline cache.
 
+Batman: Arkham City (GOG, November 2026) runs on pxvk on the RTX 5070 laptop,
+PhysX High, through `pxvk-launch`, and through the drop-in `dinput8.dll`
+whether started directly or from `BmLauncher.exe` (setup in
+[`install.md`](install.md)). The game has no in-game PhysX option and neither
+it nor the launcher checks the GPU vendor. Its `PhysXLoader.dll` (2.8.4.4) has the
+update GUID `3F527913-…` built in, which maps to the System Software's
+2.8.4.12 core (`Engine\C22346819C37`), so the game needs the System Software:
+the bundled `PhysXCore.dll` (2.8.4.6) has no fatbins in the current format.
+The benchmark is started from the game's Graphics settings; loading
+`Benchmark_01` from the command line crashes natively too. A benchmark run
+makes about 540,000 launches of 79 kernels, mostly cloth, with no pxvk errors;
+the cloth normal kernels (float atomics) are not among them. Over the same
+stretch of the benchmark (between its stalls at about 36 s and 93 s, one run
+each, measured with `tools/game-bench.py`):
+
+| PhysX on RTX 5070 | Avg fps | Median frame | p99 frame | 1% low fps |
+|---|---|---|---|---|
+| native 32-bit CUDA (driver 621.01) | 184.5 | 5.17 ms | 10.54 ms | 39.6 |
+| pxvk | 193.4 | 4.58 ms | 11.02 ms | 35.5 |
+
+The stalls of 150–490 ms during the benchmark happen at the same moments and
+for the same durations natively, so they are the game's own. The first pxvk
+run spent 8.5 s in pipeline creation, the third 51 ms.
+
+60 native captures of 10 fluid kernels and 60 of 10 cloth kernels replay
+EXACT on NVIDIA, and fluid launch sizes, which follow particle counts, have the same distribution as
+native (`KernelFluidDensity`: mean 6,157 against 6,162 threads, same p90 and
+p99). By eye, paper and leaves move differently between runs and the sparks
+look right; blue fragments might differ, which is unconfirmed and could be
+ordinary variation. Effects outside the GPU kernels were not compared.
+
 | Likely runtime | Games |
 |---|---|
 | 2.7.x / early 2.8 | Ghost Recon Advanced Warfighter 2, Monster Madness: Battle for Suburbia, Warmonger: Operation Downtown Destruction, Unreal Tournament 3, Crazy Machines 2, Armageddon Riders |
 | 2.8.0 (confirmed) | Mirror's Edge ★ |
 | 2.8.4.10 (confirmed, through the update loader) | Borderlands 2 ★ |
+| 2.8.4.12 (confirmed, through the update loader) | Batman: Arkham City ★ |
 | 2.8.1 – 2.8.3 | Sacred 2: Fallen Angel and Ice & Blood, Cryostasis, Darkest of Days, Batman: Arkham Asylum, Shattered Horizon, Metro 2033 ★, Dark Void, Mafia II ★, Blur |
-| 2.8.4, often with APEX | Alice: Madness Returns ★, Batman: Arkham City ★, The Bureau: XCOM Declassified, Metro: Last Light ★, Hydrophobia: Prophecy, The Secret World, Rise of the Triad, Mars: War Logs, Gas Guzzlers: Combat Carnage, Deep Black, Depth Hunter |
+| 2.8.4, often with APEX | Alice: Madness Returns ★, The Bureau: XCOM Declassified, Metro: Last Light ★, Hydrophobia: Prophecy, The Secret World, Rise of the Triad, Mars: War Logs, Gas Guzzlers: Combat Carnage, Deep Black, Depth Hunter |
 | possibly PhysX 3.3 (APEX Turbulence) | Assassin's Creed IV: Black Flag ★, Batman: Arkham Origins ★ |
 | unknown | Star Trek D-A-C, Star Trek (2013), 7554, QQ Dance and QQ Dance 2, Hot Dance Party and Hot Dance Party II, Jianxia 3, MStar, Continent of the Ninth, Passion Leads Army |
 
