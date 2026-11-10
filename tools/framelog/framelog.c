@@ -7,6 +7,8 @@
 //   PXVK_FRAMELOG_OUT   output file, one Present time per line in microseconds
 //   PXVK_FRAMELOG_LOAD  optional DLL to load first: pxvk's nvcuda.dll for pxvk
 //                       runs, since --inject-dll replaces pxvk's own injection
+//   PXVK_FRAMELOG_FPS   optional frame-rate cap, so that native and pxvk step
+//                       a game's physics at the same pace when compared by eye
 //
 // d3d9.dll's Direct3DCreate9 is patched with a jump to a wrapper, which
 // restores the original bytes, calls it, re-patches, and replaces
@@ -17,6 +19,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef void *(WINAPI *create9_fn)(UINT);
@@ -32,6 +35,8 @@ static present_fn g_present;
 static HANDLE g_out = INVALID_HANDLE_VALUE;
 static LARGE_INTEGER g_frequency;
 static LONGLONG g_last_flush;
+static LONGLONG g_interval; // QPC ticks per frame under PXVK_FRAMELOG_FPS, or 0
+static LONGLONG g_next_frame;
 static char g_buffer[1 << 16];
 static size_t g_used;
 static CRITICAL_SECTION g_lock;
@@ -65,6 +70,16 @@ static HRESULT WINAPI framelog_present(void *device, const RECT *source, const R
 {
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
+    if (g_interval != 0) {
+        // Spin: Sleep's granularity is too coarse to hold a steady 16.7 ms.
+        while (now.QuadPart < g_next_frame) {
+            SwitchToThread();
+            QueryPerformanceCounter(&now);
+        }
+        // Keep the schedule after a short frame, but restart after a long one.
+        g_next_frame += g_interval;
+        if (g_next_frame < now.QuadPart) g_next_frame = now.QuadPart + g_interval;
+    }
     EnterCriticalSection(&g_lock);
     g_used += (size_t)sprintf(g_buffer + g_used, "%lld\n", now.QuadPart * 1000000 / g_frequency.QuadPart);
     // Flush at least once a second: a run may end by killing the game, which
@@ -124,6 +139,8 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
         HMODULE d3d9;
         InitializeCriticalSection(&g_lock);
         QueryPerformanceFrequency(&g_frequency);
+        if (environment(L"PXVK_FRAMELOG_FPS", path, 1024) && _wtoi(path) > 0)
+            g_interval = g_frequency.QuadPart / _wtoi(path);
         if (environment(L"PXVK_FRAMELOG_LOAD", path, 1024)) LoadLibraryW(path);
         if (environment(L"PXVK_FRAMELOG_OUT", path, 1024))
             g_out = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 0, NULL);

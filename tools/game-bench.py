@@ -8,7 +8,7 @@ loading stalls, such as a benchmark fly-through. Needs no administrator
 rights, unlike PresentMon.
 
   game-bench.py run NAME --mode native|pxvk --exe GAME.exe [--seconds S]
-                [--device NAME] [-- game arguments...]
+                [--device NAME] [--fps N] [-- game arguments...]
   game-bench.py report NAME...
 
 Output goes to test-output/game-bench/NAME.frames (and NAME.pxvk.log for
@@ -47,6 +47,8 @@ def run(args):
     OUT.mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith("PXVK_")}
     env["PXVK_FRAMELOG_OUT"] = str(OUT / f"{args.name}.frames")
+    if args.fps:
+        env["PXVK_FRAMELOG_FPS"] = str(args.fps)
     if args.mode == "pxvk":
         env["PXVK_FRAMELOG_LOAD"] = str(build / "nvcuda.dll")
         env["PXVK_LOG"] = str(OUT / f"{args.name}.pxvk.log")
@@ -102,6 +104,7 @@ def main():
     p.add_argument("--exe", required=True)
     p.add_argument("--seconds", type=float, default=110)
     p.add_argument("--device", help="PXVK_DEVICE for pxvk runs")
+    p.add_argument("--fps", type=int, help="cap the frame rate, for comparing physics by eye")
     p.add_argument("--build", default=str(ROOT / "build" / "x86"))
     p.add_argument("game_args", nargs="*")
     p = sub.add_parser("report")

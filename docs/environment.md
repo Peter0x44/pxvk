@@ -78,6 +78,7 @@ not part of what testers use.
 | Variable | Values | Effect |
 |---|---|---|
 | `PXVK_FRAMELOG_OUT` | file path | Where the injected logger writes one `IDirect3DDevice9::Present` time per line, in microseconds. |
+| `PXVK_FRAMELOG_FPS` | number | Caps the frame rate at each `Present`, so that native and pxvk step a game's physics at the same pace when compared by eye. |
 | `PXVK_FRAMELOG_LOAD` | DLL path | A DLL the logger loads first; pxvk's `nvcuda.dll` for pxvk runs, because `pxvk-launch --inject-dll` injects the logger instead of pxvk. |
 
 `bench.py` also sets `SHIM_MCCOMPAT=0x800000001` for native runs. This is a
