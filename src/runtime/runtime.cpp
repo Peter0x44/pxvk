@@ -254,11 +254,13 @@ CUresult initialize(State &s)
     }
     const auto &caps = s.device.caps();
     s.options.native_ftz = caps.native_ftz;
+    s.options.no_ftz_emulation = env_flag("PXVK_NO_FTZ_EMULATION");
     s.options.preserve_nan = caps.preserve_nan;
     s.options.emulate_warps = caps.narrow_subgroups();
     s.options.int64 = caps.int64;
     s.options.float_atomic_add = caps.float_atomic_add;
     s.options.shader_clock = caps.shader_clock;
+    s.options.subgroup_shuffle = caps.subgroup_shuffle;
     s.options.heap_window_shift = caps.heap_window_shift;
     s.options.heap_windows = caps.heap_windows;
     s.heap_limit = caps.max_heap_bytes;
@@ -276,10 +278,11 @@ CUresult initialize(State &s)
         s.device.load_pipeline_cache(s.pipeline_cache_path);
     }
     s.device.set_timing(s.profile);
-    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d subgroup_control=%d preserve_nan=%d shared=%u heap_limit=%lluMiB heap_windows=%u warp_emulation=%d float_atomics=%d nvapi=%s",
+    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d subgroup_control=%d preserve_nan=%d shared=%u heap_limit=%lluMiB heap_windows=%u warp_emulation=%d float_atomics=%d ftz_emulation=%d nvapi=%s",
                 caps.name.c_str(), caps.vendor_id, caps.subgroup_size, caps.native_ftz, caps.subgroup_control,
                 caps.preserve_nan, caps.max_shared_bytes, static_cast<unsigned long long>(s.heap_limit >> 20),
-                caps.heap_windows, s.options.emulate_warps, s.options.float_atomic_add, pxvk::runtime::nvapi_mode());
+                caps.heap_windows, s.options.emulate_warps, s.options.float_atomic_add,
+                !caps.native_ftz && !s.options.no_ftz_emulation, pxvk::runtime::nvapi_mode());
     return CUDA_SUCCESS;
 }
 

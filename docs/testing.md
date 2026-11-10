@@ -19,6 +19,13 @@ build\x86\pxvk-opcheck.exe --device nvidia
 build\x86\pxvk-opcheck.exe --device intel --filter f32
 ```
 
+On RTX 50 cards the driver only gives 32-bit CUDA to allowed executable
+names (`nvidia-32bit-physx.md`), so opcheck reports `native CUDA unavailable`
+and `check.py` skips it. Copy `pxvk-opcheck.exe` to `tmp\opcheck-native\borderlands2.exe`
+and run that copy instead. Two variants then report `native JIT failed`: driver
+621.01 cannot compile 32-bit `red.*.add.f32` for sm_120. PhysX uses only the
+`atom` forms, which do compile and have a variant of their own.
+
 ## 2. Real launches: capture and replay
 
 `tools/nvcuda-trace` is a native proxy driver with its own CMake project. It
@@ -219,6 +226,15 @@ cloth 28 EXACT, 55 ok, 7 tolerated BAD). `pxvk-replay --emulate-warps`
 forces warp emulation on any device; on NVIDIA the results must stay
 bit-exact. `pxvk-ptxc --emulate-warps --split-heap` compiles the corpus
 with both fallbacks for `spirv-val`.
+
+lavapipe's subgroup size is its LLVM vector width divided by 32 bits, and it
+offers exactly that one size: 8 by default on an AVX2 CPU (256 bits), 4 with
+`LP_NATIVE_VECTOR_WIDTH=128` and 16 with `512`. Do not go above 512: with
+`1024` or `2048` it reports 32 or 64 lanes, but opcheck's `shfl` variants
+show subgroups really span only 16 lanes (lane 16 and up read 0), so
+warp-level results there are wrong. The Batman: Arkham City captures give
+the same results as on Intel at the default width (Mesa 26.2.6,
+mesa-dist-win, November 2026).
 
 ## Testing on another machine
 

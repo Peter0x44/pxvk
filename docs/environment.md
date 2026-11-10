@@ -34,6 +34,7 @@ The log output of these needs `PXVK_LOG`.
 | `PXVK_PROFILE` | switch | Measures GPU time per kernel with timestamp queries. Every 500 launches (as well as every 5 s) it logs a `stats` line plus a `profile` line per kernel with launch count and total/average time. |
 | `PXVK_SYNC` | switch | Waits for the GPU after every operation instead of batching. Very slow. Use it to tell a synchronization bug from a computation bug. |
 | `PXVK_DUMP_SPIRV` | folder path | Writes every compiled kernel as `<module hash>_<kernel name hash>_<variant>.spv`. Does not need `PXVK_LOG`. |
+| `PXVK_NO_FTZ_EMULATION` | switch | Ignores `.ftz` where pxvk would emulate it (NVIDIA, whose Vulkan driver has no fp32 flush-to-zero): faster, but subnormals then survive where native CUDA flushes them, so results are no longer bit-exact. The log's `init` line shows `ftz_emulation=`. No effect on devices with native flush-to-zero (Intel). |
 | `PXVK_NO_FLOAT_ATOMICS` | switch | Compiles global float atomic adds as a compare-and-swap loop even where the device has native float atomics (`VK_EXT_shader_atomic_float`), for comparing the two. The log's `init` line shows `float_atomics=`. |
 | `PXVK_PIPELINE_STATS` | switch | Prints the driver's statistics for each pipeline (register count, binary size, ...) to **stderr**, if the driver supports `VK_KHR_pipeline_executable_properties`. GUI applications have no visible stderr, so use it with `pxvk-replay` or redirect the output. Does not need `PXVK_LOG`. |
 

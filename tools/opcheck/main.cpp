@@ -194,6 +194,9 @@ const Variant kVariants[] = {
     // results of .ftz arithmetic, then add the sums into global memory:
     // test that shape.
     {".shared .align 4 .f32 opsh[1024]; mov.u32 %r12, opsh; shl.b32 %r13, %r3, 2; add.u32 %r12, %r12, %r13; st.shared.f32 [%r12], 0f00000000; mul.ftz.f32 %f3, {a}, 0f3F800000; mul.ftz.f32 %f4, {b}, 0f3F800000; red.shared.add.f32 [%r12], %f3; atom.shared.add.f32 %f6, [%r12], %f4; ld.shared.f32 %f5, [%r12]; st.global.f32 [%r8+12], 0f00000000; red.global.add.f32 [%r8+12], %f5; ld.global.f32 {d}, [%r8+12];", 'f', "ff"},
+    // The same with atom only, which is what PhysX uses and what RTX 50's
+    // driver can compile for 32-bit code.
+    {".shared .align 4 .f32 opsh[1024]; mov.u32 %r12, opsh; shl.b32 %r13, %r3, 2; add.u32 %r12, %r12, %r13; st.shared.f32 [%r12], 0f00000000; mul.ftz.f32 %f3, {a}, 0f3F800000; mul.ftz.f32 %f4, {b}, 0f3F800000; atom.shared.add.f32 %f7, [%r12], %f3; atom.shared.add.f32 %f6, [%r12], %f4; ld.shared.f32 %f5, [%r12]; st.global.f32 [%r8+12], 0f00000000; atom.global.add.f32 %f7, [%r8+12], %f5; ld.global.f32 {d}, [%r8+12];", 'f', "ff"},
     {".shared .align 4 .f32 opcnt; setp.ne.u32 %p6, %r3, 0; @!%p6 st.shared.f32 [opcnt], 0f00000000; bar.sync 0; atom.shared.add.f32 %f6, [opcnt], 0f3F800000; bar.sync 0; ld.shared.f32 %f5, [opcnt]; add.ftz.f32 {d}, %f5, {a};", 'f', "f"},
     {"mul.ftz.f32 %f7, {a}, {b}; neg.ftz.f32 %f6, %f7; add.ftz.f32 {d}, %f6, {c};", 'f', "fff"},
     {"mul.ftz.f32 %f7, {a}, {b}; add.ftz.f32 %f6, %f7, {c}; add.ftz.f32 {d}, %f6, %f7;", 'f', "fff"},
@@ -205,6 +208,29 @@ const Variant kVariants[] = {
     {"mul.ftz.f32 %f7, {a}, {b}; add.ftz.f32 %f6, {c}, {a}; add.ftz.f32 {d}, %f6, %f7;", 'f', "fff"},
     {"mul.ftz.f32 %f7, {a}, {b}; fma.rn.ftz.f32 %f6, {c}, {c}, {a}; add.ftz.f32 %f5, %f6, %f7; add.ftz.f32 {d}, %f5, %f7;", 'f', "fff"},
     {"mul.ftz.f32 %f7, {a}, {b}; @{c} add.ftz.f32 %f7, %f7, {b}; mov.f32 {d}, %f7;", 'f', "ffp"},
+    // Warp shuffles (PhysX 3, APEX, GRB). Every thread has its own a, b and c,
+    // so a match also shows that lanes correspond to %tid.x. Forms from the
+    // runtimes' inline assembly follow: blocks with their own registers.
+    {"shfl.up.b32 {d}, {a}, {b}, {c};", 'i', "iii"},
+    {"shfl.down.b32 {d}, {a}, {b}, {c};", 'i', "iii"},
+    {"shfl.bfly.b32 {d}, {a}, {b}, {c};", 'i', "iii"},
+    {"shfl.idx.b32 {d}, {a}, {b}, {c};", 'i', "iii"},
+    {"shfl.up.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii"},
+    {"shfl.down.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii"},
+    {"shfl.bfly.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii"},
+    {"shfl.idx.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii"},
+    {"shfl.up.b32 {d}, {a}, 1, 0;", 'i', "i"},
+    {"shfl.down.b32 {d}, {a}, 1, 31;", 'i', "i"},
+    {"shfl.bfly.b32 {d}, {a}, 16, 31;", 'i', "i"},
+    {"shfl.idx.b32 {d}, {a}, 31, 31;", 'i', "i"},
+    {"shfl.idx.b32 {d}, {a}, {b}, 31;", 'i', "ii"},
+    {"shfl.up.b32 {d}, {a}, 2, 0x1f00;", 'i', "i"},
+    {"shfl.down.b32 {d}, {a}, 2, 0x1c03;", 'i', "i"},
+    {"shfl.bfly.b32 {d}, {a}, 5, 0x1807;", 'i', "i"},
+    {"shfl.idx.b32 {d}, {a}, 5, 0x1807;", 'i', "i"},
+    {"{ .reg .u32 tmp; .reg .pred p; shfl.up.b32 tmp|p, {a}, 0x1, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x2, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x4, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x8, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x10, 0x0; @p add.u32 {a}, tmp, {a}; shfl.idx.b32 {a}, {a}, 0x1f, 0x1f; } mov.u32 {d}, {a};", 'i', "i"},
+    {"{ .reg .u32 tmp; shfl.bfly.b32 tmp, {a}, 0x10, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x08, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x04, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x02, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x01, 0x1f; add.u32 {a}, tmp, {a}; } mov.u32 {d}, {a};", 'i', "i"},
+    {"{ .reg .f32 tmp; .reg .u32 utemp; .reg .pred p0; mov.b32 utemp, {a}; shfl.up.b32 utemp | p0, utemp, 0x1, {b}; @p0 mov.b32 tmp, utemp; @p0 add.ftz.f32 {a}, {a}, tmp; } { .reg .u32 tmp; mov.b32 tmp, {a}; mov.b32 {d}, tmp; }", 'f', "fi"},
     {"and.pred {d}, {a}, {b};", 'p', "pp"},
     {"or.pred {d}, {a}, {b};", 'p', "pp"},
     {"not.pred {d}, {a};", 'p', "p"},
@@ -323,6 +349,7 @@ int main(int argc, char **argv)
     options.preserve_nan = device.caps().preserve_nan;
     options.float_atomic_add = device.caps().float_atomic_add;
     options.shader_clock = device.caps().shader_clock;
+    options.subgroup_shuffle = device.caps().subgroup_shuffle;
     options.no_contraction = no_contraction;
 
     const std::size_t bytes = count * 16;
@@ -344,9 +371,12 @@ int main(int argc, char **argv)
 
         CUmodule module = nullptr;
         CUfunction function = nullptr;
-        if (cuda.cuModuleLoadDataEx(&module, ptx.c_str(), 0, nullptr, nullptr) != 0 ||
+        char jit_log[1024] = "";
+        int jit_options[] = {5 /* CU_JIT_ERROR_LOG_BUFFER */, 6 /* CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES */};
+        void *jit_values[] = {jit_log, reinterpret_cast<void *>(std::uintptr_t{sizeof(jit_log)})};
+        if (cuda.cuModuleLoadDataEx(&module, ptx.c_str(), 2, jit_options, jit_values) != 0 ||
             cuda.cuModuleGetFunction(&function, module, "k") != 0) {
-            std::printf("%-40s native JIT failed\n", v.text);
+            std::printf("%-40s native JIT failed: %s\n", v.text, jit_log);
             ++failed_variants;
             continue;
         }

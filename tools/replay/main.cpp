@@ -190,6 +190,7 @@ int main(int argc, char **argv)
     options.int64 = caps.int64;
     options.float_atomic_add = caps.float_atomic_add;
     options.shader_clock = caps.shader_clock;
+    options.subgroup_shuffle = caps.subgroup_shuffle;
     options.heap_window_shift = caps.heap_window_shift;
     options.heap_windows = caps.heap_windows;
     options.no_contraction = no_contraction;

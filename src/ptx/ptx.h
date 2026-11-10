@@ -3,7 +3,7 @@
 // permissive about which instructions appear: semantic checking happens when
 // an entry is compiled, so unsupported instructions in unlaunched kernels do
 // not prevent a module from loading. Unknown syntax (calls, body-level
-// .param, dual-destination setp) still fails the whole module.
+// .param) still fails the whole module.
 #pragma once
 
 #include <cstdint>
@@ -52,6 +52,7 @@ struct Instruction {
     std::vector<std::string> mods; // modifiers without dots, e.g. {"global","v4","f32"}
     std::string guard;             // guard predicate register, empty if none
     bool guard_negated = false;
+    std::string pred_dest;         // second destination of "d|p", empty if none
     std::vector<Operand> operands;
     int line = 0;
 

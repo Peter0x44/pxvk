@@ -31,6 +31,7 @@ struct Capabilities {
     // PXVK_NO_FLOAT_ATOMICS).
     bool float_atomic_add = false;
     bool shader_clock = false; // VK_KHR_shader_clock subgroup clock (enabled)
+    bool subgroup_shuffle = false; // VK_SUBGROUP_FEATURE_SHUFFLE_BIT in compute
     std::uint32_t max_workgroup_subgroups = 0; // with subgroup_control, at the required size of 32
     std::uint32_t min_subgroup_size = 0; // smallest size compute may run with (no size control)
     // Compute may run with subgroups narrower than a CUDA warp and cannot be

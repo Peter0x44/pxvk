@@ -33,8 +33,10 @@ passes `spirv-val`; it does not mean the results were compared with native.
 | **2.8.0** | 17 modules | **validated**: bit-exact replays, samples pixel-identical, Mirror's Edge runs | – |
 | 2.8.1, 2.8.3 (two builds) | 17–18 modules | compiles | – |
 | 2.8.4 (eight builds, 2.8.4.9 – 2.8.4.12) | 17 modules | compiles (float atomic add, new in 2.8.4 for the GPU cloth normal kernels `PxgCudaDeformable(Uber)PreCalNormals`, is supported); **FluidMark validated** (bit-exact replays; it does not launch the cloth normal kernels) | – |
-| PhysX 3.3 x86 (`PhysX3Gpu_x86` 3.3.0.2, beside APEX Particles and Turbulence) | 5 modules, PTX 5.0 | 2 modules fail to parse | dual-destination `setp`; otherwise untested |
-| GRB x86 (`GRB_1_x86`, GPU rigid bodies) | 22 modules | most fail | texture objects and more |
+| PhysX 3.3 x86 (`PhysX3Gpu_x86` 3.3.0.2, beside APEX Particles and Turbulence) | 5 modules, PTX 5.0 | 50 of 51 kernels compile; never run | `simulateCloths` has irreducible control flow |
+| APEX Particles x86 | 20 modules | 65 of 66 kernels compile; never run | one module fails to parse (`.surfref`, `IOFX_surfRefOutput0`); one kernel uses `.f64` |
+| APEX Turbulence x86 | 9 modules | 38 of 45 kernels compile; never run | 7 kernels use `.f64` |
+| GRB x86 (`GRB_1_x86`, GPU rigid bodies) | 22 modules | 153 of 222 kernels compile; never run | texture objects (65 kernels), `vote.ballot`, `bfind`, `.f64` |
 | 64-bit: `PhysXCore64` 2.8.3, `PhysX3Gpu_x64` 3.3.1.4 | 64-bit pointers | later (charter stage 4) | a 64-bit pxvk |
 
 The whole 2.7/2.8 family compiles: all 17 GPU runtimes, 1,824 kernels,

@@ -83,7 +83,7 @@ public:
         collect_symbols();
         layout_shared_and_local();
         decide_float_mode();
-        if (!native_ftz_) analyze_flushed();
+        if (emulate_ftz_) analyze_flushed();
         analyze_provenance();
         if (!options_.no_contraction) plan_contractions();
 
@@ -252,6 +252,7 @@ private:
             if (!s.inst.has("ftz")) all_ftz = false;
         }
         native_ftz_ = options_.native_ftz && any_float && all_ftz;
+        emulate_ftz_ = !native_ftz_ && !options_.no_ftz_emulation;
     }
 
     // Emulated .ftz flushes every input and output. Most inputs are outputs
@@ -335,7 +336,7 @@ private:
     {
         auto dead = [&](const Instruction &in) {
             static const std::set<std::string> effects = {"st", "red", "atom", "bar", "membar", "bra",
-                                                          "call", "ret", "exit", "trap", "brkpt"};
+                                                          "call", "ret", "exit", "trap", "brkpt", "shfl"};
             if (effects.count(in.op) || in.operands.empty() || in.operands[0].kind != Operand::Kind::reg) return false;
             const auto found = uses.find(in.operands[0].name);
             return found == uses.end() || found->second.empty();
@@ -570,6 +571,7 @@ private:
         for (const Statement &s : f_.body) {
             if (s.is_label) continue;
             if (!s.inst.guard.empty()) used.insert(s.inst.guard);
+            if (!s.inst.pred_dest.empty()) used.insert(s.inst.pred_dest);
             std::function<void(const Operand &)> visit = [&](const Operand &o) {
                 if (o.kind == Operand::Kind::reg ||
                     (o.kind == Operand::Kind::address && o.base == Operand::Base::reg))
@@ -687,6 +689,17 @@ private:
         if (found != builtins_.end()) return found->second;
         const std::uint32_t v3 = b_.t_vec(b_.t_u32(), 3);
         const std::uint32_t var = b_.global_variable(b_.t_ptr(SpvStorageClassInput, v3), SpvStorageClassInput);
+        b_.decorate(var, SpvDecorationBuiltIn, {static_cast<std::uint32_t>(builtin)});
+        b_.mark_input(var);
+        builtins_[builtin] = var;
+        return var;
+    }
+
+    std::uint32_t builtin_scalar(SpvBuiltIn builtin)
+    {
+        auto found = builtins_.find(builtin);
+        if (found != builtins_.end()) return found->second;
+        const std::uint32_t var = b_.global_variable(b_.t_ptr(SpvStorageClassInput, b_.t_u32()), SpvStorageClassInput);
         b_.decorate(var, SpvDecorationBuiltIn, {static_cast<std::uint32_t>(builtin)});
         b_.mark_input(var);
         builtins_[builtin] = var;
@@ -1382,12 +1395,12 @@ private:
     std::uint32_t fin(const Instruction &in, std::size_t index)
     {
         const std::uint32_t v = operand(in.operands[index], Type{'f', 32}, in.line);
-        return in.has("ftz") && !native_ftz_ && !flush_safe(in.operands[index]) ? flush(v) : v;
+        return in.has("ftz") && emulate_ftz_ && !flush_safe(in.operands[index]) ? flush(v) : v;
     }
 
     void fout(const Instruction &in, std::uint32_t value)
     {
-        if (in.has("ftz") && !native_ftz_) value = flush(value);
+        if (in.has("ftz") && emulate_ftz_) value = flush(value);
         write(in.operands[0], value, Type{'f', 32}, in.line);
     }
 
@@ -1535,6 +1548,49 @@ private:
         return b_.value(SpvOpSelect, ty, {too_far, zero, shifted});
     }
 
+    // shfl.mode.b32 d[|p], a, b, c: d is a from another lane of the warp, or
+    // this lane's own a if that lane is out of range (then p is false).
+    // b[4:0] is the offset or index; c[12:8] masks the lane down to its
+    // group's first lane, and c[4:0] outside that mask is the bound within
+    // the group. Warps are subgroups, so this is a subgroup shuffle.
+    void lower_shfl(const Instruction &in)
+    {
+        const int line = in.line;
+        if (!in.has("b32") || in.operands.size() != 4) throw Error("unsupported " + in.text(), line);
+        if (options_.emulate_warps) throw Error("shfl needs subgroups of 32 lanes", line);
+        if (!options_.subgroup_shuffle) throw Error("shfl needs subgroup shuffles", line);
+        info_.warp_synchronous = true;
+        b_.capability(SpvCapabilityGroupNonUniform);
+        b_.capability(SpvCapabilityGroupNonUniformShuffle);
+        const std::uint32_t u32 = b_.t_u32(), boolean = b_.t_bool();
+        const Type b32{'b', 32};
+        auto masked = [&](std::uint32_t v) { return b_.value(SpvOpBitwiseAnd, u32, {v, b_.u32(31)}); };
+        auto bit_or = [&](std::uint32_t x, std::uint32_t y) { return b_.value(SpvOpBitwiseOr, u32, {x, y}); };
+        auto bit_and = [&](std::uint32_t x, std::uint32_t y) { return b_.value(SpvOpBitwiseAnd, u32, {x, y}); };
+        const std::uint32_t value = operand(in.operands[1], b32, line);
+        const std::uint32_t b = masked(operand(in.operands[2], b32, line));
+        const std::uint32_t c = operand(in.operands[3], b32, line);
+        const std::uint32_t lane = b_.value(SpvOpLoad, u32, {builtin_scalar(SpvBuiltInSubgroupLocalInvocationId)});
+        const std::uint32_t group = masked(b_.value(SpvOpShiftRightLogical, u32, {c, b_.u32(8)}));
+        const std::uint32_t min_lane = bit_and(lane, group);
+        const std::uint32_t not_group = b_.value(SpvOpNot, u32, {group});
+        const std::uint32_t bound = bit_or(min_lane, bit_and(masked(c), not_group));
+        std::uint32_t target = 0, valid = 0;
+        if (in.has("up")) {
+            target = b_.value(SpvOpISub, u32, {lane, b});
+            valid = b_.value(SpvOpSGreaterThanEqual, boolean, {target, bound});
+        } else {
+            if (in.has("down")) target = b_.value(SpvOpIAdd, u32, {lane, b});
+            else if (in.has("bfly")) target = b_.value(SpvOpBitwiseXor, u32, {lane, b});
+            else if (in.has("idx")) target = bit_or(min_lane, bit_and(b, not_group));
+            else throw Error("unsupported " + in.text(), line);
+            valid = b_.value(SpvOpSLessThanEqual, boolean, {target, bound});
+        }
+        const std::uint32_t id = b_.value(SpvOpSelect, u32, {valid, target, lane});
+        write(in.operands[0], b_.value(SpvOpGroupNonUniformShuffle, u32, {b_.u32(SpvScopeSubgroup), value, id}), b32, line);
+        if (!in.pred_dest.empty()) write_reg(in.pred_dest, valid, boolean, line);
+    }
+
     // ---- instruction dispatch -------------------------------------------------
     void lower_instruction(const Instruction &in)
     {
@@ -1569,6 +1625,8 @@ private:
     {
         const std::string &op = in.op;
         const int line = in.line;
+        if (!in.pred_dest.empty() && op != "shfl") throw Error("second destination on " + in.text(), line);
+        if (op == "shfl") return lower_shfl(in);
         if (op == "ld") return lower_load(in);
         if (op == "st") return lower_store(in);
         if (op == "tex") return lower_texture(in);
@@ -1798,9 +1856,10 @@ private:
                 throw Error("atomics are only supported on global and shared memory", in.line);
             const Address target = address(in.operands[addr_index], in.line);
             if (space == Space::global && options_.float_atomic_add && !split_heap()) {
-                // Native float atomic add (VK_EXT_shader_atomic_float). Like
-                // NVIDIA's global form it flushes subnormals on NVIDIA; the
-                // addend is flushed here too (verified with pxvk-opcheck).
+                // Native float atomic add (VK_EXT_shader_atomic_float). The
+                // addend is flushed here. NVIDIA's also flushes the value in
+                // memory like the native driver; Intel's keeps it (pxvk-opcheck,
+                // docs/architecture.md).
                 b_.extension("SPV_EXT_shader_atomic_float_add");
                 b_.capability(SpvCapabilityAtomicFloat32AddEXT);
                 const std::uint32_t addend = flush(operand(in.operands[addr_index + 1], Type{'f', 32}, in.line));
@@ -1907,7 +1966,7 @@ private:
             if (m == "rn" || m == "rz" || m == "rm" || m == "rp" || m == "rni" || m == "rzi" || m == "rmi" || m == "rpi")
                 rounding = m;
         if (in.has("sat")) throw Error("cvt.sat is unsupported", line);
-        const bool ftz = in.has("ftz") && !native_ftz_;
+        const bool ftz = in.has("ftz") && emulate_ftz_;
         if (dst.kind == 'f' && src.kind == 'f') {
             if (dst.bits != 32 || src.bits != 32) throw Error("only f32 cvt is supported", line);
             std::uint32_t v = operand(in.operands[1], src, line);
@@ -2311,6 +2370,7 @@ private:
     KernelInfo info_;
     std::uint32_t main_ = 0;
     bool native_ftz_ = false;
+    bool emulate_ftz_ = false; // .ftz flushes are emitted per operation
     std::uint32_t predicate_ = 0; // emulate_warps: condition of the arm being emitted predicated
     std::set<std::string> flushed_; // registers that never hold a denormal (emulated ftz)
     std::map<std::string, ParamSlot> params_;

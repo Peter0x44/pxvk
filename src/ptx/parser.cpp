@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstring>
+#include <map>
 
 namespace pxvk::ptx {
 
@@ -546,10 +547,12 @@ private:
             if (at_end()) fail("unterminated function body");
             if (accept("{")) {
                 ++depth;
+                scopes_.emplace_back();
                 continue;
             }
             if (accept("}")) {
                 --depth;
+                if (depth > 0) scopes_.pop_back();
                 continue;
             }
             const Token &tok = peek();
@@ -576,6 +579,7 @@ private:
             }
             Statement s;
             s.inst = instruction();
+            resolve_scoped(s.inst);
             f.body.push_back(std::move(s));
         }
     }
@@ -593,9 +597,49 @@ private:
                 r.count = static_cast<std::uint32_t>(number_value());
                 expect(">");
             }
+            if (!scopes_.empty() && r.count == 0) {
+                // Registers of a nested block ("{ .reg .u32 tmp; ... }", from
+                // inline assembly) are private to it, and the same name may
+                // have another type elsewhere: give each its own register.
+                const std::string unique = "%" + r.name + "$" + std::to_string(++scoped_registers_);
+                scopes_.back()[r.name] = unique;
+                r.name = unique;
+            }
             f.regs.push_back(std::move(r));
         } while (accept(","));
         expect(";");
+    }
+
+    // The register a name in a nested block refers to, empty if not scoped.
+    std::string scoped_name(const std::string &name) const
+    {
+        for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope)
+            if (const auto found = scope->find(name); found != scope->end()) return found->second;
+        return {};
+    }
+
+    void resolve_scoped(Operand &o) const
+    {
+        if (o.kind == Operand::Kind::reg || o.kind == Operand::Kind::symbol) {
+            if (const std::string unique = scoped_name(o.name); !unique.empty()) {
+                o.name = unique;
+                o.kind = Operand::Kind::reg;
+            }
+        } else if (o.kind == Operand::Kind::address && o.base != Operand::Base::none) {
+            if (const std::string unique = scoped_name(o.name); !unique.empty()) {
+                o.name = unique;
+                o.base = Operand::Base::reg;
+            }
+        }
+        for (Operand &e : o.elems) resolve_scoped(e);
+    }
+
+    void resolve_scoped(Instruction &in) const
+    {
+        if (scopes_.empty()) return;
+        if (const std::string unique = scoped_name(in.guard); !unique.empty()) in.guard = unique;
+        if (const std::string unique = scoped_name(in.pred_dest); !unique.empty()) in.pred_dest = unique;
+        for (Operand &o : in.operands) resolve_scoped(o);
     }
 
     Instruction instruction()
@@ -611,9 +655,9 @@ private:
             in.mods.push_back(next().text);
         }
         if (!accept(";")) {
-            do {
-                in.operands.push_back(operand());
-            } while (accept(","));
+            in.operands.push_back(operand());
+            if (accept("|")) in.pred_dest = expect_kind(Token::Kind::ident).text;
+            while (accept(",")) in.operands.push_back(operand());
             expect(";");
         }
         return in;
@@ -714,6 +758,8 @@ private:
 
     std::vector<Token> t_;
     std::size_t pos_ = 0;
+    std::vector<std::map<std::string, std::string>> scopes_; // nested blocks: name -> unique register
+    std::uint32_t scoped_registers_ = 0;
 };
 
 } // namespace

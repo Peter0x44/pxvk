@@ -23,8 +23,10 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
   instructions appear; checks happen when an entry is compiled, so
   unsupported instructions in unlaunched kernels do not block module
   loading. Syntax the parser does not know (function calls with
-  parenthesised arguments, body-level `.param`, dual-destination `setp`)
-  still fails the whole module; classic PhysX PTX uses none of it.
+  parenthesised arguments, body-level `.param`) still fails the whole
+  module; classic PhysX PTX uses none of it. Registers declared in a nested
+  block (`{ .reg .u32 tmp; ... }`, from inline assembly in PhysX 3, APEX and
+  GRB) are private to it, so the parser gives each its own unique name.
 - `cfg.cpp` builds basic blocks and structurizes the CFG with the dominator
   tree algorithm from Ramsey's "Beyond Relooper": loop headers become loop
   constructs, merge nodes become the continuation of a block construct.
@@ -56,7 +58,14 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     flushing results and inputs. A dataflow pass skips input flushes for
     registers that can never hold a denormal (results of other `.ftz`
     instructions, int-to-float conversions, normal immediates, and moves or
-    selects of those), which removes most of them.
+    selects of those), which removes most of them. `PXVK_NO_FTZ_EMULATION`
+    skips the emulation for speed at the cost of exactness (FluidMark 720 on
+    the RTX 5070: 521 against 475 steps/s, mean of three runs each). Requesting the
+    execution mode anyway on NVIDIA (unsupported, so undefined) flushes
+    add/sub/mul/fma but not abs, neg, min, max or floor (opcheck, RTX 5070),
+    so it is not used. NVIDIA's D3D12 driver honours `-denorm ftz` for all of
+    these except neg; the hardware can flush, only the Vulkan driver does not
+    expose it.
   - Memory operands keep their constant offset separate: an aligned access
     indexes as `(base >> k) + offset / size`, so drivers share the base
     computation between neighbouring accesses.
@@ -64,6 +73,12 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     barriers and the pipeline requests full 32-wide subgroups. Devices that
     cannot guarantee subgroups of at least 32 lanes use warp emulation
     instead (below).
+  - `shfl` (`.up`, `.down`, `.bfly`, `.idx`, with the optional `d|p`
+    predicate destination) is `OpGroupNonUniformShuffle` in a 32-wide
+    subgroup. PTX lanes are subgroup invocation ids, which relies on them
+    following `%tid.x` modulo 32; opcheck confirms that on NVIDIA and Intel
+    (AMD not yet checked). No PhysX 2.x kernel uses `shfl`. Warp emulation
+    does not cover it: such kernels fail to compile on those devices.
 
 ### Fallbacks for limited devices
 
@@ -228,9 +243,9 @@ Required: Vulkan 1.1 with a compute queue, `robustBufferAccess` and
 that covers it or non-uniform storage-buffer descriptor indexing for the
 split heap. No buffer device address or 8/16-bit storage is used. Float
 atomics are optional: where the device has `VK_EXT_shader_atomic_float`'s
-`shaderBufferFloat32AtomicAdd` (NVIDIA, lavapipe), global float atomic adds
-use it; otherwise, and always in shared memory, they are a compare-and-swap
-loop on 32-bit integer atomics. Native shared float atomics would need
+`shaderBufferFloat32AtomicAdd` (NVIDIA, newer Intel iGPUs, lavapipe), global
+float atomic adds use it; otherwise, and always in shared memory, they are a
+compare-and-swap loop on 32-bit integer atomics. Native shared float atomics would need
 `VK_KHR_workgroup_memory_explicit_layout` and were measured not to be worth
 it (at most 1 µs per cloth normal launch on the RTX 3070; `docs/testing.md`).
 
@@ -261,8 +276,14 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
 - Float atomic add (`atom`/`red .add.f32`) rounds to nearest and, in
   global memory, flushes subnormals as NVIDIA does, both with the native
   Vulkan float atomic (where available, global memory only) and with the
-  compare-and-swap loop (opcheck exact on NVIDIA, Intel and lavapipe, with
-  `PXVK_NO_FLOAT_ATOMICS` forcing the loop). In shared memory NVIDIA keeps subnormal inputs and pxvk flushes
+  compare-and-swap loop (opcheck exact on NVIDIA and Intel, with
+  `PXVK_NO_FLOAT_ATOMICS` forcing the loop). The exception is the native
+  atomic on newer Intel iGPUs: it keeps a subnormal already in memory, where
+  the native driver flushes it, so one opcheck variant differs there. This is
+  accepted: only a stored value of about 10^-38 is affected, and the next
+  `.ftz` instruction reading it flushes it anyway. The `DenormFlushToZero`
+  execution mode pxvk sets on Intel does not reach the atomic. AMD's atomic,
+  if its driver has one, is unchecked. In shared memory NVIDIA keeps subnormal inputs and pxvk flushes
   them (NVIDIA's Vulkan driver cannot preserve subnormals). PhysX 2.8.4's
   cloth normal kernels start shared sums at 0 and add only flushed values,
   and opcheck shows that pattern bit-exact; they could differ only if a

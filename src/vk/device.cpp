@@ -625,6 +625,8 @@ bool Device::initialize(int index, std::string &error)
     c.float_atomic_add = atomic_float_ext && atomic_float_features.shaderBufferFloat32AtomicAdd &&
                          !env_switch("PXVK_NO_FLOAT_ATOMICS");
     c.shader_clock = clock_ext && clock_features.shaderSubgroupClock;
+    c.subgroup_shuffle = (subgroup_basic.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+                         (subgroup_basic.supportedOperations & VK_SUBGROUP_FEATURE_SHUFFLE_BIT);
     c.int64 = features2.features.shaderInt64;
     c.max_workgroup_subgroups = subgroup_ext ? subgroup_props.maxComputeWorkgroupSubgroups : 0;
     c.subgroup_control = subgroup_ext && subgroup_features.subgroupSizeControl &&

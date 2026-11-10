@@ -43,6 +43,10 @@ struct CompileOptions {
     // fp32; kernels whose float arithmetic is entirely .ftz then use the
     // native execution mode instead of per-operation emulation.
     bool native_ftz = false;
+    // Ignore .ftz where it would be emulated (PXVK_NO_FTZ_EMULATION): faster
+    // on drivers without native flush-to-zero (NVIDIA), but subnormals then
+    // survive where the native driver flushes them, so results are not exact.
+    bool no_ftz_emulation = false;
     // Device supports the SignedZeroInfNanPreserve execution mode for fp32.
     // Without it Vulkan lets drivers assume NaN/Inf never occur, which breaks
     // PTX unordered comparisons (setp.ltu etc.) on some drivers.
@@ -68,6 +72,9 @@ struct CompileOptions {
     // global atom/red.add.f32 use OpAtomicFAddEXT instead of a compare-and-swap
     // loop (not with a split heap; shared memory always uses the loop).
     bool float_atomic_add = false;
+    // Device supports subgroup shuffles (VK_SUBGROUP_FEATURE_SHUFFLE_BIT):
+    // kernels with shfl fail to compile without them.
+    bool subgroup_shuffle = true;
     // Device supports VK_KHR_shader_clock's shaderSubgroupClock: %clock reads
     // it (otherwise %clock is 0).
     bool shader_clock = false;

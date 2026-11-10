@@ -100,6 +100,17 @@ laptop:
 | Intel UHD iGPU, pxvk | 132 |
 | CPU PhysX (i7-11800H, 16 threads) | 39 |
 
+The same preset on the RTX 5070 laptop (November 2026, NVIDIA driver
+R621.01; three runs on the 5070, one each otherwise). Native CUDA is not an
+option there: the driver has no 32-bit CUDA for FluidMark, so without pxvk
+it finds no PhysX GPU and uses CPU PhysX.
+
+| PhysX on | Simulation steps/s |
+|---|---|
+| RTX 5070 Laptop GPU, pxvk | 473–476 |
+| Intel Graphics iGPU (Core Ultra 9 275HX), pxvk | 266 |
+| CPU PhysX (Core Ultra 9 275HX, 24 threads) | 70 |
+
 On the 3070 the SampleCloth scenes run as fast as native CUDA or faster. On
 the Radeon 8060S the heavy cloth scenes run 2–3.6× faster than CPU PhysX,
 and Mirror's Edge holds its 62 fps cap.
