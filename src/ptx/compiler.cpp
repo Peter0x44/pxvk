@@ -249,10 +249,18 @@ private:
                 if (m == "f32") is_float = true;
             if (!is_float) continue;
             any_float = true;
+            // Integer-to-float conversions never see or produce a denormal,
+            // so the flush mode cannot change them; PhysX mixes them into
+            // otherwise all-.ftz kernels.
+            const auto &mods = s.inst.mods;
+            if (s.inst.op == "cvt" && mods.size() >= 2 && mods[mods.size() - 2] == "f32" &&
+                (mods.back()[0] == 's' || mods.back()[0] == 'u'))
+                continue;
             if (!s.inst.has("ftz")) all_ftz = false;
         }
         native_ftz_ = options_.native_ftz && any_float && all_ftz;
         emulate_ftz_ = !native_ftz_ && !options_.no_ftz_emulation;
+        preserve_denorm_ = !native_ftz_ && any_float && options_.preserve_denorm;
     }
 
     // Emulated .ftz flushes every input and output. Most inputs are outputs
@@ -2355,6 +2363,11 @@ private:
             b_.capability(SpvCapabilityDenormFlushToZero);
             b_.execution_mode(main_, SpvExecutionModeDenormFlushToZero, {32});
         }
+        if (preserve_denorm_) {
+            b_.extension("SPV_KHR_float_controls");
+            b_.capability(SpvCapabilityDenormPreserve);
+            b_.execution_mode(main_, SpvExecutionModeDenormPreserve, {32});
+        }
         if (options_.preserve_nan) {
             b_.extension("SPV_KHR_float_controls");
             b_.capability(SpvCapabilitySignedZeroInfNanPreserve);
@@ -2375,6 +2388,7 @@ private:
     std::uint32_t main_ = 0;
     bool native_ftz_ = false;
     bool emulate_ftz_ = false; // .ftz flushes are emitted per operation
+    bool preserve_denorm_ = false; // DenormPreserve execution mode
     std::uint32_t predicate_ = 0; // emulate_warps: condition of the arm being emitted predicated
     std::set<std::string> flushed_; // registers that never hold a denormal (emulated ftz)
     std::map<std::string, ParamSlot> params_;

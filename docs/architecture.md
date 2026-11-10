@@ -52,20 +52,27 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     operand scaling for |b| > 2^126; `min`/`max` use `NMin`/`NMax`; `cvt`
     to integer saturates and maps NaN to 0; `SignedZeroInfNanPreserve` is
     requested so unordered comparisons work on all drivers.
-  - `.ftz` uses the Vulkan float-controls execution mode where available
-    (Intel, AMD). NVIDIA's Vulkan driver supports neither flushing nor preserving
-    fp32 denormals, and in practice preserves them, so `.ftz` is emulated by
-    flushing results and inputs. A dataflow pass skips input flushes for
+  - Denormals follow PTX per instruction: `.ftz` flushes them, everything
+    else keeps them. A kernel whose float instructions are all `.ftz`
+    (integer-to-float conversions do not count; they never see a denormal)
+    uses the Vulkan `DenormFlushToZero` execution mode where available
+    (Intel, AMD). Every other kernel requests `DenormPreserve` where
+    available (Intel; AMD not yet checked) and emulates `.ftz` by flushing
+    results and inputs. NVIDIA's Vulkan driver supports neither mode; by
+    default it flushes add, sub, mul and fma but not abs, neg, min, max or
+    floor (opcheck, RTX 5070), so `.ftz` is emulated there and plain
+    (non-`.ftz`) arithmetic, used by APEX, flushes where CUDA keeps
+    denormals. A dataflow pass skips input flushes for
     registers that can never hold a denormal (results of other `.ftz`
     instructions, int-to-float conversions, normal immediates, and moves or
     selects of those), which removes most of them. `PXVK_NO_FTZ_EMULATION`
     skips the emulation for speed at the cost of exactness (FluidMark 720 on
-    the RTX 5070: 521 against 475 steps/s, mean of three runs each). Requesting the
-    execution mode anyway on NVIDIA (unsupported, so undefined) flushes
-    add/sub/mul/fma but not abs, neg, min, max or floor (opcheck, RTX 5070),
-    so it is not used. NVIDIA's D3D12 driver honours `-denorm ftz` for all of
-    these except neg; the hardware can flush, only the Vulkan driver does not
-    expose it.
+    the RTX 5070: 521 against 475 steps/s, mean of three runs each).
+    Requesting `DenormFlushToZero` anyway on NVIDIA (unsupported, so
+    undefined) changes nothing measurable: the same four operations flush.
+    NVIDIA's D3D12 driver honours `-denorm ftz` for all of these except neg,
+    and `-denorm preserve` for all; the hardware can do both, only the Vulkan
+    driver does not expose them.
   - Memory operands keep their constant offset separate: an aligned access
     indexes as `(base >> k) + offset / size`, so drivers share the base
     computation between neighbouring accesses.
@@ -275,6 +282,12 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
 
 - `div.rn`/`sqrt.rn` are not correctly rounded (Vulkan precision); PhysX
   does not use them.
+- On NVIDIA, f32 arithmetic without `.ftz` (`add`, `sub`, `mul`, `fma`)
+  flushes denormals where CUDA keeps them: the Vulkan driver flushes by
+  default and has no `DenormPreserve`. PhysX 2.x and 3.x use such
+  instructions only for integer-to-float conversions, which are unaffected;
+  APEX Particles and Turbulence use them throughout, so their results can
+  differ from native for values around 10^-38.
 - `%clock` reads the subgroup clock of `VK_KHR_shader_clock` and is 0 on
   devices without it. Only PhysX 2.7.5 uses it, to seed the random numbers
   of fluid force fields, which differ between runs natively too.

@@ -349,6 +349,16 @@ const Variant kVariants[] = {
     {"mul.ftz.f32 %f7, {a}, {b}; add.ftz.f32 %f6, {c}, {a}; add.ftz.f32 {d}, %f6, %f7;", 'f', "fff"},
     {"mul.ftz.f32 %f7, {a}, {b}; fma.rn.ftz.f32 %f6, {c}, {c}, {a}; add.ftz.f32 %f5, %f6, %f7; add.ftz.f32 {d}, %f5, %f7;", 'f', "fff"},
     {"mul.ftz.f32 %f7, {a}, {b}; @{c} add.ftz.f32 %f7, %f7, {b}; mov.f32 {d}, %f7;", 'f', "ffp"},
+    // f32 without .ftz keeps denormals (APEX uses only these). Exact where the
+    // driver supports DenormPreserve (Intel); NVIDIA's flushes add/mul/fma.
+    {"add.f32 {d}, {a}, {b};", 'f', "ff"},
+    {"mul.f32 {d}, {a}, {b};", 'f', "ff"},
+    {"abs.f32 {d}, {a};", 'f', "f"},
+    {"min.f32 {d}, {a}, {b};", 'f', "ff"},
+    // .ftz kernels with an integer conversion (native flush-to-zero where
+    // supported) and with a plain neg (emulated .ftz plus DenormPreserve).
+    {"cvt.rn.f32.u32 %f7, {b}; add.ftz.f32 {d}, {a}, %f7;", 'f', "fi"},
+    {"neg.f32 %f7, {b}; add.ftz.f32 {d}, {a}, %f7;", 'f', "ff"},
     // Warp shuffles (PhysX 3, APEX, GRB). Every thread has its own a, b and c,
     // so a match also shows that lanes correspond to %tid.x. Forms from the
     // runtimes' inline assembly follow: blocks with their own registers.
@@ -496,6 +506,7 @@ int main(int argc, char **argv)
     std::printf("device: %s (warp subgroup %u)\n", device.caps().name.c_str(), device.caps().warp_subgroup_size);
     pxvk::ptx::CompileOptions options;
     options.native_ftz = device.caps().native_ftz;
+    options.preserve_denorm = device.caps().preserve_denorm;
     options.preserve_nan = device.caps().preserve_nan;
     options.float_atomic_add = device.caps().float_atomic_add;
     options.shader_clock = device.caps().shader_clock;

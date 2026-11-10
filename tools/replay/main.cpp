@@ -185,6 +185,7 @@ int main(int argc, char **argv)
                 caps.float_atomic_add, static_cast<unsigned long long>(caps.max_heap_bytes >> 20));
     pxvk::ptx::CompileOptions options;
     options.native_ftz = force_native_ftz || (native_ftz && caps.native_ftz);
+    options.preserve_denorm = caps.preserve_denorm;
     options.preserve_nan = caps.preserve_nan;
     options.emulate_warps = force_emulate_warps || caps.narrow_subgroups();
     options.int64 = caps.int64;

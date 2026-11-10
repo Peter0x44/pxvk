@@ -603,6 +603,7 @@ bool Device::initialize(int index, std::string &error)
     c.subgroup_size = subgroup_basic.subgroupSize;
     c.min_subgroup_size = subgroup_ext ? subgroup_props.minSubgroupSize : subgroup_basic.subgroupSize;
     c.native_ftz = float_controls && float_props.shaderDenormFlushToZeroFloat32;
+    c.preserve_denorm = float_controls && float_props.shaderDenormPreserveFloat32;
     c.preserve_nan = float_controls && float_props.shaderSignedZeroInfNanPreserveFloat32;
 
     VkPhysicalDeviceSubgroupSizeControlFeatures subgroup_features{

@@ -47,6 +47,10 @@ struct CompileOptions {
     // on drivers without native flush-to-zero (NVIDIA), but subnormals then
     // survive where the native driver flushes them, so results are not exact.
     bool no_ftz_emulation = false;
+    // Device supports the DenormPreserve execution mode for fp32. Kernels not
+    // using native flush-to-zero request it, so float instructions without
+    // .ftz keep denormals as CUDA does (drivers may flush by default).
+    bool preserve_denorm = false;
     // Device supports the SignedZeroInfNanPreserve execution mode for fp32.
     // Without it Vulkan lets drivers assume NaN/Inf never occur, which breaks
     // PTX unordered comparisons (setp.ltu etc.) on some drivers.

@@ -24,7 +24,9 @@ names (`nvidia-32bit-physx.md`), so opcheck reports `native CUDA unavailable`
 and `check.py` skips it. Copy `pxvk-opcheck.exe` to `tmp\opcheck-native\borderlands2.exe`
 and run that copy instead. Two variants then report `native JIT failed`: driver
 621.01 cannot compile 32-bit `red.*.add.f32` for sm_120. PhysX uses only the
-`atom` forms, which do compile and have a variant of their own.
+`atom` forms, which do compile and have a variant of their own. On NVIDIA
+`add.f32` and `mul.f32` (no `.ftz`) also differ: its Vulkan driver flushes
+denormals there and cannot be told not to (`architecture.md`).
 
 Without an NVIDIA driver, `--cpu-reference` compares pxvk with a CPU
 implementation instead, for the variants that have one: `shfl`, and global

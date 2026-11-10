@@ -24,6 +24,7 @@ struct Capabilities {
     bool discrete = false;
     bool int64 = false;
     bool native_ftz = false;       // fp32 denormFlushToZero execution mode
+    bool preserve_denorm = false;  // fp32 DenormPreserve execution mode
     bool preserve_nan = false;     // fp32 SignedZeroInfNanPreserve execution mode
     bool subgroup_control = false; // can require a subgroup size of warp_subgroup_size
     // Required for warp-synchronous kernels: 32, or 64 with
