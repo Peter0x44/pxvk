@@ -214,6 +214,23 @@ Warp atomic_add_old(const std::uint32_t *records)
     return word(records, 0);
 }
 
+// Two blocks with the same loop label: a + 3 + 5.
+Warp scoped_label_loops(const std::uint32_t *records)
+{
+    Warp a = word(records, 0);
+    for (std::uint32_t &x : a) x += 8;
+    return a;
+}
+
+// A branch from a block to a label outside it: a + 1 unless b is 0.
+Warp branch_out_of_block(const std::uint32_t *records)
+{
+    Warp a = word(records, 0);
+    const Warp b = word(records, 1);
+    for (int lane = 0; lane < 32; ++lane) a[lane] += b[lane] != 0;
+    return a;
+}
+
 // ---- test generation ----------------------------------------------------------
 // Operand classes: f = f32, i = 32-bit int, h = 16-bit int, b = 8-bit int,
 // l = 64-bit int, p = predicate.
@@ -382,6 +399,10 @@ const Variant kVariants[] = {
     {"{ .reg .u32 tmp; .reg .pred p; shfl.up.b32 tmp|p, {a}, 0x1, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x2, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x4, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x8, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x10, 0x0; @p add.u32 {a}, tmp, {a}; shfl.idx.b32 {a}, {a}, 0x1f, 0x1f; } mov.u32 {d}, {a};", 'i', "i", shfl_scan},
     {"{ .reg .u32 tmp; shfl.bfly.b32 tmp, {a}, 0x10, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x08, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x04, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x02, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x01, 0x1f; add.u32 {a}, tmp, {a}; } mov.u32 {d}, {a};", 'i', "i", shfl_reduce},
     {"{ .reg .f32 tmp; .reg .u32 utemp; .reg .pred p0; mov.b32 utemp, {a}; shfl.up.b32 utemp | p0, utemp, 0x1, {b}; @p0 mov.b32 tmp, utemp; @p0 add.ftz.f32 {a}, {a}, tmp; } { .reg .u32 tmp; mov.b32 tmp, {a}; mov.b32 {d}, tmp; }", 'f', "fi", shfl_add_previous},
+    // Labels in a block are private to it too (PhysX 3.3's simulateCloths
+    // repeats an inline-assembly block, labels and all).
+    {"{ .reg .u32 n; .reg .pred q; mov.u32 n, 0; Lp: add.u32 n, n, 1; setp.lt.u32 q, n, 3; @q bra Lp; add.u32 {a}, {a}, n; } { .reg .u32 n; .reg .pred q; mov.u32 n, 0; Lp: add.u32 n, n, 1; setp.lt.u32 q, n, 5; @q bra Lp; add.u32 {a}, {a}, n; } mov.u32 {d}, {a};", 'i', "i", scoped_label_loops},
+    {"{ .reg .pred q; setp.eq.u32 q, {b}, 0; @q bra Skip; add.u32 {a}, {a}, 1; } Skip: mov.u32 {d}, {a};", 'i', "ii", branch_out_of_block},
     {"and.pred {d}, {a}, {b};", 'p', "pp"},
     {"or.pred {d}, {a}, {b};", 'p', "pp"},
     {"not.pred {d}, {a};", 'p', "p"},

@@ -548,11 +548,15 @@ private:
             if (accept("{")) {
                 ++depth;
                 scopes_.emplace_back();
+                label_scopes_.emplace_back();
                 continue;
             }
             if (accept("}")) {
                 --depth;
-                if (depth > 0) scopes_.pop_back();
+                if (depth > 0) {
+                    close_label_scope(f);
+                    scopes_.pop_back();
+                }
                 continue;
             }
             const Token &tok = peek();
@@ -574,13 +578,41 @@ private:
                 s.is_label = true;
                 s.label = next().text;
                 next();
+                if (!label_scopes_.empty()) {
+                    // Labels of a nested block are private to it, like its
+                    // registers: inline assembly used twice in one function
+                    // repeats the same label names.
+                    const std::string unique = s.label + "$" + std::to_string(++scoped_labels_);
+                    label_scopes_.back().defined[s.label] = unique;
+                    s.label = unique;
+                }
                 f.body.push_back(std::move(s));
                 continue;
             }
             Statement s;
             s.inst = instruction();
             resolve_scoped(s.inst);
+            // A branch may name a label later in its block: resolve it when
+            // the block closes.
+            if (!label_scopes_.empty() && s.inst.op == "bra" && !s.inst.operands.empty() &&
+                s.inst.operands[0].kind == Operand::Kind::symbol)
+                label_scopes_.back().branches.push_back(f.body.size());
             f.body.push_back(std::move(s));
+        }
+    }
+
+    // At the end of a nested block, branches to its own labels get their
+    // unique names; the rest are left to the enclosing block.
+    void close_label_scope(Function &f)
+    {
+        LabelScope scope = std::move(label_scopes_.back());
+        label_scopes_.pop_back();
+        for (const std::size_t index : scope.branches) {
+            Operand &target = f.body[index].inst.operands[0];
+            if (const auto found = scope.defined.find(target.name); found != scope.defined.end())
+                target.name = found->second;
+            else if (!label_scopes_.empty())
+                label_scopes_.back().branches.push_back(index);
         }
     }
 
@@ -760,6 +792,12 @@ private:
     std::size_t pos_ = 0;
     std::vector<std::map<std::string, std::string>> scopes_; // nested blocks: name -> unique register
     std::uint32_t scoped_registers_ = 0;
+    struct LabelScope {
+        std::map<std::string, std::string> defined; // label -> unique label
+        std::vector<std::size_t> branches;          // body indices of unresolved bra
+    };
+    std::vector<LabelScope> label_scopes_; // parallel to scopes_
+    std::uint32_t scoped_labels_ = 0;
 };
 
 } // namespace

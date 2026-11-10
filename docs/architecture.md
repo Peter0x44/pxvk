@@ -24,9 +24,11 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
   unsupported instructions in unlaunched kernels do not block module
   loading. Syntax the parser does not know (function calls with
   parenthesised arguments, body-level `.param`) still fails the whole
-  module; classic PhysX PTX uses none of it. Registers declared in a nested
-  block (`{ .reg .u32 tmp; ... }`, from inline assembly in PhysX 3, APEX and
-  GRB) are private to it, so the parser gives each its own unique name.
+  module; classic PhysX PTX uses none of it. Registers and labels declared
+  in a nested block (`{ .reg .u32 tmp; ... }`, from inline assembly in
+  PhysX 3, APEX and GRB) are private to it, so the parser gives each its own
+  unique name; PhysX 3.3's `simulateCloths` repeats one such block, labels
+  and all.
 - `cfg.cpp` builds basic blocks and structurizes the CFG with the dominator
   tree algorithm from Ramsey's "Beyond Relooper": loop headers become loop
   constructs, merge nodes become the continuation of a block construct.
