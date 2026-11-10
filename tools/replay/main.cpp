@@ -180,9 +180,9 @@ int main(int argc, char **argv)
         return 2;
     }
     const auto &caps = device.caps();
-    std::printf("device: %s (subgroup %u, native ftz %d, subgroup control %d, float atomics %d, max heap %llu MiB)\n",
-                caps.name.c_str(), caps.subgroup_size, caps.native_ftz, caps.subgroup_control, caps.float_atomic_add,
-                static_cast<unsigned long long>(caps.max_heap_bytes >> 20));
+    std::printf("device: %s (subgroup %u, native ftz %d, subgroup control %d, warp subgroup %u, float atomics %d, max heap %llu MiB)\n",
+                caps.name.c_str(), caps.subgroup_size, caps.native_ftz, caps.subgroup_control, caps.warp_subgroup_size,
+                caps.float_atomic_add, static_cast<unsigned long long>(caps.max_heap_bytes >> 20));
     pxvk::ptx::CompileOptions options;
     options.native_ftz = force_native_ftz || (native_ftz && caps.native_ftz);
     options.preserve_nan = caps.preserve_nan;

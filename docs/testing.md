@@ -26,6 +26,26 @@ and run that copy instead. Two variants then report `native JIT failed`: driver
 621.01 cannot compile 32-bit `red.*.add.f32` for sm_120. PhysX uses only the
 `atom` forms, which do compile and have a variant of their own.
 
+Without an NVIDIA driver, `--cpu-reference` compares pxvk with a CPU
+implementation instead, for the variants that have one: `shfl`, and global
+float atomic add, with the semantics established on NVIDIA. `--block N`
+(a multiple of 32, default 256) sets the block size. `PXVK_SUBGROUP_SIZE=64`
+runs warp-synchronous kernels in 64-wide subgroups on devices that offer
+them (RDNA), two warps per subgroup as on AMD GCN:
+
+```powershell
+build\x86\pxvk-opcheck.exe --device radeon --cpu-reference
+$env:PXVK_SUBGROUP_SIZE = "64"
+build\x86\pxvk-opcheck.exe --device radeon --cpu-reference --block 96
+```
+
+On the Radeon 8060S (driver 26.10.1, November 2026) all 23 such variants
+are exact with 32- and 64-wide subgroups and blocks of 32, 96 and 256.
+Before `shfl` took the lane as the subgroup id modulo 32, 19 of its 20
+variants differed with 64-wide subgroups (blocks of 96 and 256). The
+Radeon's native float atomic flushes a subnormal already in memory, as
+NVIDIA does (Intel keeps it).
+
 ## 2. Real launches: capture and replay
 
 `tools/nvcuda-trace` is a native proxy driver with its own CMake project. It
@@ -152,13 +172,16 @@ machine are `test-output/bench/capture-all/trace/SampleCloth.exe_*` (all nine
 cloth scenes) and `test-output/bench/fluid-capture/trace/SampleParticleFluid.exe_*`.
 
 Expected results on the reference laptop, and on the Radeon 8060S laptop
-(driver 26.9.1, no NVIDIA driver):
+(drivers 26.9.1 and 26.10.1, no NVIDIA driver):
 
 | Captures | RTX 3070 | Intel UHD | Radeon 8060S |
 |---|---|---|---|
 | SampleCloth (90 launches) | 88 EXACT, 2 ok | 28 EXACT, 55 ok, 7 tolerated BAD | the same as Intel |
 | SampleParticleFluid (112 launches) | 112 EXACT | 104 EXACT, 8 ok | the same as Intel |
 | FluidMark 1.5.4 (82 launches) | 82 EXACT | 63 EXACT, 19 ok | the same as Intel |
+
+With `PXVK_SUBGROUP_SIZE=64` the Radeon gives the same results, and all
+67 warp-synchronous launches (`radixSortBlocks` and `scan4`) stay EXACT.
 
 The tolerated BAD launches are all `KernelDeformableUberSolver` (scenes 1,
 3, 4 and 9). A launch is BAD when any word is "wrong": over 4 ULP and over

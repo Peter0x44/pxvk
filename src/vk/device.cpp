@@ -29,13 +29,20 @@ struct Buffer {
     void *mapped = nullptr;
 };
 
-// A switch is on when set to anything but empty, 0, off, false or no
-// (docs/environment.md).
-bool env_switch(const char *name)
+// All variables are described in docs/environment.md.
+std::string env(const char *name)
 {
     const char *value = std::getenv(name);
-    return value != nullptr && *value != '\0' && std::strcmp(value, "0") != 0 && _stricmp(value, "off") != 0 &&
-           _stricmp(value, "false") != 0 && _stricmp(value, "no") != 0;
+    return value ? std::string(value) : std::string();
+}
+
+// A switch is on when set to anything but empty, 0, off, false or no.
+bool env_switch(const char *name)
+{
+    const std::string value = env(name);
+    for (const char *off : {"", "0", "off", "false", "no"})
+        if (_stricmp(value.c_str(), off) == 0) return false;
+    return true;
 }
 
 std::string vk_error(const char *what, VkResult result)
@@ -392,16 +399,18 @@ struct Device::Impl {
             VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT};
         if (shader.warp_synchronous && caps.subgroup_control) {
             // Warp-synchronous PTX needs 32-lane subgroups that are fully
-            // populated, exactly like a CUDA warp.
+            // populated, exactly like a CUDA warp (or 64-lane ones holding
+            // two warps, with PXVK_SUBGROUP_SIZE=64).
+            const std::uint32_t size = caps.warp_subgroup_size;
             const std::uint64_t threads = std::uint64_t{shape.block[0]} * shape.block[1] * shape.block[2];
-            if (threads > 32ull * caps.max_workgroup_subgroups) {
+            if (threads > std::uint64_t{size} * caps.max_workgroup_subgroups) {
                 error = "block of " + std::to_string(threads) + " threads exceeds the device's " +
                         std::to_string(caps.max_workgroup_subgroups) + " subgroups per workgroup";
                 return VK_NULL_HANDLE;
             }
-            subgroup.requiredSubgroupSize = 32;
+            subgroup.requiredSubgroupSize = size;
             info.stage.pNext = &subgroup;
-            if (shape.block[0] % 32 == 0)
+            if (shape.block[0] % size == 0)
                 info.stage.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT;
         }
         if (pipeline_stats) info.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
@@ -629,10 +638,15 @@ bool Device::initialize(int index, std::string &error)
                          (subgroup_basic.supportedOperations & VK_SUBGROUP_FEATURE_SHUFFLE_BIT);
     c.int64 = features2.features.shaderInt64;
     c.max_workgroup_subgroups = subgroup_ext ? subgroup_props.maxComputeWorkgroupSubgroups : 0;
-    c.subgroup_control = subgroup_ext && subgroup_features.subgroupSizeControl &&
-                         subgroup_features.computeFullSubgroups &&
-                         (subgroup_props.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
-                         subgroup_props.minSubgroupSize <= 32 && subgroup_props.maxSubgroupSize >= 32;
+    const bool size_control = subgroup_ext && subgroup_features.subgroupSizeControl &&
+                              subgroup_features.computeFullSubgroups &&
+                              (subgroup_props.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT);
+    auto can_require = [&](std::uint32_t size) {
+        return size_control && subgroup_props.minSubgroupSize <= size && subgroup_props.maxSubgroupSize >= size;
+    };
+    // PXVK_SUBGROUP_SIZE=64 puts two warps in each subgroup, as on AMD GCN.
+    c.warp_subgroup_size = env("PXVK_SUBGROUP_SIZE") == "64" && can_require(64) ? 64 : 32;
+    c.subgroup_control = can_require(c.warp_subgroup_size);
 
     vkGetPhysicalDeviceMemoryProperties(d.physical, &d.memory_properties);
     for (std::uint32_t i = 0; i < d.memory_properties.memoryHeapCount; ++i)

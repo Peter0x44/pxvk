@@ -278,9 +278,10 @@ CUresult initialize(State &s)
         s.device.load_pipeline_cache(s.pipeline_cache_path);
     }
     s.device.set_timing(s.profile);
-    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d subgroup_control=%d preserve_nan=%d shared=%u heap_limit=%lluMiB heap_windows=%u warp_emulation=%d float_atomics=%d ftz_emulation=%d nvapi=%s",
+    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d subgroup_control=%d warp_subgroup=%u preserve_nan=%d shared=%u heap_limit=%lluMiB heap_windows=%u warp_emulation=%d float_atomics=%d ftz_emulation=%d nvapi=%s",
                 caps.name.c_str(), caps.vendor_id, caps.subgroup_size, caps.native_ftz, caps.subgroup_control,
-                caps.preserve_nan, caps.max_shared_bytes, static_cast<unsigned long long>(s.heap_limit >> 20),
+                caps.warp_subgroup_size, caps.preserve_nan, caps.max_shared_bytes,
+                static_cast<unsigned long long>(s.heap_limit >> 20),
                 caps.heap_windows, s.options.emulate_warps, s.options.float_atomic_add,
                 !caps.native_ftz && !s.options.no_ftz_emulation, pxvk::runtime::nvapi_mode());
     return CUDA_SUCCESS;

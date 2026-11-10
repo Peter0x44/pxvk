@@ -1,6 +1,7 @@
 // pxvk-opcheck: per-instruction differential testing, native CUDA vs pxvk.
 //
-//   pxvk-opcheck [--device N] [--count N] [--filter substring] [--no-native]
+//   pxvk-opcheck [--device N] [--count N] [--block N] [--filter substring]
+//                [--no-contract] [--cpu-reference]
 //
 // For every instruction variant in the table below a small PTX kernel is
 // generated. Each thread reads a 16-byte input record (a, b, c, d words),
@@ -8,12 +9,17 @@
 // kernel runs through the 32-bit NVIDIA driver (PTX JIT) and through the pxvk
 // compiler on Vulkan, and the outputs are compared bit for bit. Inputs mix
 // random bit patterns, ordinary floats and special values.
+//
+// --cpu-reference compares with a CPU implementation instead of the native
+// driver, for the variants that have one (shfl, global float atomic add), so
+// that they can be checked on machines without NVIDIA.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 #include "compiler.h"
 #include "device.h"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -74,6 +80,140 @@ struct Cuda {
     }
 };
 
+// ---- CPU reference --------------------------------------------------------------
+// Expected results as the PTX ISA specifies them, computed per warp: 32
+// consecutive input records, whose lanes are %tid.x modulo 32. Each result
+// is word 0 of an output record (word 1 is 0).
+using Warp = std::array<std::uint32_t, 32>;
+using Reference = Warp (*)(const std::uint32_t *records);
+
+Warp word(const std::uint32_t *records, int index)
+{
+    Warp w;
+    for (int lane = 0; lane < 32; ++lane) w[lane] = records[lane * 4 + index];
+    return w;
+}
+
+Warp splat(std::uint32_t value)
+{
+    Warp w;
+    w.fill(value);
+    return w;
+}
+
+enum class Shfl { up, down, bfly, idx };
+
+struct Shuffled {
+    Warp d;
+    Warp p; // 1 where the source lane is in range
+};
+
+Shuffled shfl(Shfl mode, const Warp &a, const Warp &b, const Warp &c)
+{
+    Shuffled out;
+    for (int lane = 0; lane < 32; ++lane) {
+        const int offset = static_cast<int>(b[lane] & 31);
+        const int clamp = static_cast<int>(c[lane] & 31);
+        const int mask = static_cast<int>((c[lane] >> 8) & 31);
+        const int min_lane = lane & mask;
+        const int max_lane = min_lane | (clamp & ~mask);
+        int j = lane;
+        bool valid = false;
+        switch (mode) {
+        case Shfl::up: j = lane - offset; valid = j >= max_lane; break;
+        case Shfl::down: j = lane + offset; valid = j <= max_lane; break;
+        case Shfl::bfly: j = lane ^ offset; valid = j <= max_lane; break;
+        case Shfl::idx: j = min_lane | (offset & ~mask); valid = j <= max_lane; break;
+        }
+        out.d[lane] = a[valid ? j : lane];
+        out.p[lane] = valid;
+    }
+    return out;
+}
+
+// shfl with b and c from the input records, or as immediates.
+template <Shfl mode, bool predicate>
+Warp shfl_records(const std::uint32_t *records)
+{
+    const Shuffled s = shfl(mode, word(records, 0), word(records, 1), word(records, 2));
+    return predicate ? s.p : s.d;
+}
+
+template <Shfl mode, std::uint32_t b, std::uint32_t c>
+Warp shfl_immediate(const std::uint32_t *records)
+{
+    return shfl(mode, word(records, 0), splat(b), splat(c)).d;
+}
+
+Warp shfl_idx_record(const std::uint32_t *records)
+{
+    return shfl(Shfl::idx, word(records, 0), word(records, 1), splat(31)).d;
+}
+
+// Inclusive scan with shfl.up, then the warp total from lane 31.
+Warp shfl_scan(const std::uint32_t *records)
+{
+    Warp a = word(records, 0);
+    for (std::uint32_t offset = 1; offset < 32; offset *= 2) {
+        const Shuffled s = shfl(Shfl::up, a, splat(offset), splat(0));
+        for (int lane = 0; lane < 32; ++lane)
+            if (s.p[lane]) a[lane] += s.d[lane];
+    }
+    return shfl(Shfl::idx, a, splat(31), splat(31)).d;
+}
+
+// Butterfly reduction: every lane gets the warp total.
+Warp shfl_reduce(const std::uint32_t *records)
+{
+    Warp a = word(records, 0);
+    for (std::uint32_t offset = 16; offset > 0; offset /= 2) {
+        const Warp t = shfl(Shfl::bfly, a, splat(offset), splat(31)).d;
+        for (int lane = 0; lane < 32; ++lane) a[lane] += t[lane];
+    }
+    return a;
+}
+
+// add.ftz.f32: subnormal inputs and results become zeros of their sign.
+// Rounding the double sum to float rounds correctly (53 >= 2 * 24 + 2).
+std::uint32_t add_ftz(std::uint32_t x, std::uint32_t y)
+{
+    auto flush = [](std::uint32_t w) { return (w & 0x7f800000u) ? w : w & 0x80000000u; };
+    float a, b;
+    x = flush(x);
+    y = flush(y);
+    std::memcpy(&a, &x, 4);
+    std::memcpy(&b, &y, 4);
+    const float sum = static_cast<float>(double{a} + double{b});
+    std::uint32_t w;
+    std::memcpy(&w, &sum, 4);
+    return flush(w);
+}
+
+// a += a of the previous lane in the group that c selects, as in the
+// runtimes' inline assembly.
+Warp shfl_add_previous(const std::uint32_t *records)
+{
+    Warp a = word(records, 0);
+    const Shuffled s = shfl(Shfl::up, a, splat(1), word(records, 1));
+    for (int lane = 0; lane < 32; ++lane)
+        if (s.p[lane]) a[lane] = add_ftz(a[lane], s.d[lane]);
+    return a;
+}
+
+// Global float atomic add of b to a stored a: the sum flushes like add.ftz,
+// and atom returns the stored word unchanged.
+Warp atomic_add_sum(const std::uint32_t *records)
+{
+    Warp d;
+    for (int lane = 0; lane < 32; ++lane) d[lane] = add_ftz(records[lane * 4], records[lane * 4 + 1]);
+    return d;
+}
+
+Warp atomic_add_old(const std::uint32_t *records)
+{
+    return word(records, 0);
+}
+
 // ---- test generation ----------------------------------------------------------
 // Operand classes: f = f32, i = 32-bit int, h = 16-bit int, b = 8-bit int,
 // l = 64-bit int, p = predicate.
@@ -81,6 +221,7 @@ struct Variant {
     const char *text;    // instruction text with {d},{a},{b},{c} placeholders
     char dst;
     const char *srcs;    // operand classes of a, b, c
+    Reference reference = nullptr; // CPU reference (--cpu-reference)
 };
 
 const Variant kVariants[] = {
@@ -186,9 +327,9 @@ const Variant kVariants[] = {
     {"mul.ftz.f32 %f7, {a}, {b}; add.ftz.f32 %f6, %f7, {c}; st.global.f32 [%r8+12], %f7; mov.f32 {d}, %f6;", 'f', "fff"},
     // Float atomic add (PhysX 2.8.4 cloth normals): sum, returned old value,
     // red, shared memory, and a contended shared counter that must be exact.
-    {"st.global.f32 [%r8+12], {a}; atom.global.add.f32 %f6, [%r8+12], {b}; ld.global.f32 {d}, [%r8+12];", 'f', "ff"},
-    {"st.global.f32 [%r8+12], {a}; atom.global.add.f32 {d}, [%r8+12], {b};", 'f', "ff"},
-    {"st.global.f32 [%r8+12], {a}; red.global.add.f32 [%r8+12], {b}; ld.global.f32 {d}, [%r8+12];", 'f', "ff"},
+    {"st.global.f32 [%r8+12], {a}; atom.global.add.f32 %f6, [%r8+12], {b}; ld.global.f32 {d}, [%r8+12];", 'f', "ff", atomic_add_sum},
+    {"st.global.f32 [%r8+12], {a}; atom.global.add.f32 {d}, [%r8+12], {b};", 'f', "ff", atomic_add_old},
+    {"st.global.f32 [%r8+12], {a}; red.global.add.f32 [%r8+12], {b}; ld.global.f32 {d}, [%r8+12];", 'f', "ff", atomic_add_sum},
     // Shared float atomics keep subnormal inputs on NVIDIA; pxvk flushes
     // them. PhysX's cloth normals start shared slots at 0 and add only
     // results of .ftz arithmetic, then add the sums into global memory:
@@ -211,26 +352,26 @@ const Variant kVariants[] = {
     // Warp shuffles (PhysX 3, APEX, GRB). Every thread has its own a, b and c,
     // so a match also shows that lanes correspond to %tid.x. Forms from the
     // runtimes' inline assembly follow: blocks with their own registers.
-    {"shfl.up.b32 {d}, {a}, {b}, {c};", 'i', "iii"},
-    {"shfl.down.b32 {d}, {a}, {b}, {c};", 'i', "iii"},
-    {"shfl.bfly.b32 {d}, {a}, {b}, {c};", 'i', "iii"},
-    {"shfl.idx.b32 {d}, {a}, {b}, {c};", 'i', "iii"},
-    {"shfl.up.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii"},
-    {"shfl.down.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii"},
-    {"shfl.bfly.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii"},
-    {"shfl.idx.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii"},
-    {"shfl.up.b32 {d}, {a}, 1, 0;", 'i', "i"},
-    {"shfl.down.b32 {d}, {a}, 1, 31;", 'i', "i"},
-    {"shfl.bfly.b32 {d}, {a}, 16, 31;", 'i', "i"},
-    {"shfl.idx.b32 {d}, {a}, 31, 31;", 'i', "i"},
-    {"shfl.idx.b32 {d}, {a}, {b}, 31;", 'i', "ii"},
-    {"shfl.up.b32 {d}, {a}, 2, 0x1f00;", 'i', "i"},
-    {"shfl.down.b32 {d}, {a}, 2, 0x1c03;", 'i', "i"},
-    {"shfl.bfly.b32 {d}, {a}, 5, 0x1807;", 'i', "i"},
-    {"shfl.idx.b32 {d}, {a}, 5, 0x1807;", 'i', "i"},
-    {"{ .reg .u32 tmp; .reg .pred p; shfl.up.b32 tmp|p, {a}, 0x1, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x2, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x4, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x8, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x10, 0x0; @p add.u32 {a}, tmp, {a}; shfl.idx.b32 {a}, {a}, 0x1f, 0x1f; } mov.u32 {d}, {a};", 'i', "i"},
-    {"{ .reg .u32 tmp; shfl.bfly.b32 tmp, {a}, 0x10, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x08, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x04, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x02, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x01, 0x1f; add.u32 {a}, tmp, {a}; } mov.u32 {d}, {a};", 'i', "i"},
-    {"{ .reg .f32 tmp; .reg .u32 utemp; .reg .pred p0; mov.b32 utemp, {a}; shfl.up.b32 utemp | p0, utemp, 0x1, {b}; @p0 mov.b32 tmp, utemp; @p0 add.ftz.f32 {a}, {a}, tmp; } { .reg .u32 tmp; mov.b32 tmp, {a}; mov.b32 {d}, tmp; }", 'f', "fi"},
+    {"shfl.up.b32 {d}, {a}, {b}, {c};", 'i', "iii", shfl_records<Shfl::up, false>},
+    {"shfl.down.b32 {d}, {a}, {b}, {c};", 'i', "iii", shfl_records<Shfl::down, false>},
+    {"shfl.bfly.b32 {d}, {a}, {b}, {c};", 'i', "iii", shfl_records<Shfl::bfly, false>},
+    {"shfl.idx.b32 {d}, {a}, {b}, {c};", 'i', "iii", shfl_records<Shfl::idx, false>},
+    {"shfl.up.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii", shfl_records<Shfl::up, true>},
+    {"shfl.down.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii", shfl_records<Shfl::down, true>},
+    {"shfl.bfly.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii", shfl_records<Shfl::bfly, true>},
+    {"shfl.idx.b32 %i5|{d}, {a}, {b}, {c};", 'p', "iii", shfl_records<Shfl::idx, true>},
+    {"shfl.up.b32 {d}, {a}, 1, 0;", 'i', "i", shfl_immediate<Shfl::up, 1, 0>},
+    {"shfl.down.b32 {d}, {a}, 1, 31;", 'i', "i", shfl_immediate<Shfl::down, 1, 31>},
+    {"shfl.bfly.b32 {d}, {a}, 16, 31;", 'i', "i", shfl_immediate<Shfl::bfly, 16, 31>},
+    {"shfl.idx.b32 {d}, {a}, 31, 31;", 'i', "i", shfl_immediate<Shfl::idx, 31, 31>},
+    {"shfl.idx.b32 {d}, {a}, {b}, 31;", 'i', "ii", shfl_idx_record},
+    {"shfl.up.b32 {d}, {a}, 2, 0x1f00;", 'i', "i", shfl_immediate<Shfl::up, 2, 0x1f00>},
+    {"shfl.down.b32 {d}, {a}, 2, 0x1c03;", 'i', "i", shfl_immediate<Shfl::down, 2, 0x1c03>},
+    {"shfl.bfly.b32 {d}, {a}, 5, 0x1807;", 'i', "i", shfl_immediate<Shfl::bfly, 5, 0x1807>},
+    {"shfl.idx.b32 {d}, {a}, 5, 0x1807;", 'i', "i", shfl_immediate<Shfl::idx, 5, 0x1807>},
+    {"{ .reg .u32 tmp; .reg .pred p; shfl.up.b32 tmp|p, {a}, 0x1, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x2, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x4, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x8, 0x0; @p add.u32 {a}, tmp, {a}; shfl.up.b32 tmp|p, {a}, 0x10, 0x0; @p add.u32 {a}, tmp, {a}; shfl.idx.b32 {a}, {a}, 0x1f, 0x1f; } mov.u32 {d}, {a};", 'i', "i", shfl_scan},
+    {"{ .reg .u32 tmp; shfl.bfly.b32 tmp, {a}, 0x10, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x08, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x04, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x02, 0x1f; add.u32 {a}, tmp, {a}; shfl.bfly.b32 tmp, {a}, 0x01, 0x1f; add.u32 {a}, tmp, {a}; } mov.u32 {d}, {a};", 'i', "i", shfl_reduce},
+    {"{ .reg .f32 tmp; .reg .u32 utemp; .reg .pred p0; mov.b32 utemp, {a}; shfl.up.b32 utemp | p0, utemp, 0x1, {b}; @p0 mov.b32 tmp, utemp; @p0 add.ftz.f32 {a}, {a}, tmp; } { .reg .u32 tmp; mov.b32 tmp, {a}; mov.b32 {d}, tmp; }", 'f', "fi", shfl_add_previous},
     {"and.pred {d}, {a}, {b};", 'p', "pp"},
     {"or.pred {d}, {a}, {b};", 'p', "pp"},
     {"not.pred {d}, {a};", 'p', "p"},
@@ -322,18 +463,27 @@ int main(int argc, char **argv)
 {
     std::string device_selector;
     std::size_t count = 65536;
+    std::uint32_t block = 256;
     std::string filter;
     bool no_contraction = false;
+    bool cpu_reference = false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--device" && i + 1 < argc) device_selector = argv[++i];
         else if (arg == "--count" && i + 1 < argc) count = static_cast<std::size_t>(std::atoi(argv[++i]));
+        else if (arg == "--block" && i + 1 < argc) block = static_cast<std::uint32_t>(std::atoi(argv[++i]));
         else if (arg == "--filter" && i + 1 < argc) filter = argv[++i];
         else if (arg == "--no-contract") no_contraction = true;
+        else if (arg == "--cpu-reference") cpu_reference = true;
     }
-    count = (count + 255) / 256 * 256;
+    // Whole warps only: shfl from a lane past the end of the block is undefined.
+    if (block == 0 || block % 32 != 0 || block > 1024) {
+        std::fprintf(stderr, "--block must be a multiple of 32 up to 1024\n");
+        return 2;
+    }
+    count = (count + block - 1) / block * block;
     Cuda cuda;
-    if (!cuda.load()) {
+    if (!cpu_reference && !cuda.load()) {
         std::fprintf(stderr, "native CUDA unavailable\n");
         return 2;
     }
@@ -343,7 +493,7 @@ int main(int argc, char **argv)
         std::fprintf(stderr, "vulkan: %s\n", error.c_str());
         return 2;
     }
-    std::printf("device: %s\n", device.caps().name.c_str());
+    std::printf("device: %s (warp subgroup %u)\n", device.caps().name.c_str(), device.caps().warp_subgroup_size);
     pxvk::ptx::CompileOptions options;
     options.native_ftz = device.caps().native_ftz;
     options.preserve_nan = device.caps().preserve_nan;
@@ -354,8 +504,10 @@ int main(int argc, char **argv)
 
     const std::size_t bytes = count * 16;
     CUdeviceptr native_in = 0, native_out = 0;
-    cuda.cuMemAlloc(&native_in, bytes);
-    cuda.cuMemAlloc(&native_out, bytes);
+    if (!cpu_reference) {
+        cuda.cuMemAlloc(&native_in, bytes);
+        cuda.cuMemAlloc(&native_out, bytes);
+    }
     // Vulkan layout: input at heap offset 0, output after it.
     const std::uint32_t base = 0x10000;
     device.set_heap_base(base);
@@ -365,27 +517,36 @@ int main(int argc, char **argv)
     std::uint32_t seed = 1;
     for (const Variant &v : kVariants) {
         if (!filter.empty() && std::string(v.text).find(filter) == std::string::npos) continue;
+        if (cpu_reference && !v.reference) continue;
         const std::string ptx = make_ptx(v);
         const std::vector<std::uint32_t> input = make_inputs(count, seed++);
         std::vector<std::uint32_t> native(count * 4), vulkan(count * 4);
 
-        CUmodule module = nullptr;
-        CUfunction function = nullptr;
-        char jit_log[1024] = "";
-        int jit_options[] = {5 /* CU_JIT_ERROR_LOG_BUFFER */, 6 /* CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES */};
-        void *jit_values[] = {jit_log, reinterpret_cast<void *>(std::uintptr_t{sizeof(jit_log)})};
-        if (cuda.cuModuleLoadDataEx(&module, ptx.c_str(), 2, jit_options, jit_values) != 0 ||
-            cuda.cuModuleGetFunction(&function, module, "k") != 0) {
-            std::printf("%-40s native JIT failed: %s\n", v.text, jit_log);
-            ++failed_variants;
-            continue;
+        if (cpu_reference) {
+            for (std::size_t r = 0; r < count; r += 32) {
+                const Warp d = v.reference(&input[r * 4]);
+                for (int lane = 0; lane < 32; ++lane) native[(r + lane) * 4] = d[lane];
+            }
+        } else {
+            CUmodule module = nullptr;
+            CUfunction function = nullptr;
+            char jit_log[1024] = "";
+            int jit_options[] = {5 /* CU_JIT_ERROR_LOG_BUFFER */, 6 /* CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES */};
+            void *jit_values[] = {jit_log, reinterpret_cast<void *>(std::uintptr_t{sizeof(jit_log)})};
+            if (cuda.cuModuleLoadDataEx(&module, ptx.c_str(), 2, jit_options, jit_values) != 0 ||
+                cuda.cuModuleGetFunction(&function, module, "k") != 0) {
+                std::printf("%-40s native JIT failed: %s\n", v.text, jit_log);
+                ++failed_variants;
+                continue;
+            }
+            cuda.cuMemcpyHtoD(native_in, input.data(), bytes);
+            void *params[] = {&native_in, &native_out};
+            cuda.cuLaunchKernel(function, static_cast<unsigned>(count / block), 1, 1, block, 1, 1, 0, nullptr, params,
+                                nullptr);
+            cuda.cuCtxSynchronize();
+            cuda.cuMemcpyDtoH(native.data(), native_out, bytes);
+            cuda.cuModuleUnload(module);
         }
-        cuda.cuMemcpyHtoD(native_in, input.data(), bytes);
-        void *params[] = {&native_in, &native_out};
-        cuda.cuLaunchKernel(function, static_cast<unsigned>(count / 256), 1, 1, 256, 1, 1, 0, nullptr, params, nullptr);
-        cuda.cuCtxSynchronize();
-        cuda.cuMemcpyDtoH(native.data(), native_out, bytes);
-        cuda.cuModuleUnload(module);
 
         try {
             const auto parsed = pxvk::ptx::parse(ptx);
@@ -396,8 +557,8 @@ int main(int argc, char **argv)
             std::vector<std::uint8_t> launch(kernel.info.launch_block_bytes, 0);
             std::memcpy(launch.data(), launch_params, 8);
             pxvk::vk::DispatchShape shape;
-            shape.grid[0] = static_cast<std::uint32_t>(count / 256);
-            shape.block[0] = 256;
+            shape.grid[0] = static_cast<std::uint32_t>(count / block);
+            shape.block[0] = block;
             if (!shader || !device.upload(0, input.data(), bytes, error) ||
                 !device.dispatch(shader, shape, launch.data(), launch.size(), error) ||
                 !device.download(vulkan.data(), bytes, bytes, error))
@@ -427,8 +588,8 @@ int main(int argc, char **argv)
             if (example.size() < 400) {
                 char text[160];
                 const std::uint32_t *in = &input[r * 4];
-                std::snprintf(text, sizeof(text), "\n      in=%08x %08x %08x native=%08x:%08x pxvk=%08x:%08x",
-                              in[0], in[1], in[2], n[0], n[1], g[0], g[1]);
+                std::snprintf(text, sizeof(text), "\n      in=%08x %08x %08x %s=%08x:%08x pxvk=%08x:%08x",
+                              in[0], in[1], in[2], cpu_reference ? "cpu" : "native", n[0], n[1], g[0], g[1]);
                 example += text;
             }
         }

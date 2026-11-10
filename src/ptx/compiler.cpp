@@ -1552,7 +1552,9 @@ private:
     // this lane's own a if that lane is out of range (then p is false).
     // b[4:0] is the offset or index; c[12:8] masks the lane down to its
     // group's first lane, and c[4:0] outside that mask is the bound within
-    // the group. Warps are subgroups, so this is a subgroup shuffle.
+    // the group. A warp is a subgroup, or half of a 64-lane one (AMD GCN), so
+    // the lane is the subgroup invocation id modulo 32 and the shuffle reads
+    // from the same 32 ids.
     void lower_shfl(const Instruction &in)
     {
         const int line = in.line;
@@ -1570,7 +1572,9 @@ private:
         const std::uint32_t value = operand(in.operands[1], b32, line);
         const std::uint32_t b = masked(operand(in.operands[2], b32, line));
         const std::uint32_t c = operand(in.operands[3], b32, line);
-        const std::uint32_t lane = b_.value(SpvOpLoad, u32, {builtin_scalar(SpvBuiltInSubgroupLocalInvocationId)});
+        const std::uint32_t invocation = b_.value(SpvOpLoad, u32, {builtin_scalar(SpvBuiltInSubgroupLocalInvocationId)});
+        const std::uint32_t lane = masked(invocation);
+        const std::uint32_t warp = bit_and(invocation, b_.u32(~31u));
         const std::uint32_t group = masked(b_.value(SpvOpShiftRightLogical, u32, {c, b_.u32(8)}));
         const std::uint32_t min_lane = bit_and(lane, group);
         const std::uint32_t not_group = b_.value(SpvOpNot, u32, {group});
@@ -1586,7 +1590,7 @@ private:
             else throw Error("unsupported " + in.text(), line);
             valid = b_.value(SpvOpSLessThanEqual, boolean, {target, bound});
         }
-        const std::uint32_t id = b_.value(SpvOpSelect, u32, {valid, target, lane});
+        const std::uint32_t id = bit_or(warp, b_.value(SpvOpSelect, u32, {valid, target, lane}));
         write(in.operands[0], b_.value(SpvOpGroupNonUniformShuffle, u32, {b_.u32(SpvScopeSubgroup), value, id}), b32, line);
         if (!in.pred_dest.empty()) write_reg(in.pred_dest, valid, boolean, line);
     }

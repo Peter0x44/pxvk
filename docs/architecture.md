@@ -53,7 +53,7 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     to integer saturates and maps NaN to 0; `SignedZeroInfNanPreserve` is
     requested so unordered comparisons work on all drivers.
   - `.ftz` uses the Vulkan float-controls execution mode where available
-    (Intel). NVIDIA's Vulkan driver supports neither flushing nor preserving
+    (Intel, AMD). NVIDIA's Vulkan driver supports neither flushing nor preserving
     fp32 denormals, and in practice preserves them, so `.ftz` is emulated by
     flushing results and inputs. A dataflow pass skips input flushes for
     registers that can never hold a denormal (results of other `.ftz`
@@ -70,15 +70,20 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     indexes as `(base >> k) + offset / size`, so drivers share the base
     computation between neighbouring accesses.
   - Warp-synchronous code (volatile shared stores) is bracketed by subgroup
-    barriers and the pipeline requests full 32-wide subgroups. Devices that
+    barriers and the pipeline requests full 32-wide subgroups. Wider
+    subgroups hold whole warps and work too (64 lanes, as on AMD GCN:
+    `PXVK_SUBGROUP_SIZE=64` requests them on RDNA for testing). Devices that
     cannot guarantee subgroups of at least 32 lanes use warp emulation
     instead (below).
   - `shfl` (`.up`, `.down`, `.bfly`, `.idx`, with the optional `d|p`
-    predicate destination) is `OpGroupNonUniformShuffle` in a 32-wide
-    subgroup. PTX lanes are subgroup invocation ids, which relies on them
-    following `%tid.x` modulo 32; opcheck confirms that on NVIDIA and Intel
-    (AMD not yet checked). No PhysX 2.x kernel uses `shfl`. Warp emulation
-    does not cover it: such kernels fail to compile on those devices.
+    predicate destination) is `OpGroupNonUniformShuffle`. A warp is a
+    32-wide subgroup or half of a 64-wide one (AMD GCN), so the PTX lane is
+    the subgroup invocation id modulo 32, and the shuffle reads from the
+    same warp's ids. This relies on invocation ids following `%tid.x`;
+    opcheck confirms that against the native driver on NVIDIA and Intel,
+    and against its CPU reference on the Radeon 8060S with 32- and 64-wide
+    subgroups. No PhysX 2.x kernel uses `shfl`. Warp emulation does not
+    cover it: such kernels fail to compile on those devices.
 
 ### Fallbacks for limited devices
 
@@ -243,7 +248,7 @@ Required: Vulkan 1.1 with a compute queue, `robustBufferAccess` and
 that covers it or non-uniform storage-buffer descriptor indexing for the
 split heap. No buffer device address or 8/16-bit storage is used. Float
 atomics are optional: where the device has `VK_EXT_shader_atomic_float`'s
-`shaderBufferFloat32AtomicAdd` (NVIDIA, newer Intel iGPUs, lavapipe), global
+`shaderBufferFloat32AtomicAdd` (NVIDIA, AMD, newer Intel iGPUs, lavapipe), global
 float atomic adds use it; otherwise, and always in shared memory, they are a
 compare-and-swap loop on 32-bit integer atomics. Native shared float atomics would need
 `VK_KHR_workgroup_memory_explicit_layout` and were measured not to be worth
@@ -282,8 +287,9 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
   the native driver flushes it, so one opcheck variant differs there. This is
   accepted: only a stored value of about 10^-38 is affected, and the next
   `.ftz` instruction reading it flushes it anyway. The `DenormFlushToZero`
-  execution mode pxvk sets on Intel does not reach the atomic. AMD's atomic,
-  if its driver has one, is unchecked. In shared memory NVIDIA keeps subnormal inputs and pxvk flushes
+  execution mode pxvk sets on Intel does not reach the atomic. AMD's native
+  atomic (Radeon 8060S) flushes it like NVIDIA, and the compare-and-swap
+  loop is exact there too (opcheck's CPU reference). In shared memory NVIDIA keeps subnormal inputs and pxvk flushes
   them (NVIDIA's Vulkan driver cannot preserve subnormals). PhysX 2.8.4's
   cloth normal kernels start shared sums at 0 and add only flushed values,
   and opcheck shows that pattern bit-exact; they could differ only if a
@@ -303,6 +309,11 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
   differs from native (under 0.1% of the pixels); every other cloth scene
   and all SampleParticleFluid scenes are pixel-identical. Starting point:
   replay the "ok" cloth captures (launches 6643 and 6646).
+- 64-wide subgroups are tested only on RDNA with `PXVK_SUBGROUP_SIZE=64`,
+  not on GCN hardware. The captured warp-synchronous launches (radix sort
+  and scan, blocks of 128 and 256 threads) fill whole subgroups; blocks
+  that leave one half-filled (32 or 96 threads) are covered only by
+  opcheck's `shfl` variants.
 - Warp emulation and the split heap are slower than the normal paths (two
   workgroup barriers per warp-synchronous store; scalar heap accesses).
   Only devices that need them pay for that.
