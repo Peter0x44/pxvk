@@ -49,8 +49,8 @@ driver (AMD, Intel or NVIDIA), and an NVIDIA driver is not required.
    no `pxvk.log` appears), directly or as a Steam launch option (below).
 
 Tested with Borderlands 2 started from Steam through its 2K launcher, both
-ways, and with the drop-in on GOG's Batman: Arkham City, started directly and
-through its own launcher.
+ways, with the drop-in on GOG's Batman: Arkham City, started directly and
+through its own launcher, and with the drop-in on Steam's Unreal Tournament 3.
 
 ## How loading works
 
@@ -241,6 +241,40 @@ Look for `pxvk.log` in `Binaries\Win32` to check that
 PhysX runs on pxvk ("Checking that hardware PhysX is active" above). Kernel
 launches start in-game or in the benchmark (Graphics settings), not at the
 menu. Tested on an RTX 5070 laptop and its Intel GPU; AMD is untested.
+
+## Unreal Tournament 3 (Steam)
+
+The GPU PhysX content is NVIDIA's free **UT3 PhysX Mod Pack**
+(`UT3_PhysXModPack.msi`, August 2008, still on NVIDIA's download server as
+`https://nzone.download.nvidia.com/nodlm/UT3_PhysXModPack.msi`); the game's
+own maps were not tried. It adds three maps built for hardware PhysX:
+CTF-Tornado_PhysX, CTF-LightHouse_PhysX and DM-HeatRay_PhysX. Its installer only copies files to
+`Documents\My Games\Unreal Tournament 3\UTGame\Published\CookedPC\CustomMaps\NVIDIAPhysX`.
+To skip the 2008 installer, unpack it with
+`msiexec /a UT3_PhysXModPack.msi /qn TARGETDIR=C:\temp\ut3mod` and copy that
+folder from `C:\temp\ut3mod\PFiles\My Games\...` to the same place.
+
+1. Install the current PhysX System Software, not the old one in the game's
+   `PhysX` folder: the game's bundled `PhysXCore.dll` has no GPU code, and it
+   uses the System Software's 2.7.3 runtime instead.
+2. Copy the `game-folder` files into `Binaries` (next to `UT3.exe`).
+3. Turn on hardware PhysX: in the game's video settings, or by setting
+   `bDisablePhysXHardwareSupport=False` in
+   `Documents\My Games\Unreal Tournament 3\UTGame\Config\UTEngine.ini`.
+4. Play the maps from Instant Action (Capture the Flag: Tornado PhysX and
+   LightHouse PhysX; Deathmatch: HeatRay PhysX), or start one directly:
+
+   ```powershell
+   & "...\Binaries\UT3.exe" "CTF-Tornado_PhysX?Game=UTGameContent.UTCTFGame_Content?NumPlay=8" -nomoviestartup
+   & "...\Binaries\UT3.exe" "DM-HeatRay_PhysX?Game=UTGame.UTDeathmatch?NumPlay=8" -nomoviestartup
+   ```
+
+Kernel launches start once a map is loaded: right away on Tornado (debris)
+and HeatRay (hail), and on LightHouse only once something breaks. Breaking
+walls and flying objects are rigid bodies, which this PhysX version runs on
+the CPU; the debris particles and Tornado's cloth run on pxvk. On
+Tornado, death keeps the camera in first person (the map turns off the
+death camera), which can look like a freeze. Tested on an RTX 5070 laptop.
 
 ## Reporting results
 

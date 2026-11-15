@@ -39,9 +39,10 @@ them). Stages are taken on one at a time, in this order:
    compiles and validates; opcheck compares the new instructions with the
    native driver). Then validation against native traces of real games: a
    2.8.4 game with GPU cloth (Alice: Madness Returns or Mafia II Classic),
-   and a 2.7.5 game if one is identified (likely an Ageia-era title such as
-   Unreal Tournament 3 or Ghost Recon Advanced Warfighter 2; a game's
-   `PhysXLoader.dll` version tells).
+   and a 2.7.5 game if one is identified (an Ageia-era title such as Ghost
+   Recon Advanced Warfighter 2; a game's `PhysXLoader.dll` version tells).
+   Unreal Tournament 3 turned out to use 2.7.3, and runs (its PhysX Mod Pack
+   maps, fluid and cloth, not yet compared with native).
 3. **Later: 32-bit PhysX 3.x and APEX.** The GPU runtime of the late 32-bit
    titles (likely Assassin's Creed IV, Batman: Arkham Origins), APEX
    Particles/Turbulence and GPU rigid bodies (GRB), plus whatever graphics

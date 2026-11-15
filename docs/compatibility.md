@@ -1,7 +1,7 @@
 # Compatibility
 
 Which games use 32-bit GPU PhysX, which PhysX runtime they load, and what
-pxvk can run today. Status as of October 2026.
+pxvk can run today. Status as of November 2026.
 
 ## How a game reaches the GPU
 
@@ -28,7 +28,8 @@ passes `spirv-val`; it does not mean the results were compared with native.
 | Runtime | GPU code | pxvk | Missing |
 |---|---|---|---|
 | 2.3.x – 2.6.x, 2.7.0, 2.7.2 | none (CPU or Ageia PPU only) | not needed | – |
-| 2.7.1, 2.7.3, 2.7.4, 2.7.6 | 17 modules, PTX 4.1 | compiles | – |
+| 2.7.1, 2.7.4, 2.7.6 | 17 modules, PTX 4.1 | compiles | – |
+| 2.7.3 | 17 modules, PTX 4.1 | **runs in Unreal Tournament 3** (fluid and cloth kernels; not compared with native) | – |
 | 2.7.5 | 19 modules | compiles (`mul24` for a generic scan helper, `%clock` for fluid force fields' random seeds, both supported) | – |
 | **2.8.0** | 17 modules | **validated**: bit-exact replays, samples pixel-identical, Mirror's Edge runs | – |
 | 2.8.1, 2.8.3 (two builds) | 17–18 modules | compiles | – |
@@ -60,8 +61,9 @@ with Batman: Arkham Asylum announced for 2026; the others run PhysX on the
 CPU on RTX 50 cards. pxvk is relevant to all of them on AMD, Intel and
 other Vulkan devices.
 
-Only the runtimes of Mirror's Edge (by hash), Borderlands 2 and Batman:
-Arkham City (from the running games' loaded modules) are confirmed. The other runtime assignments are
+Only the runtimes of Mirror's Edge and Unreal Tournament 3 (by hash),
+Borderlands 2 and Batman: Arkham City (from the running games' loaded
+modules) are confirmed. The other runtime assignments are
 unverified estimates from release dates and engines. A game's
 `PhysXLoader.dll` alone does not decide it: the update loader can swap in a
 System Software core for a GUID the game passes, so check what a running
@@ -142,9 +144,35 @@ p99). By eye, paper and leaves move differently between runs and the sparks
 look right; blue fragments might differ, which is unconfirmed and could be
 ordinary variation. Effects outside the GPU kernels were not compared.
 
+Unreal Tournament 3 (Steam, November 2026) runs on pxvk on the RTX 5070
+laptop through the drop-in `dinput8.dll`, with NVIDIA's free PhysX Mod Pack
+(August 2008), whose three maps are the game's GPU PhysX content (setup in
+[`install.md`](install.md)). At the main menu the game creates the context
+and loads the modules but launches no kernels; stock maps were not tried. The
+game ships `PhysXLoader.dll` and
+`PhysXCore.dll` 2.7.3.7; that core has no GPU code, and the loader picks the
+System Software's 2.7.3.57 core (`Engine\v2.7.3`): all 17 logged module
+hashes match it (2.7.4's have the same sizes but different contents). It is
+the first 2.7.x runtime run in a game. The engine logs `Primary PhysX scene
+will be in software`, so rigid bodies (breaking walls, thrown containers)
+stay on the CPU; only fluid particles (debris, hail) and cloth run on the
+GPU. One session per map with 8 bots, no pxvk errors:
+
+| Map | Kernels | Launches | Notes |
+|---|---|---|---|
+| CTF-Tornado_PhysX | 10: fluid particles, fluid collision (constraints, static and dynamic response, triangles, boxes, convexes), cloth (`KernelDeformableUberSolver<512>`, `UberCollision`, `Update`) | 293,000 in 8.5 min | debris from the start; cloth probably for the deforming metal roofs |
+| CTF-LightHouse_PhysX | 8: fluid only, including capsule collision | 41,000 | no launches until something breaks |
+| DM-HeatRay_PhysX | 8: fluid only, including capsule collision | 50,000 | falling hail from load |
+
+About 6–9 launches per PhysX step at about 62 steps
+per second (about 117 with cloth), with 7–8% of the time spent waiting for
+the GPU. The tester saw the effects as correct. Native captures were not
+made, so nothing was compared bit-exact.
+
 | Likely runtime | Games |
 |---|---|
-| 2.7.x / early 2.8 | Ghost Recon Advanced Warfighter 2, Monster Madness: Battle for Suburbia, Warmonger: Operation Downtown Destruction, Unreal Tournament 3, Crazy Machines 2, Armageddon Riders |
+| 2.7.x / early 2.8 | Ghost Recon Advanced Warfighter 2, Monster Madness: Battle for Suburbia, Warmonger: Operation Downtown Destruction, Crazy Machines 2, Armageddon Riders |
+| 2.7.3 (confirmed, by hash) | Unreal Tournament 3 (PhysX Mod Pack) |
 | 2.8.0 (confirmed) | Mirror's Edge ★ |
 | 2.8.4.10 (confirmed, through the update loader) | Borderlands 2 ★ |
 | 2.8.4.12 (confirmed, through the update loader) | Batman: Arkham City ★ |
