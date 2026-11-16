@@ -20,6 +20,7 @@
 #undef cuMemcpyDtoHAsync
 #undef cuMemcpyHtoDAsync
 #undef cuMemsetD8
+#undef cuEventElapsedTime
 
 #include "launch_params.h"
 #include "capture.h"
@@ -423,7 +424,10 @@ static FARPROC WINAPI traced_get_proc_address(HMODULE module, LPCSTR name)
         return result;
     }
     replacement = g_original_get_proc_address(g_self_module, name);
-    if (replacement != NULL) {
+    /* Only where the real driver has the export too: a game that probes for
+     * an optional entry point (e.g. an old interop variant) must still see
+     * it missing. */
+    if (replacement != NULL && result != NULL) {
         trace_log("GetProcAddress nvcuda name=%s intercepted=1", name);
         return replacement;
     }
@@ -1633,3 +1637,253 @@ PXVK_EXPORT CUresult CUDAAPI cuEventCreate(CUevent *e, unsigned int flags)
         return r;
     }
 }
+
+/* Graphics interop and surfaces: logged forwarders, to see whether a game
+ * shares Direct3D/OpenGL resources with CUDA (APEX IOFX may map the game's
+ * sprite textures and copy particle output into them). Context creation,
+ * registration and surface lookups are logged every time; per-frame calls
+ * (map, unmap, mapped pointer/array, 2D copies) the first INTEROP_LOG_FIRST
+ * times and then every INTEROP_LOG_EVERY-th call, with a running count. The
+ * D3D/GL objects are opaque pointers here, so no D3D headers are needed. */
+#define INTEROP_LOG_FIRST 32
+#define INTEROP_LOG_EVERY 1000
+
+static bool interop_should_log(volatile LONG *counter, LONG *ordinal)
+{
+    *ordinal = InterlockedIncrement(counter);
+    return *ordinal <= INTEROP_LOG_FIRST || *ordinal % INTEROP_LOG_EVERY == 0;
+}
+
+#define DEFINE_INTEROP_CTX_CREATE(name)                                                   \
+    PXVK_EXPORT CUresult CUDAAPI name(CUcontext *context, CUdevice *device,               \
+                                      unsigned int flags, void *graphics_device)          \
+    {                                                                                      \
+        typedef CUresult(CUDAAPI *function_type)(CUcontext *, CUdevice *, unsigned int, void *); \
+        RESOLVE_OR_RETURN(function_type, real_function, #name);                            \
+        {                                                                                  \
+            CUresult r = real_function(context, device, flags, graphics_device);          \
+            trace_log("interop " #name " flags=%u graphics_device=%p context=%p device=%d result=%d", \
+                      flags, graphics_device, (r == CUDA_SUCCESS && context) ? (void *)*context : NULL, \
+                      (r == CUDA_SUCCESS && device) ? (int)*device : -1, (int)r);          \
+            return r;                                                                      \
+        }                                                                                  \
+    }
+DEFINE_INTEROP_CTX_CREATE(cuD3D9CtxCreate_v2)
+DEFINE_INTEROP_CTX_CREATE(cuD3D10CtxCreate_v2)
+DEFINE_INTEROP_CTX_CREATE(cuD3D11CtxCreate_v2)
+
+PXVK_EXPORT CUresult CUDAAPI cuD3D11CtxCreateOnDevice(CUcontext *context, unsigned int flags,
+                                                      void *graphics_device, CUdevice device)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUcontext *, unsigned int, void *, CUdevice);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuD3D11CtxCreateOnDevice");
+    {
+        CUresult r = real_function(context, flags, graphics_device, device);
+        trace_log("interop cuD3D11CtxCreateOnDevice flags=%u graphics_device=%p device=%d context=%p result=%d",
+                  flags, graphics_device, (int)device,
+                  (r == CUDA_SUCCESS && context) ? (void *)*context : NULL, (int)r);
+        return r;
+    }
+}
+
+#define DEFINE_INTEROP_REGISTER(name)                                                     \
+    PXVK_EXPORT CUresult CUDAAPI name(CUgraphicsResource *resource, void *object,         \
+                                      unsigned int flags)                                  \
+    {                                                                                      \
+        typedef CUresult(CUDAAPI *function_type)(CUgraphicsResource *, void *, unsigned int); \
+        RESOLVE_OR_RETURN(function_type, real_function, #name);                            \
+        {                                                                                  \
+            CUresult r = real_function(resource, object, flags);                           \
+            trace_log("interop " #name " object=%p flags=%u resource=%p result=%d",       \
+                      object, flags, (r == CUDA_SUCCESS && resource) ? (void *)*resource : NULL, (int)r); \
+            return r;                                                                      \
+        }                                                                                  \
+    }
+DEFINE_INTEROP_REGISTER(cuGraphicsD3D9RegisterResource)
+DEFINE_INTEROP_REGISTER(cuGraphicsD3D10RegisterResource)
+DEFINE_INTEROP_REGISTER(cuGraphicsD3D11RegisterResource)
+
+PXVK_EXPORT CUresult CUDAAPI cuGraphicsGLRegisterBuffer(CUgraphicsResource *resource,
+                                                        unsigned int buffer, unsigned int flags)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUgraphicsResource *, unsigned int, unsigned int);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuGraphicsGLRegisterBuffer");
+    {
+        CUresult r = real_function(resource, buffer, flags);
+        trace_log("interop cuGraphicsGLRegisterBuffer buffer=%u flags=%u resource=%p result=%d",
+                  buffer, flags, (r == CUDA_SUCCESS && resource) ? (void *)*resource : NULL, (int)r);
+        return r;
+    }
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuGraphicsUnregisterResource(CUgraphicsResource resource)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUgraphicsResource);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuGraphicsUnregisterResource");
+    {
+        CUresult r = real_function(resource);
+        trace_log("interop cuGraphicsUnregisterResource resource=%p result=%d", (void *)resource, (int)r);
+        return r;
+    }
+}
+
+static volatile LONG g_interop_map_calls;
+static volatile LONG g_interop_unmap_calls;
+static volatile LONG g_interop_pointer_calls;
+static volatile LONG g_interop_array_calls;
+static volatile LONG g_interop_flags_calls;
+static volatile LONG g_memcpy2d_calls;
+
+#define DEFINE_INTEROP_MAP(name, counter)                                                 \
+    PXVK_EXPORT CUresult CUDAAPI name(unsigned int count, CUgraphicsResource *resources,  \
+                                      CUstream stream)                                     \
+    {                                                                                      \
+        typedef CUresult(CUDAAPI *function_type)(unsigned int, CUgraphicsResource *, CUstream); \
+        RESOLVE_OR_RETURN(function_type, real_function, #name);                            \
+        {                                                                                  \
+            CUresult r = real_function(count, resources, stream);                          \
+            LONG n;                                                                        \
+            if (interop_should_log(&counter, &n))                                          \
+                trace_log("interop " #name " n=%ld count=%u first=%p stream=%p result=%d", \
+                          (long)n, count, (count && resources) ? (void *)resources[0] : NULL, \
+                          (void *)stream, (int)r);                                         \
+            return r;                                                                      \
+        }                                                                                  \
+    }
+DEFINE_INTEROP_MAP(cuGraphicsMapResources, g_interop_map_calls)
+DEFINE_INTEROP_MAP(cuGraphicsUnmapResources, g_interop_unmap_calls)
+
+PXVK_EXPORT CUresult CUDAAPI cuGraphicsResourceGetMappedPointer_v2(CUdeviceptr *pointer, size_t *size,
+                                                                   CUgraphicsResource resource)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUdeviceptr *, size_t *, CUgraphicsResource);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuGraphicsResourceGetMappedPointer_v2");
+    {
+        CUresult r = real_function(pointer, size, resource);
+        LONG n;
+        if (interop_should_log(&g_interop_pointer_calls, &n))
+            trace_log("interop cuGraphicsResourceGetMappedPointer_v2 n=%ld resource=%p pointer=%08lx bytes=%lu result=%d",
+                      (long)n, (void *)resource,
+                      (r == CUDA_SUCCESS && pointer) ? (unsigned long)*pointer : 0ul,
+                      (r == CUDA_SUCCESS && size) ? (unsigned long)*size : 0ul, (int)r);
+        return r;
+    }
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuGraphicsSubResourceGetMappedArray(CUarray *array, CUgraphicsResource resource,
+                                                                 unsigned int index, unsigned int level)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUarray *, CUgraphicsResource, unsigned int, unsigned int);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuGraphicsSubResourceGetMappedArray");
+    {
+        CUresult r = real_function(array, resource, index, level);
+        LONG n;
+        if (interop_should_log(&g_interop_array_calls, &n))
+            trace_log("interop cuGraphicsSubResourceGetMappedArray n=%ld resource=%p index=%u level=%u array=%p result=%d",
+                      (long)n, (void *)resource, index, level,
+                      (r == CUDA_SUCCESS && array) ? (void *)*array : NULL, (int)r);
+        return r;
+    }
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuGraphicsResourceSetMapFlags_v2(CUgraphicsResource resource, unsigned int flags)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUgraphicsResource, unsigned int);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuGraphicsResourceSetMapFlags_v2");
+    {
+        CUresult r = real_function(resource, flags);
+        LONG n;
+        if (interop_should_log(&g_interop_flags_calls, &n))
+            trace_log("interop cuGraphicsResourceSetMapFlags_v2 n=%ld resource=%p flags=%u result=%d",
+                      (long)n, (void *)resource, flags, (int)r);
+        return r;
+    }
+}
+
+static void log_memcpy2d(const char *name, LONG n, const CUDA_MEMCPY2D *c, CUresult r)
+{
+    if (c == NULL) {
+        trace_log("interop %s n=%ld copy=null result=%d", name, (long)n, (int)r);
+        return;
+    }
+    trace_log("interop %s n=%ld src_type=%d dst_type=%d src=%08lx/%p dst=%08lx/%p "
+              "src_pitch=%lu dst_pitch=%lu width_bytes=%lu height=%lu result=%d",
+              name, (long)n, (int)c->srcMemoryType, (int)c->dstMemoryType,
+              (unsigned long)c->srcDevice, (void *)c->srcArray,
+              (unsigned long)c->dstDevice, (void *)c->dstArray,
+              (unsigned long)c->srcPitch, (unsigned long)c->dstPitch,
+              (unsigned long)c->WidthInBytes, (unsigned long)c->Height, (int)r);
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuMemcpy2D_v2(const CUDA_MEMCPY2D *copy)
+{
+    typedef CUresult(CUDAAPI *function_type)(const CUDA_MEMCPY2D *);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuMemcpy2D_v2");
+    {
+        CUresult r = real_function(copy);
+        LONG n;
+        if (interop_should_log(&g_memcpy2d_calls, &n)) log_memcpy2d("cuMemcpy2D_v2", n, copy, r);
+        return r;
+    }
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuMemcpy2DAsync_v2(const CUDA_MEMCPY2D *copy, CUstream stream)
+{
+    typedef CUresult(CUDAAPI *function_type)(const CUDA_MEMCPY2D *, CUstream);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuMemcpy2DAsync_v2");
+    {
+        CUresult r = real_function(copy, stream);
+        LONG n;
+        if (interop_should_log(&g_memcpy2d_calls, &n)) log_memcpy2d("cuMemcpy2DAsync_v2", n, copy, r);
+        return r;
+    }
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuModuleGetSurfRef(CUsurfref *surface, CUmodule module, const char *name)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUsurfref *, CUmodule, const char *);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuModuleGetSurfRef");
+    {
+        CUresult r = real_function(surface, module, name);
+        trace_log("interop cuModuleGetSurfRef module=%p name=%s surface=%p result=%d",
+                  (void *)module, name ? name : "(null)",
+                  (r == CUDA_SUCCESS && surface) ? (void *)*surface : NULL, (int)r);
+        return r;
+    }
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuSurfRefSetArray(CUsurfref surface, CUarray array, unsigned int flags)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUsurfref, CUarray, unsigned int);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuSurfRefSetArray");
+    {
+        CUresult r = real_function(surface, array, flags);
+        trace_log("interop cuSurfRefSetArray surface=%p array=%p flags=%u result=%d",
+                  (void *)surface, (void *)array, flags, (int)r);
+        return r;
+    }
+}
+
+/* PhysX 3 GPU (PhysX3Gpu*_x86.dll, beside APEX in Batman: Arkham Origins)
+ * loads "nvcuda.dll" by name, which is this proxy once it is loaded, and
+ * binds every entry point it uses with GetProcAddress on it directly. A
+ * missing export makes it fail with "Failed to bind CUDA API." and raise, so
+ * the proxy must export all of them. */
+DEFINE_FORWARDER_1(cuCtxSetCurrent, CUcontext, context)
+DEFINE_FORWARDER_1(cuEventDestroy_v2, CUevent, event)
+DEFINE_FORWARDER_3(cuEventElapsedTime, float *, milliseconds, CUevent, start, CUevent, end)
+DEFINE_FORWARDER_3(cuGLCtxCreate_v2, CUcontext *, context, unsigned int, flags, CUdevice, device)
+DEFINE_FORWARDER_0(cuGLInit)
+DEFINE_FORWARDER_3(cuMemHostGetDevicePointer_v2, CUdeviceptr *, pointer, void *, host, unsigned int, flags)
+DEFINE_FORWARDER_4(cuMemsetD32Async,
+                   CUdeviceptr, destination,
+                   unsigned int, value,
+                   size_t, count,
+                   CUstream, stream)
+DEFINE_FORWARDER_1(cuStreamDestroy_v2, CUstream, stream)
+/* The same for the APEX 1.3 GPU modules (Particles, TurbulenceFS,
+ * ClothingGPU). */
+DEFINE_FORWARDER_2(cuArray3DGetDescriptor_v2, CUDA_ARRAY3D_DESCRIPTOR *, descriptor, CUarray, array)
+DEFINE_FORWARDER_3(cuFuncGetAttribute, int *, value, CUfunction_attribute, attribute, CUfunction, function)
+DEFINE_FORWARDER_1(cuMemcpy3D_v2, const CUDA_MEMCPY3D *, copy)
+DEFINE_FORWARDER_3(cuMemsetD32_v2, CUdeviceptr, destination, unsigned int, value, size_t, count)

@@ -59,6 +59,14 @@ whose name contains this text, for games whose ordinals vary) it snapshots
 all device memory around selected launches and records parameters, texture
 bindings and module globals. Capturing needs an NVIDIA GPU; replaying works
 on any Vulkan device.
+Lines starting with `interop` record graphics interop and surface calls
+(D3D/GL context creation, resource registration, map/unmap, 2D copies,
+`cuModuleGetSurfRef`); per-frame ones are logged the first 32 times, then
+every 1,000th. Runtimes that load `nvcuda.dll` by name and bind every entry
+point from it (PhysX 3 GPU and APEX 1.3 in Batman: Arkham Origins) get the
+proxy itself, so it must export everything they bind; a missing export makes
+them fail with "Failed to bind CUDA API." Pass `--output` as an absolute
+path: a relative one is resolved against the game's working directory.
 `pxvk-replay` re-executes each capture on Vulkan at the original addresses
 and grades the result (EXACT, ok = within 4 ULP / 1e-3 relative, BAD, FAIL).
 Memory is untyped, so tolerances apply only to words that look like floats:
