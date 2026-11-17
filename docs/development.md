@@ -54,6 +54,7 @@ run the GPU tests.
 |---|---|
 | `pxvk-ptxc` | compile PTX kernels to SPIR-V |
 | `pxvk-opcheck` | compare every PTX instruction variant with the native driver |
+| `pxvk-warptest` | stress warp-synchronous shared memory with skewed lanes, per barrier strategy |
 | `pxvk-replay` | replay captured native kernel launches on Vulkan and grade the results |
 | `pxvk-nativeinfo` | native kernel attributes and compiled code, for comparison |
 | `pxvk-run`, `pxvk-harness.dll` | deterministic runs of the GLUT SDK samples (used by `bench.py`) |

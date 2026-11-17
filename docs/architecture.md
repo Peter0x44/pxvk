@@ -91,16 +91,29 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     guaranteed to see another lane's store if it synchronizes itself (a
     release by the writer, an acquire by the reader). pxvk recreates the
     guarantee with barriers.
-  - Warp-synchronous code (volatile shared stores) is bracketed by subgroup
-    barriers and the pipeline requests full 32-wide subgroups. Volatile
-    shared loads are preceded by a subgroup memory barrier (acquire,
-    without execution sync, so valid in divergent code): APEX 1.3's
-    `BasicIOS_compactKernel` stores under a branch only some lanes take,
-    so only those lanes run the barriers around the store, and then every
-    lane reads those values. The lanes that skipped the branch had no
-    barrier of their own, and on Intel they read stale shared memory
-    without the acquire (particles vanished; no measurable cost on
-    NVIDIA). Wider
+  - Warp-synchronous code (volatile shared memory) gets subgroup memory
+    barriers (`OpMemoryBarrier`, acquire-release, no execution sync)
+    before and after each volatile shared store and before each volatile
+    shared load, and the pipeline requests full 32-wide subgroups. Memory
+    barriers are valid in divergent code, which warp-synchronous code
+    often is: APEX 1.3's `BasicIOS_compactKernel` stores under a branch
+    only some lanes take, then every lane reads those values. The lanes
+    that skipped the branch need their own acquire; without it they read
+    stale shared memory on Intel (particles vanished).
+  - pxvk used to put subgroup control barriers (`OpControlBarrier`)
+    around the stores. Those are undefined where only part of the
+    subgroup reaches them, and `pxvk-warptest` (`testing.md`) shows they
+    break in practice: on NVIDIA a warp scan whose lanes are skewed by a
+    little busy work got 87% of its results wrong with control barriers,
+    and none with memory barriers or with no barriers at all. Without
+    barriers, neither the RTX 5070 nor the Intel iGPU ever showed a lane
+    stale data in that test, so the memory barriers make the code correct
+    by the rules rather than fix a failure seen there (apart from the
+    Intel acquire above). The fully defined design would need
+    VK_KHR_shader_maximal_reconvergence and a barrier at every
+    reconvergence point. The swap cost nothing measurable in Arkham
+    Origins: NVIDIA 205.8 fps against 206–208; Intel 108.0 and 106.8
+    against 105.2 with control barriers, back to back. Wider
     subgroups hold whole warps and work too (64 lanes, as on AMD GCN:
     `PXVK_SUBGROUP_SIZE=64` requests them on RDNA for testing). Devices that
     cannot guarantee subgroups of at least 32 lanes use warp emulation

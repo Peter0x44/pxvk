@@ -1290,7 +1290,7 @@ private:
         note_space(space, is_volatile);
         const Address addr = address(in.operands[1], in.line);
         const int total = type.bits / 8 * count;
-        if (space == Space::shared && is_volatile && !options_.emulate_warps) warp_acquire();
+        if (space == Space::shared && is_volatile && !options_.emulate_warps) warp_fence();
         std::vector<std::uint32_t> elems;
         if (total < 4) {
             const std::uint32_t word = load_pointer(b_.t_u32(), word_pointer(space, addr), is_volatile);
@@ -1317,24 +1317,24 @@ private:
         // With emulate_warps the barriers are emitted by lower_instruction,
         // outside any guard, so that they stay in uniform control flow.
         const bool warp_sync = space == Space::shared && is_volatile && !options_.emulate_warps;
-        if (warp_sync) warp_barrier();
+        if (warp_sync) warp_store_barrier();
         if (total < 4) {
             for (int i = 0; i < count; ++i)
                 store_subword(space, offset_by(addr, static_cast<std::uint32_t>(i * type.bits / 8)), elems[i], type.bits);
         } else {
             store_words(space, addr, elements_to_words(elems, type), is_volatile);
         }
-        if (warp_sync) warp_barrier();
+        if (warp_sync) warp_store_barrier();
     }
 
     // Warp-synchronous PTX assumes the 32 lanes of a warp execute in
     // lockstep, so a volatile shared store is visible to every lane's next
-    // instruction. Vulkan guarantees neither, so surround such stores with
-    // execution+memory barriers: subgroup-wide on devices with 32-lane (or
-    // wider) subgroups, workgroup-wide with emulate_warps. A workgroup
-    // barrier makes every warp advance store by store together, and since
-    // all loads of a phase complete before any store of the next, this is
-    // exactly lockstep execution.
+    // instruction. Vulkan guarantees neither. With emulate_warps such stores
+    // get workgroup execution+memory barriers (emitted in uniform control
+    // flow): every warp advances store by store together, and since all
+    // loads of a phase complete before any store of the next, this is exactly
+    // lockstep execution. Otherwise they get fences (warp_store_barrier), or
+    // with WarpSync::control these subgroup control barriers.
     void warp_barrier()
     {
         const std::uint32_t scope = options_.emulate_warps ? SpvScopeWorkgroup : SpvScopeSubgroup;
@@ -1344,11 +1344,25 @@ private:
                                                                        : SpvMemorySemanticsWorkgroupMemoryMask))});
     }
 
-    // Before a volatile shared load in warp-synchronous code: a memory-only
-    // barrier (valid in divergent control flow) so that this lane sees
-    // stores other lanes made, even ones under a branch it did not take.
-    void warp_acquire()
+    // Around volatile shared stores in warp-synchronous code (not emulated).
+    // Such stores are often under a branch only some lanes take (APEX's
+    // BasicIOS_compactKernel), where a subgroup control barrier would not be
+    // reached by the whole subgroup, which Vulkan leaves undefined (a driver
+    // could hang). The memory-only fence is valid there; lanes are kept in
+    // step by the hardware, as on NVIDIA and Intel (pxvk-warptest checks).
+    void warp_store_barrier()
     {
+        if (options_.warp_sync == CompileOptions::WarpSync::control) warp_barrier();
+        else warp_fence();
+    }
+
+    // Before a volatile shared load in warp-synchronous code, and around such
+    // stores: a memory-only barrier (valid in divergent control flow) so that
+    // this lane sees stores other lanes made, even ones under a branch it did
+    // not take.
+    void warp_fence()
+    {
+        if (options_.warp_sync == CompileOptions::WarpSync::none) return;
         b_.op(SpvOpMemoryBarrier, {b_.u32(SpvScopeSubgroup),
                                    b_.u32(SpvMemorySemanticsAcquireReleaseMask |
                                           (options_.shared_in_storage ? SpvMemorySemanticsUniformMemoryMask

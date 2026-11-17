@@ -82,6 +82,15 @@ struct CompileOptions {
     // Device supports subgroup ballots (VK_SUBGROUP_FEATURE_BALLOT_BIT):
     // kernels with vote.ballot fail to compile without them.
     bool subgroup_ballot = true;
+    // How warp-synchronous code (volatile shared memory) is made to work
+    // without lockstep, when warps are not emulated: fence = memory-only
+    // subgroup barriers around volatile shared stores and before such loads
+    // (valid in divergent code); control = subgroup control barriers around
+    // the stores (undefined where only part of the subgroup reaches them)
+    // plus the load fences; none = no barriers (pxvk-warptest only, to see
+    // what the hardware does by itself).
+    enum class WarpSync { fence, control, none };
+    WarpSync warp_sync = WarpSync::fence;
     // Device supports VK_KHR_shader_clock's shaderSubgroupClock: %clock reads
     // it (otherwise %clock is 0).
     bool shader_clock = false;

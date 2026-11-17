@@ -719,6 +719,7 @@ int main(int argc, char **argv)
             pxvk::vk::DispatchShape shape;
             shape.grid[0] = static_cast<std::uint32_t>(count / block);
             shape.block[0] = block;
+            shape.shared_bytes = kernel.info.static_shared_bytes; // sizes the pipeline's shared memory
             if (!shader || !device.upload(0, input.data(), bytes, error) ||
                 !device.dispatch(shader, shape, launch.data(), launch.size(), error) ||
                 !device.download(vulkan.data(), bytes, bytes, error))

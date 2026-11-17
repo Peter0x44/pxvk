@@ -74,6 +74,12 @@ if(NOT MSVC)
     target_link_options(pxvk-opcheck PRIVATE -static)
 endif()
 
+add_executable(pxvk-warptest tools/warptest/main.cpp)
+target_link_libraries(pxvk-warptest PRIVATE pxvk-ptx pxvk-vk)
+if(NOT MSVC)
+    target_link_options(pxvk-warptest PRIVATE -static)
+endif()
+
 add_executable(pxvk-nativeinfo tools/opcheck/nativeinfo.cpp)
 target_link_libraries(pxvk-nativeinfo PRIVATE pxvk-ptx)
 if(NOT MSVC)

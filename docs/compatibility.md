@@ -218,7 +218,10 @@ driver on NVIDIA):
 - an acquire barrier before volatile shared loads in warp-synchronous
   code: on Intel `BasicIOS_compactKernel` lost particles (flickering
   smoke that vanished) because lanes read shared memory other lanes had
-  written under a branch.
+  written under a branch. The barriers around the stores are now memory
+  barriers instead of subgroup control barriers, which are undefined in
+  divergent code (no measurable cost: NVIDIA 205.8 fps; Intel 106.8–108.0
+  against 105.2 with control barriers, back to back).
 
 The tester saw smoke, steam, paper, newspapers and snow tracks. Measured
 back to back after a reboot, on AC power, from the game's own benchmark
