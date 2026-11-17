@@ -159,9 +159,11 @@ Batman: Arkham Origins (APEX 1.3, charter stage 3) runs on NVIDIA and
 Intel, and 97 native captures of its APEX kernels replay EXACT or ok apart
 from the racy multigrid solver (`compatibility.md`); they could join the
 regression check (`check.py` would need to pass `--ptx-dir`). Assassin's Creed IV is the other
-stage 3 candidate: trace it natively first. AMD reports its compute-unit
-count through `VK_AMD_shader_core_properties`; pxvk reports 16 SMs there
-(`architecture.md`), which may give APEX smaller grids than native.
+stage 3 candidate: trace it natively first. On AMD pxvk reports the
+compute-unit count as the SM count (`architecture.md`); check `sms=` and
+the benchmark on the Radeon 8060S. The occupancy answer still assumes
+2048 threads per SM where the RTX 5070's driver reports 1536, so APEX may
+launch more workgroups than native for 1024-thread blocks.
 
 ### 11. Smaller launch captures
 

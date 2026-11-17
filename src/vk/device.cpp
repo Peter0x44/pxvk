@@ -611,8 +611,26 @@ bool Device::initialize(int index, std::string &error)
         *tail = &sm_props;
         tail = &sm_props.pNext;
     }
+    // AMD's counterpart of the SM count is the compute-unit count: the active
+    // ones (shader_core_properties2), else engines x arrays x CUs per array.
+    VkPhysicalDeviceShaderCorePropertiesAMD amd_core{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_AMD};
+    VkPhysicalDeviceShaderCoreProperties2AMD amd_core2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_2_AMD};
+    const bool amd_core_ext = has_extension(VK_AMD_SHADER_CORE_PROPERTIES_EXTENSION_NAME);
+    const bool amd_core2_ext = has_extension(VK_AMD_SHADER_CORE_PROPERTIES_2_EXTENSION_NAME);
+    if (amd_core_ext) {
+        *tail = &amd_core;
+        tail = &amd_core.pNext;
+    }
+    if (amd_core2_ext) {
+        *tail = &amd_core2;
+        tail = &amd_core2.pNext;
+    }
     vkGetPhysicalDeviceProperties2(d.physical, &props2);
     c.multiprocessor_count = sm_ext ? sm_props.shaderSMCount : 0;
+    if (c.multiprocessor_count == 0 && amd_core2_ext) c.multiprocessor_count = amd_core2.activeComputeUnitCount;
+    if (c.multiprocessor_count == 0 && amd_core_ext)
+        c.multiprocessor_count = amd_core.shaderEngineCount * amd_core.shaderArraysPerEngineCount *
+                                 amd_core.computeUnitsPerShaderArray;
     // PXVK_SM_COUNT overrides it, for comparing launch sizes (0: the persona's 16).
     if (const std::string sms = env("PXVK_SM_COUNT"); !sms.empty())
         c.multiprocessor_count = static_cast<std::uint32_t>(std::strtoul(sms.c_str(), nullptr, 10));

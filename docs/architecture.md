@@ -260,9 +260,12 @@ CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
   sm_52 persona whose
   attributes mirror a real NVIDIA driver (CUDART validates against them; e.g.
   texture bindings fail if limits read as zero). The multiprocessor count
-  is the device's real SM count where Vulkan reports it
-  (`VK_NV_shader_sm_builtins`, NVIDIA; the first log line's `sms=`),
-  otherwise the persona's 16: APEX 1.3 sizes grid-stride launches by it,
+  is the device's real SM count where Vulkan reports it, as native CUDA
+  does (36 on the RTX 5070 laptop, from `VK_NV_shader_sm_builtins`), on
+  AMD the compute-unit count (`VK_AMD_shader_core_properties2`'s active
+  units, else engines × arrays × CUs per array; not yet tried on AMD
+  hardware), and on Intel, which reports neither, the persona's 16 (the
+  first log line's `sms=`). APEX 1.3 sizes grid-stride launches by it,
   and with 16 its field samplers ran on half the native workgroups (5%
   slower over Batman: Arkham Origins' benchmark). `PXVK_SM_COUNT`
   overrides it. Total memory (`cuDeviceTotalMem`) is the device's memory

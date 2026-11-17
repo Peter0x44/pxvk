@@ -37,7 +37,7 @@ struct Capabilities {
     bool shader_clock = false; // VK_KHR_shader_clock subgroup clock (enabled)
     bool subgroup_shuffle = false; // VK_SUBGROUP_FEATURE_SHUFFLE_BIT in compute
     bool subgroup_ballot = false; // VK_SUBGROUP_FEATURE_BALLOT_BIT in compute
-    std::uint32_t multiprocessor_count = 0; // NVIDIA SM count (VK_NV_shader_sm_builtins), 0 if unknown
+    std::uint32_t multiprocessor_count = 0; // NVIDIA SMs / AMD compute units, 0 if unknown (Intel)
     std::uint32_t max_workgroup_subgroups = 0; // with subgroup_control, at warp_subgroup_size
     std::uint32_t min_subgroup_size = 0; // smallest size compute may run with (no size control)
     // Compute may run with subgroups narrower than a CUDA warp and cannot be
