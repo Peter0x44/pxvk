@@ -79,7 +79,13 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     indexes as `(base >> k) + offset / size`, so drivers share the base
     computation between neighbouring accesses.
   - Warp-synchronous code (volatile shared stores) is bracketed by subgroup
-    barriers and the pipeline requests full 32-wide subgroups. Wider
+    barriers and the pipeline requests full 32-wide subgroups. Volatile
+    shared loads are preceded by a subgroup memory barrier (acquire,
+    without execution sync, so valid in divergent code): APEX 1.3's
+    `BasicIOS_compactKernel` stores under a branch only some lanes take
+    and has every lane read those values right after, and on Intel the
+    other lanes read stale shared memory without it (particles vanished;
+    no measurable cost on NVIDIA). Wider
     subgroups hold whole warps and work too (64 lanes, as on AMD GCN:
     `PXVK_SUBGROUP_SIZE=64` requests them on RDNA for testing). Devices that
     cannot guarantee subgroups of at least 32 lanes use warp emulation
@@ -257,7 +263,13 @@ CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
   is the device's real SM count where Vulkan reports it
   (`VK_NV_shader_sm_builtins`, NVIDIA; the first log line's `sms=`),
   otherwise the persona's 16: APEX 1.3 sizes grid-stride launches by it,
-  and with 16 its field samplers ran on half the native workgroups. Allocations follow the native
+  and with 16 its field samplers ran on half the native workgroups (5%
+  slower over Batman: Arkham Origins' benchmark). `PXVK_SM_COUNT`
+  overrides it. Total memory (`cuDeviceTotalMem`) is the device's memory
+  up to 3840 MiB, not the heap limit: Intel's `maxStorageBufferRange` is 4
+  bytes short of 1 GiB, and Arkham Origins enables GPU APEX only from
+  1 GiB (`BatmanOrigins.exe`, 0xf46320). Free memory (`cuMemGetInfo`)
+  follows the heap limit. Allocations follow the native
   driver's alignment (4 KiB, 2 MiB for large blocks): PhysX sub-allocates
   inside a pool and CUDART rejects texture bindings that are not 512-byte
   aligned. New allocations are zeroed, as the native driver's are in
@@ -337,6 +349,11 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
   bit-exact against native in practice.
 - On non-NVIDIA GPUs `rcp`/`rsqrt`/`sqrt` differ from NVIDIA hardware by
   1–2 ULP; iterative solvers amplify this into small numerical drift.
+- APEX 1.3's `TurbulenceFS_Multigrid8x8x8Solve` updates cells in shared
+  memory and reads neighbouring ones without a barrier between (a
+  red/black Gauss-Seidel step without one between the colours), so its
+  results depend on thread timing and differ between replays of the same
+  capture; it cannot be bit-exact.
 - Results are not yet fully 1:1 with native on NVIDIA: every instruction
   variant is bit-exact, but 2 of 90 replayed SampleCloth launches
   (`UberSolver`, scene 5) differ by ≤ 4 ULP in some words. These kernels

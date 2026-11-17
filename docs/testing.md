@@ -88,7 +88,11 @@ build\x86\pxvk-replay.exe --device nvidia test-output\bench\captures\trace\Sampl
 Replay options: `--verbose` (show the first wrong words), `--mismatches`
 (every differing word with its grade: ulp4, near, wrong, wrong-int),
 `--time N` (GPU timing),
-`--storage-shared` (force storage-backed shared memory), `--ptx FILE`
+`--storage-shared` (force storage-backed shared memory), `--ptx-dir DIR`
+(for captures whose module the tracer did not see, `fatbin 0`, such as
+APEX's, loaded with `cuModuleLoadFatBinary`: the kernel is looked up by
+name among the `.ptx` files under DIR, extracted with
+`tools/extract-physx-ptx.py` from the same runtime folder), `--ptx FILE`
 (override the module PTX, e.g. with hand-inserted probes storing to a
 `.global pxvk_debug[]` symbol, which replay maps to a scratch area and
 prints), `--spirv-filter CMD` (run `CMD in.spv -o out.spv` on every kernel,

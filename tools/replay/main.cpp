@@ -142,7 +142,7 @@ int main(int argc, char **argv)
     bool no_contraction = false;
     bool force_storage_shared = false;
     int timing_runs = 0;
-    fs::path dir, ptx_override;
+    fs::path dir, ptx_override, ptx_dir;
     std::string spirv_filter; // command run as "<filter> in.spv out.spv" on every kernel (experiments)
     std::vector<unsigned> wanted;
     for (int i = 1; i < argc; ++i) {
@@ -157,6 +157,7 @@ int main(int argc, char **argv)
         else if (arg == "--mismatches") all_mismatches = true;
         else if (arg == "--time" && i + 1 < argc) timing_runs = std::atoi(argv[++i]);
         else if (arg == "--ptx" && i + 1 < argc) ptx_override = argv[++i];
+        else if (arg == "--ptx-dir" && i + 1 < argc) ptx_dir = argv[++i];
         else if (arg == "--spirv-filter" && i + 1 < argc) spirv_filter = argv[++i];
         else if (dir.empty()) dir = arg;
         else wanted.push_back(static_cast<unsigned>(std::stoul(arg)));
@@ -209,6 +210,26 @@ int main(int argc, char **argv)
     }
 
     std::map<unsigned, std::unique_ptr<ModuleCache>> modules;
+    // --ptx-dir: kernels of modules the tracer did not see (fatbin 0, e.g.
+    // APEX's, loaded with cuModuleLoadFatBinary) are looked up by entry name
+    // among the .ptx files of a folder extracted from the same runtime DLLs.
+    std::vector<fs::path> ptx_files;
+    std::map<std::string, unsigned> ptx_file_of; // entry name -> index into ptx_files
+    if (!ptx_dir.empty()) {
+        for (const auto &e : fs::recursive_directory_iterator(ptx_dir))
+            if (e.is_regular_file() && e.path().extension() == ".ptx") ptx_files.push_back(e.path());
+        std::sort(ptx_files.begin(), ptx_files.end());
+        for (unsigned i = 0; i < ptx_files.size(); ++i) {
+            std::ifstream in(ptx_files[i], std::ios::binary);
+            const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            try {
+                for (const auto &f : pxvk::ptx::parse(text).functions)
+                    if (f.is_entry) ptx_file_of.emplace(f.name, i);
+            } catch (const std::exception &) {
+                // modules pxvk cannot parse cannot be replayed either
+            }
+        }
+    }
     int failures = 0, total = 0;
     for (const fs::path &meta : metas) {
         // Any exception (corrupt capture, compile error, allocation failure)
@@ -231,8 +252,15 @@ int main(int argc, char **argv)
         };
 
         // Module and kernel compilation (cached per fatbin).
-        auto &cache = modules[c.fatbin];
+        const auto from_dir = c.fatbin == 0 ? ptx_file_of.find(c.kernel) : ptx_file_of.end();
+        auto &cache = modules[from_dir != ptx_file_of.end() ? 1000000u + from_dir->second : c.fatbin];
         try {
+            if (!cache && from_dir != ptx_file_of.end()) {
+                cache = std::make_unique<ModuleCache>();
+                std::ifstream in(ptx_files[from_dir->second], std::ios::binary);
+                cache->module = pxvk::ptx::parse(
+                    std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()));
+            }
             if (!cache) {
                 cache = std::make_unique<ModuleCache>();
                 char name[32];

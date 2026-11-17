@@ -1,8 +1,8 @@
 /* Kernel launch capture for differential testing.
  *
  * With PXVK_CAPTURE_LAUNCHES="a-b,c,..." (1-based launch ordinals), or
- * PXVK_CAPTURE_KERNEL=<name substring> (the first PXVK_CAPTURE_COUNT matching
- * launches, default 4), each
+ * PXVK_CAPTURE_KERNEL=<name substring>[|<substring>...] (the first
+ * PXVK_CAPTURE_COUNT launches, default 4, of each matching kernel), each
  * selected cuLaunchKernel is bracketed by full snapshots of every live device
  * allocation and module global. A capture is three files:
  *
@@ -45,7 +45,48 @@ static unsigned int g_frames[CAPTURE_MAX_RANGES];
 static unsigned int g_frame_count;
 static volatile LONG g_launch_ordinal;
 static char g_kernel_filter[256]; /* PXVK_CAPTURE_KERNEL: name substring */
-static unsigned int g_kernel_limit, g_kernel_taken;
+static unsigned int g_kernel_limit;
+/* Launches taken per kernel name, for PXVK_CAPTURE_KERNEL. */
+#define CAPTURE_MAX_KERNELS 512
+static struct {
+    char name[512];
+    unsigned int taken;
+} g_kernel_taken[CAPTURE_MAX_KERNELS];
+static unsigned int g_kernel_count;
+
+/* Whether name contains one of the '|'-separated substrings of the filter. */
+static bool kernel_matches(const char *name)
+{
+    const char *cursor = g_kernel_filter;
+    while (*cursor != '\0') {
+        const char *end = strchr(cursor, '|');
+        const size_t length = end != NULL ? (size_t)(end - cursor) : strlen(cursor);
+        if (length != 0) {
+            for (const char *at = name; *at != '\0'; ++at)
+                if (strncmp(at, cursor, length) == 0) return true;
+        }
+        if (end == NULL) break;
+        cursor = end + 1;
+    }
+    return false;
+}
+
+/* Counts one more launch of this kernel; false once it has its quota. */
+static bool take_kernel_launch(const char *name)
+{
+    unsigned int i;
+    for (i = 0; i < g_kernel_count; ++i)
+        if (strcmp(g_kernel_taken[i].name, name) == 0) break;
+    if (i == g_kernel_count) {
+        if (g_kernel_count == CAPTURE_MAX_KERNELS) return false;
+        strncpy(g_kernel_taken[i].name, name, sizeof(g_kernel_taken[i].name) - 1);
+        ++g_kernel_count;
+    }
+    if (g_kernel_taken[i].taken >= g_kernel_limit) return false;
+    ++g_kernel_taken[i].taken;
+    return true;
+}
+
 static record *g_modules, *g_functions, *g_allocations, *g_globals, *g_texrefs;
 static wchar_t g_directory[1024];
 static capture_sync_fn g_sync;
@@ -347,11 +388,10 @@ unsigned int capture_launch_begin(void *function, const unsigned int grid[3], co
         if (g_range_count != 0 && !selected(ordinal)) return 0;
         EnterCriticalSection(&g_capture_lock);
         fn = find(g_functions, (uintptr_t)function);
-        if (fn == NULL || strstr(fn->name, g_kernel_filter) == NULL || g_kernel_taken >= g_kernel_limit) {
+        if (fn == NULL || !kernel_matches(fn->name) || !take_kernel_launch(fn->name)) {
             LeaveCriticalSection(&g_capture_lock);
             return 0;
         }
-        ++g_kernel_taken;
     } else {
         if (!selected(ordinal)) return 0;
         EnterCriticalSection(&g_capture_lock);

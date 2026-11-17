@@ -1290,6 +1290,7 @@ private:
         note_space(space, is_volatile);
         const Address addr = address(in.operands[1], in.line);
         const int total = type.bits / 8 * count;
+        if (space == Space::shared && is_volatile && !options_.emulate_warps) warp_acquire();
         std::vector<std::uint32_t> elems;
         if (total < 4) {
             const std::uint32_t word = load_pointer(b_.t_u32(), word_pointer(space, addr), is_volatile);
@@ -1341,6 +1342,17 @@ private:
                                     b_.u32(SpvMemorySemanticsAcquireReleaseMask |
                                            (options_.shared_in_storage ? SpvMemorySemanticsUniformMemoryMask
                                                                        : SpvMemorySemanticsWorkgroupMemoryMask))});
+    }
+
+    // Before a volatile shared load in warp-synchronous code: a memory-only
+    // barrier (valid in divergent control flow) so that this lane sees
+    // stores other lanes made, even ones under a branch it did not take.
+    void warp_acquire()
+    {
+        b_.op(SpvOpMemoryBarrier, {b_.u32(SpvScopeSubgroup),
+                                   b_.u32(SpvMemorySemanticsAcquireReleaseMask |
+                                          (options_.shared_in_storage ? SpvMemorySemanticsUniformMemoryMask
+                                                                      : SpvMemorySemanticsWorkgroupMemoryMask))});
     }
 
     bool is_warp_sync_store(const Instruction &in)

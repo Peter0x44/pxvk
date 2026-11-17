@@ -207,7 +207,18 @@ driver on NVIDIA):
   `cuMemcpy*Async` and every effect renders;
 - the real SM count (36, from `VK_NV_shader_sm_builtins`) instead of the
   persona's 16: APEX sizes its grid-stride launches by it, and the field
-  samplers, 39% of pxvk's GPU time, ran on half the workgroups.
+  samplers, 39% of pxvk's GPU time, ran on half the workgroups (with
+  `PXVK_SM_COUNT=0` the benchmark gives 198.8 and 197.7 fps, with 36
+  207.4 and 207.8);
+- on Intel: total memory reported as the device's memory instead of the
+  heap limit, which is 4 bytes short of 1 GiB there. The game enables GPU
+  APEX only from 1 GiB (768 MiB in a case that looks like a dedicated
+  PhysX GPU): `BatmanOrigins.exe` 0xf46320 asks `PhysX3Gpu`'s context
+  manager for its total memory and otherwise releases the context;
+- an acquire barrier before volatile shared loads in warp-synchronous
+  code: on Intel `BasicIOS_compactKernel` lost particles (flickering
+  smoke that vanished) because lanes read shared memory other lanes had
+  written under a branch.
 
 The tester saw smoke, steam, paper, newspapers and snow tracks. Measured
 back to back after a reboot, on AC power, from the game's own benchmark
@@ -221,7 +232,14 @@ back to back after a reboot, on AC power, from the game's own benchmark
 
 An earlier pair measured in a slower power state gave 84 native against
 113 pxvk, and on battery the GPU's Battery Boost caps the game at 30 fps.
-No native captures were made, so replays were not compared bit-exact.
+97 native captures of 49 APEX kernels (two launches each, taken mid-
+benchmark with `PXVK_CAPTURE_KERNEL`; replayed with `pxvk-replay
+--ptx-dir` and the PTX of `Engine\4F8D3BB436C7`) replay 88 EXACT and 8 ok
+on NVIDIA, 88 EXACT and 7 ok on Intel. The rest are
+`TurbulenceFS_Multigrid8x8x8Solve`, which races by design and differs
+between replays (`architecture.md`). On the Intel iGPU (PhysX there,
+rendering on the RTX 5070) the tester saw the same smoke and steam as on
+NVIDIA.
 
 | Likely runtime | Games |
 |---|---|

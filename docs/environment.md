@@ -37,6 +37,8 @@ The log output of these needs `PXVK_LOG`.
 | `PXVK_NO_FTZ_EMULATION` | switch | Ignores `.ftz` where pxvk would emulate it (NVIDIA, whose Vulkan driver has no fp32 flush-to-zero): faster, but subnormals then survive where native CUDA flushes them, so results are no longer bit-exact. The log's `init` line shows `ftz_emulation=`. No effect on devices with native flush-to-zero (Intel). |
 | `PXVK_NO_FLOAT_ATOMICS` | switch | Compiles global float atomic adds as a compare-and-swap loop even where the device has native float atomics (`VK_EXT_shader_atomic_float`), for comparing the two. The log's `init` line shows `float_atomics=`. |
 | `PXVK_SUBGROUP_SIZE` | `64` | Runs warp-synchronous kernels in 64-wide subgroups, two warps each, as AMD GCN always does, for testing that path on GPUs that can also run 32-wide (AMD RDNA). Other values, and devices that cannot require 64-wide subgroups, keep 32. The log's `init` line shows `warp_subgroup=`. `pxvk-replay` and `pxvk-opcheck` read it too. |
+| `PXVK_SM_COUNT` | number | The multiprocessor count reported to CUDA, instead of the real SM count (NVIDIA) or the persona's 16 (`0`). For comparing launch sizes; APEX sizes its grid-stride launches by it. |
+| `PXVK_MAX_SHARED` | bytes | Lowers the shared memory pxvk assumes per workgroup, so that larger kernels take the storage-backed variant, e.g. `32768` on NVIDIA to behave like Intel. |
 | `PXVK_PIPELINE_STATS` | switch | Prints the driver's statistics for each pipeline (register count, binary size, ...) to **stderr**, if the driver supports `VK_KHR_pipeline_executable_properties`. GUI applications have no visible stderr, so use it with `pxvk-replay` or redirect the output. Does not need `PXVK_LOG`. |
 
 ## Launch capture (differential testing)
@@ -49,8 +51,8 @@ See [`testing.md`](testing.md). pxvk and the native tracer
 | `PXVK_CAPTURE_DIR` | pxvk | folder path | Destination for pxvk's captures. Capturing requires both this and `PXVK_CAPTURE_FRAMES`. |
 | `PXVK_CAPTURE_FRAMES` | pxvk, tracer | comma-separated frame numbers, e.g. `150,450,750` | Snapshots device memory around every launch in these frames, as numbered by the harness (`PXVK_FRAME`). Only works under the harness. |
 | `PXVK_CAPTURE_LAUNCHES` | tracer only | launch ordinals and ranges, e.g. `100-120,500` | Snapshots these launches by ordinal. Use it for applications without the harness, such as games. pxvk itself selects only by frame. |
-| `PXVK_CAPTURE_KERNEL` | tracer only | part of a kernel's (mangled) name, e.g. `HybridUberSolverILj1024ELb1` | Snapshots the first `PXVK_CAPTURE_COUNT` launches of matching kernels, for kernels whose ordinals vary from run to run. With `PXVK_CAPTURE_LAUNCHES` also set, only matches inside those ordinal ranges count. |
-| `PXVK_CAPTURE_COUNT` | tracer only | number | How many matching launches `PXVK_CAPTURE_KERNEL` captures. Default `4`. |
+| `PXVK_CAPTURE_KERNEL` | tracer only | part of a kernel's (mangled) name, e.g. `HybridUberSolverILj1024ELb1`, or several separated by `\|` | Snapshots the first `PXVK_CAPTURE_COUNT` launches of each matching kernel, for kernels whose ordinals vary from run to run. With `PXVK_CAPTURE_LAUNCHES` also set, only matches inside those ordinal ranges count. |
+| `PXVK_CAPTURE_COUNT` | tracer only | number | How many launches of each matching kernel `PXVK_CAPTURE_KERNEL` captures. Default `4`. |
 | `PXVK_TRACE_DIR` | tracer | folder path | Tracer output folder. Defaults to `%TEMP%\pxvk-nvcuda-trace`. `pxvk-trace.exe --output DIR` sets it. |
 | `PXVK_TRACE_TIMING` | tracer | switch | Logs native per-kernel GPU times, the counterpart of `PXVK_PROFILE`. |
 | `PXVK_API_LOG` | tracer | switch | Per-call log in the trace folder with the same `api f=<frame> t=<thread>` prefix as pxvk's, for sequence comparison. Individual messages are close but not identical (the tracer logs what native CUDA was asked, pxvk what it did). |

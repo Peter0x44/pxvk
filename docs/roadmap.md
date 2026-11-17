@@ -155,10 +155,10 @@ compiles, so what is left is tracing games that use them. Unreal Tournament
 its fluid and cloth kernels with `tools/nvcuda-trace` would check them
 bit-exact on NVIDIA, if the 32-bit driver still runs it.
 
-Batman: Arkham Origins (APEX 1.3, charter stage 3) runs but has no native
-captures yet either; capturing its APEX kernels (Turbulence, field
-samplers, IOFX) would check them bit-exact on NVIDIA, and the 2.8.4 cloth
-captures of Arkham City cover its cloth. Assassin's Creed IV is the other
+Batman: Arkham Origins (APEX 1.3, charter stage 3) runs on NVIDIA and
+Intel, and 97 native captures of its APEX kernels replay EXACT or ok apart
+from the racy multigrid solver (`compatibility.md`); they could join the
+regression check (`check.py` would need to pass `--ptx-dir`). Assassin's Creed IV is the other
 stage 3 candidate: trace it natively first. AMD reports its compute-unit
 count through `VK_AMD_shader_core_properties`; pxvk reports 16 SMs there
 (`architecture.md`), which may give APEX smaller grids than native.

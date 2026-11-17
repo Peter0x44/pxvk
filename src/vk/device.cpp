@@ -558,6 +558,11 @@ bool Device::initialize(int index, std::string &error)
         c.max_workgroup_count[i] = props.limits.maxComputeWorkGroupCount[i];
     }
     c.max_shared_bytes = props.limits.maxComputeSharedMemorySize;
+    // PXVK_MAX_SHARED lowers it, to test the storage-backed shared memory
+    // variant on devices with more (e.g. 32768 on NVIDIA behaves like Intel).
+    if (const std::string limit = env("PXVK_MAX_SHARED"); !limit.empty())
+        c.max_shared_bytes = std::min<std::uint32_t>(
+            c.max_shared_bytes, static_cast<std::uint32_t>(std::strtoul(limit.c_str(), nullptr, 10)));
     c.max_heap_bytes = props.limits.maxStorageBufferRange;
     {
         static const char digits[] = "0123456789abcdef";
@@ -608,6 +613,9 @@ bool Device::initialize(int index, std::string &error)
     }
     vkGetPhysicalDeviceProperties2(d.physical, &props2);
     c.multiprocessor_count = sm_ext ? sm_props.shaderSMCount : 0;
+    // PXVK_SM_COUNT overrides it, for comparing launch sizes (0: the persona's 16).
+    if (const std::string sms = env("PXVK_SM_COUNT"); !sms.empty())
+        c.multiprocessor_count = static_cast<std::uint32_t>(std::strtoul(sms.c_str(), nullptr, 10));
     c.subgroup_size = subgroup_basic.subgroupSize;
     c.min_subgroup_size = subgroup_ext ? subgroup_props.minSubgroupSize : subgroup_basic.subgroupSize;
     c.native_ftz = float_controls && float_props.shaderDenormFlushToZeroFloat32;

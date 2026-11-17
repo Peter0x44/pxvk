@@ -258,7 +258,7 @@ writes its results to `SinglePlayer\BMGame\Logs\benchmark.log`.
 
 Kernel launches start in-game or in the benchmark. On battery, NVIDIA's
 Battery Boost caps the game at 30 fps, natively too. Tested on an RTX 5070
-laptop with PhysX High; Intel and AMD are untested.
+laptop with PhysX High, and with PhysX on its Intel GPU (`PXVK_DEVICE=intel`); AMD is untested.
 
 ## Unreal Tournament 3 (Steam)
 

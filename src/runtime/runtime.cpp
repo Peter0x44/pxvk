@@ -883,12 +883,22 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuDeviceGetName(char *name, int length, CUdevi
     return CUDA_SUCCESS;
 }
 
+// Total memory as CUDA reports it: the device's memory, up to the 3840 MiB
+// the heap may ever use, not the largest heap the device can address. On
+// Intel maxStorageBufferRange is 4 bytes short of 1 GiB, and PhysX 3 GPU
+// (APEX 1.3 in Batman: Arkham Origins) refuses devices under 1 GiB. Free
+// memory (cuMemGetInfo) still follows the heap limit.
+std::uint64_t total_memory(const State &s)
+{
+    return std::max<std::uint64_t>(s.heap_limit, std::min<std::uint64_t>(s.device.caps().device_local_bytes, 0xF0000000u));
+}
+
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuDeviceTotalMem_v2(size_t *bytes, CUdevice device)
 {
     if (!bytes || device != 0) return CUDA_ERROR_INVALID_VALUE;
     LOCK;
     REQUIRE;
-    *bytes = static_cast<size_t>(std::min<std::uint64_t>(s.heap_limit, 0xFFFFFFFFu));
+    *bytes = static_cast<size_t>(total_memory(s));
     return CUDA_SUCCESS;
 }
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuDeviceTotalMem(size_t *bytes, CUdevice device) { return cuDeviceTotalMem_v2(bytes, device); }
@@ -899,7 +909,7 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemGetInfo_v2(size_t *free_bytes, size_t *to
     REQUIRE;
     std::uint64_t in_use = 0;
     for (const auto &u : s.used) in_use += u.second;
-    if (total_bytes) *total_bytes = static_cast<size_t>(std::min<std::uint64_t>(s.heap_limit, 0xFFFFFFFFu));
+    if (total_bytes) *total_bytes = static_cast<size_t>(total_memory(s));
     if (free_bytes) *free_bytes = static_cast<size_t>(std::min<std::uint64_t>(s.heap_limit - in_use, 0xFFFFFFFFu));
     return CUDA_SUCCESS;
 }
