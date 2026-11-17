@@ -78,14 +78,29 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
   - Memory operands keep their constant offset separate: an aligned access
     indexes as `(base >> k) + offset / size`, so drivers share the base
     computation between neighbouring accesses.
+  - Warp-synchronous code relies on lockstep execution. NVIDIA GPUs before
+    Volta ran the 32 threads of a warp on one instruction stream: every
+    lane finished an instruction before any lane started the next, and
+    lanes that skipped a branch waited, masked, until the warp rejoined.
+    So a value one lane stored to shared memory was there for every other
+    lane's next load, and PhysX and APEX exchange data within a warp
+    through `volatile` shared memory with no barrier. CUDA never specified
+    this (Volta and later need `__syncwarp()` for new code; NVIDIA's driver
+    keeps old PTX working), and Vulkan does not provide it: a subgroup need
+    not run in lockstep, and under the Vulkan memory model a lane is only
+    guaranteed to see another lane's store if it synchronizes itself (a
+    release by the writer, an acquire by the reader). pxvk recreates the
+    guarantee with barriers.
   - Warp-synchronous code (volatile shared stores) is bracketed by subgroup
     barriers and the pipeline requests full 32-wide subgroups. Volatile
     shared loads are preceded by a subgroup memory barrier (acquire,
     without execution sync, so valid in divergent code): APEX 1.3's
-    `BasicIOS_compactKernel` stores under a branch only some lanes take
-    and has every lane read those values right after, and on Intel the
-    other lanes read stale shared memory without it (particles vanished;
-    no measurable cost on NVIDIA). Wider
+    `BasicIOS_compactKernel` stores under a branch only some lanes take,
+    so only those lanes run the barriers around the store, and then every
+    lane reads those values. The lanes that skipped the branch had no
+    barrier of their own, and on Intel they read stale shared memory
+    without the acquire (particles vanished; no measurable cost on
+    NVIDIA). Wider
     subgroups hold whole warps and work too (64 lanes, as on AMD GCN:
     `PXVK_SUBGROUP_SIZE=64` requests them on RDNA for testing). Devices that
     cannot guarantee subgroups of at least 32 lanes use warp emulation
