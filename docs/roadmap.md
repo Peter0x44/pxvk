@@ -157,8 +157,8 @@ bit-exact on NVIDIA, if the 32-bit driver still runs it.
 
 Batman: Arkham Origins (APEX 1.3, charter stage 3) runs on NVIDIA and
 Intel, and 97 native captures of its APEX kernels replay EXACT or ok apart
-from the racy multigrid solver (`compatibility.md`); they could join the
-regression check (`check.py` would need to pass `--ptx-dir`). Assassin's Creed IV is the other
+from the racy multigrid solver (`compatibility.md`); they are part of the
+regression check (`testing.md`). Assassin's Creed IV is the other
 stage 3 candidate: trace it natively first. On AMD pxvk reports the
 compute-unit count as the SM count (`architecture.md`); check `sms=` and
 the benchmark on the Radeon 8060S. The occupancy answer still assumes

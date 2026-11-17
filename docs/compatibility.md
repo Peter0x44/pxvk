@@ -237,10 +237,11 @@ An earlier pair measured in a slower power state gave 84 native against
 113 pxvk, and on battery the GPU's Battery Boost caps the game at 30 fps.
 97 native captures of 49 APEX kernels (two launches each, taken mid-
 benchmark with `PXVK_CAPTURE_KERNEL`; replayed with `pxvk-replay
---ptx-dir` and the PTX of `Engine\4F8D3BB436C7`) replay 88 EXACT and 8 ok
-on NVIDIA, 88 EXACT and 7 ok on Intel. The rest are
+--ptx-dir` and the PTX of `Engine\4F8D3BB436C7`) replay 88 EXACT and 7–8
+ok on NVIDIA and on Intel. The rest (1–2) are
 `TurbulenceFS_Multigrid8x8x8Solve`, which races by design and differs
-between replays (`architecture.md`). On the Intel iGPU (PhysX there,
+between replays (`architecture.md`). They are part of the regression check
+(`testing.md`). On the Intel iGPU (PhysX there,
 rendering on the RTX 5070) the tester saw the same smoke and steam as on
 NVIDIA.
 
