@@ -256,6 +256,8 @@ CUresult initialize(State &s)
     if (s.initialized) return s.init_result;
     s.initialized = true;
     std::string error;
+    // PXVK_VALIDATION: Vulkan validation messages go into the log.
+    s.device.set_message_sink([&s](const std::string &message) { s.log.write("vulkan %s", message.c_str()); });
     if (!s.device.initialize(env("PXVK_DEVICE"), error)) {
         s.log.write("init failed: %s", error.c_str());
         s.init_result = CUDA_ERROR_NO_DEVICE;
@@ -295,6 +297,7 @@ CUresult initialize(State &s)
                 static_cast<unsigned long long>(s.heap_limit >> 20),
                 caps.heap_windows, s.options.emulate_warps, s.options.float_atomic_add,
                 !caps.native_ftz && !s.options.no_ftz_emulation, caps.multiprocessor_count, pxvk::runtime::nvapi_mode());
+    if (caps.validation != "off") s.log.write("validation %s", caps.validation.c_str());
     return CUDA_SUCCESS;
 }
 

@@ -40,6 +40,7 @@ The log output of these needs `PXVK_LOG`.
 | `PXVK_SM_COUNT` | number | The multiprocessor count reported to CUDA, instead of the real SM count (NVIDIA) or the persona's 16 (`0`). For comparing launch sizes; APEX sizes its grid-stride launches by it. |
 | `PXVK_MAX_SHARED` | bytes | Lowers the shared memory pxvk assumes per workgroup, so that larger kernels take the storage-backed variant, e.g. `32768` on NVIDIA to behave like Intel. |
 | `PXVK_PIPELINE_STATS` | switch | Prints the driver's statistics for each pipeline (register count, binary size, ...) to **stderr**, if the driver supports `VK_KHR_pipeline_executable_properties`. GUI applications have no visible stderr, so use it with `pxvk-replay` or redirect the output. Does not need `PXVK_LOG`. |
+| `PXVK_VALIDATION` | switch | Enables the Khronos validation layer (`VK_LAYER_KHRONOS_validation`) with synchronization validation and writes its warnings and errors to the log as `vulkan warning ...` / `vulkan error ...` lines (the tools print them to stderr). pxvk is 32-bit, so the layer must be 32-bit (`testing.md`); pxvk finds it next to `nvcuda.dll` (or a tool's executable) or through `VK_ADD_LAYER_PATH`. The log's `validation` line says whether it is on. Slow: Batman: Arkham Origins' benchmark runs at about 130 instead of 207 fps. |
 
 ## Launch capture (differential testing)
 

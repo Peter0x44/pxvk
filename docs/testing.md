@@ -246,6 +246,35 @@ build\nvcuda-trace-mingw\pxvk-trace.exe --output test-output\fm-native -- "C:\Pr
 
 These 82 captures take 1.9 GB (see the roadmap).
 
+## Vulkan validation layers
+
+`PXVK_VALIDATION=1` (`environment.md`) runs pxvk under the Khronos
+validation layer with synchronization validation, in the tools and in
+games. The layer has to be 32-bit, and Vulkan SDK 1.4.363 ships only a
+64-bit one, so build it from the release matching the SDK with the same
+MinGW toolchain as pxvk:
+
+```powershell
+git clone --depth 1 --branch vulkan-sdk-1.4.363.1 https://github.com/KhronosGroup/Vulkan-ValidationLayers.git tmp\vvl\src
+cmake -S tmp\vvl\src -B tmp\vvl\build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++ -DUPDATE_DEPS=ON -DBUILD_TESTS=OFF -DBUILD_WERROR=OFF
+cmake --build tmp\vvl\build
+```
+
+Then copy `VkLayer_khronos_validation.dll` and `.json` from
+`tmp\vvl\build\layers` next to `nvcuda.dll`, or set `VK_ADD_LAYER_PATH` to
+that folder.
+
+The layers check pxvk's use of the Vulkan API (resources, descriptors,
+command recording, barriers between commands), not what happens between
+invocations inside a shader: warp-synchronous races such as the one in
+APEX's compaction kernel (`architecture.md`) do not show up. In November
+2026 every replay set and opcheck on the RTX 5070 and the Intel iGPU, and a
+full Batman: Arkham Origins benchmark (4.6 million launches) on NVIDIA, gave
+no validation error and no synchronization hazard. The best-practices
+checks (`VK_KHRONOS_VALIDATION_VALIDATE_BEST_PRACTICES=true`) only note
+that pxvk declares the workgroup size with the `WorkgroupSize` built-in,
+which SPIR-V 1.6 deprecated and the SPIR-V version pxvk targets uses.
+
 ## lavapipe (no second GPU needed)
 
 Mesa's software Vulkan driver exercises the fallbacks for limited devices

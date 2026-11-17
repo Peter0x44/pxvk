@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -38,6 +39,8 @@ struct Capabilities {
     bool subgroup_shuffle = false; // VK_SUBGROUP_FEATURE_SHUFFLE_BIT in compute
     bool subgroup_ballot = false; // VK_SUBGROUP_FEATURE_BALLOT_BIT in compute
     std::uint32_t multiprocessor_count = 0; // NVIDIA SMs / AMD compute units, 0 if unknown (Intel)
+    // PXVK_VALIDATION: "off", "on" (with synchronization validation), or why it could not be enabled.
+    std::string validation = "off";
     std::uint32_t max_workgroup_subgroups = 0; // with subgroup_control, at warp_subgroup_size
     std::uint32_t min_subgroup_size = 0; // smallest size compute may run with (no size control)
     // Compute may run with subgroups narrower than a CUDA warp and cannot be
@@ -101,6 +104,10 @@ public:
     bool initialize(const std::string &selector, std::string &error);
     void shutdown();
     const Capabilities &caps() const;
+
+    // Where Vulkan validation messages go (PXVK_VALIDATION); stderr without a
+    // sink. Set before initialize.
+    void set_message_sink(std::function<void(const std::string &)> sink);
 
     // Heap management. Growing preserves contents.
     bool ensure_heap(std::uint64_t bytes, std::string &error);

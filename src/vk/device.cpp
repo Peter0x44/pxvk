@@ -67,6 +67,8 @@ struct Shader {
 struct Device::Impl {
     Capabilities caps;
     VkInstance instance = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE; // PXVK_VALIDATION
+    std::function<void(const std::string &)> message_sink;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     VkQueue queue = VK_NULL_HANDLE;
@@ -435,6 +437,50 @@ struct Device::Impl {
 Device::Device() : impl_(new Impl) {}
 Device::~Device() { shutdown(); }
 
+void Device::set_message_sink(std::function<void(const std::string &)> sink) { impl_->message_sink = std::move(sink); }
+
+namespace {
+
+constexpr const char *kValidationLayer = "VK_LAYER_KHRONOS_validation";
+
+VKAPI_ATTR VkBool32 VKAPI_CALL validation_message(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                                  VkDebugUtilsMessageTypeFlagsEXT,
+                                                  const VkDebugUtilsMessengerCallbackDataEXT *data, void *user)
+{
+    const auto *sink = static_cast<const std::function<void(const std::string &)> *>(user);
+    std::string text = severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT ? "error" : "warning";
+    if (data->pMessageIdName) text += std::string(" ") + data->pMessageIdName;
+    text += std::string(": ") + (data->pMessage ? data->pMessage : "");
+    for (char &c : text)
+        if (c == '\n' || c == '\r') c = ' ';
+    if (*sink) (*sink)(text);
+    else std::fprintf(stderr, "vulkan validation %s\n", text.c_str());
+    return VK_FALSE;
+}
+
+// PXVK_VALIDATION also finds a validation layer placed next to this module
+// (nvcuda.dll, or a tool's executable): its folder is appended to
+// VK_ADD_LAYER_PATH, which the loader reads when it scans for layers.
+void add_own_folder_to_layer_path()
+{
+    HMODULE self = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(&add_own_folder_to_layer_path), &self))
+        return;
+    wchar_t path[MAX_PATH];
+    const DWORD length = GetModuleFileNameW(self, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return;
+    std::wstring folder(path, length);
+    folder.erase(folder.find_last_of(L"\\/"));
+    std::wstring value = folder;
+    wchar_t existing[4096];
+    const DWORD n = GetEnvironmentVariableW(L"VK_ADD_LAYER_PATH", existing, 4096);
+    if (n != 0 && n < 4096) value = std::wstring(existing, n) + L";" + folder;
+    SetEnvironmentVariableW(L"VK_ADD_LAYER_PATH", value.c_str());
+}
+
+} // namespace
+
 std::vector<std::string> Device::enumerate(std::string &error)
 {
     std::vector<std::string> out;
@@ -507,12 +553,68 @@ bool Device::initialize(int index, std::string &error)
     app.apiVersion = VK_API_VERSION_1_3;
     VkInstanceCreateInfo instance_info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     instance_info.pApplicationInfo = &app;
+
+    // PXVK_VALIDATION: the Khronos validation layer with synchronization
+    // validation, its messages through VK_EXT_debug_utils to the sink.
+    std::vector<const char *> layers, instance_extensions;
+    const VkBool32 vk_true = VK_TRUE;
+    VkLayerSettingEXT sync_setting{kValidationLayer, "validate_sync", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &vk_true};
+    VkLayerSettingsCreateInfoEXT layer_settings{VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT};
+    bool debug_utils = false;
+    if (env_switch("PXVK_VALIDATION")) {
+        add_own_folder_to_layer_path();
+        std::uint32_t n = 0;
+        vkEnumerateInstanceLayerProperties(&n, nullptr);
+        std::vector<VkLayerProperties> available(n);
+        vkEnumerateInstanceLayerProperties(&n, available.data());
+        const bool found = std::any_of(available.begin(), available.end(), [](const VkLayerProperties &l) {
+            return std::strcmp(l.layerName, kValidationLayer) == 0;
+        });
+        if (!found) {
+            d.caps.validation = "requested, but VK_LAYER_KHRONOS_validation was not found (place a 32-bit layer "
+                                "next to nvcuda.dll or set VK_ADD_LAYER_PATH)";
+        } else {
+            layers.push_back(kValidationLayer);
+            n = 0;
+            vkEnumerateInstanceExtensionProperties(kValidationLayer, &n, nullptr);
+            std::vector<VkExtensionProperties> extensions(n);
+            vkEnumerateInstanceExtensionProperties(kValidationLayer, &n, extensions.data());
+            auto provides = [&](const char *name) {
+                return std::any_of(extensions.begin(), extensions.end(),
+                                   [&](const VkExtensionProperties &e) { return std::strcmp(e.extensionName, name) == 0; });
+            };
+            debug_utils = provides(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+            if (debug_utils) instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+            const bool settings = provides(VK_EXT_LAYER_SETTINGS_EXTENSION_NAME);
+            if (settings) {
+                instance_extensions.push_back(VK_EXT_LAYER_SETTINGS_EXTENSION_NAME);
+                layer_settings.settingCount = 1;
+                layer_settings.pSettings = &sync_setting;
+                instance_info.pNext = &layer_settings;
+            }
+            d.caps.validation = settings ? "on" : "on (without synchronization validation: no VK_EXT_layer_settings)";
+        }
+        instance_info.enabledLayerCount = static_cast<std::uint32_t>(layers.size());
+        instance_info.ppEnabledLayerNames = layers.data();
+        instance_info.enabledExtensionCount = static_cast<std::uint32_t>(instance_extensions.size());
+        instance_info.ppEnabledExtensionNames = instance_extensions.data();
+    }
     VkResult r = vkCreateInstance(&instance_info, nullptr, &d.instance);
     if (r != VK_SUCCESS) {
         error = vk_error("vkCreateInstance", r);
         return false;
     }
     volkLoadInstance(d.instance);
+    if (debug_utils) {
+        VkDebugUtilsMessengerCreateInfoEXT messenger_info{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+        messenger_info.messageSeverity =
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        messenger_info.messageType =
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
+        messenger_info.pfnUserCallback = validation_message;
+        messenger_info.pUserData = &d.message_sink;
+        vkCreateDebugUtilsMessengerEXT(d.instance, &messenger_info, nullptr, &d.messenger);
+    }
 
     std::uint32_t count = 0;
     vkEnumeratePhysicalDevices(d.instance, &count, nullptr);
@@ -867,6 +969,8 @@ void Device::shutdown()
 {
     Impl &d = *impl_;
     if (!d.device) {
+        if (d.messenger) vkDestroyDebugUtilsMessengerEXT(d.instance, d.messenger, nullptr);
+        d.messenger = VK_NULL_HANDLE;
         if (d.instance) vkDestroyInstance(d.instance, nullptr);
         d.instance = VK_NULL_HANDLE;
         return;
@@ -893,6 +997,8 @@ void Device::shutdown()
     vkDestroyFence(d.device, d.fence, nullptr);
     vkDestroyCommandPool(d.device, d.pool, nullptr);
     vkDestroyDevice(d.device, nullptr);
+    if (d.messenger) vkDestroyDebugUtilsMessengerEXT(d.instance, d.messenger, nullptr);
+    d.messenger = VK_NULL_HANDLE;
     vkDestroyInstance(d.instance, nullptr);
     d.device = VK_NULL_HANDLE;
     d.instance = VK_NULL_HANDLE;
