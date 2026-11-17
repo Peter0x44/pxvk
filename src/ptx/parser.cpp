@@ -16,6 +16,10 @@ bool parse_type_name(std::string_view name, Type &out)
         out = {'t', 64};
         return true;
     }
+    if (name == "surfref") {
+        out = {'r', 64};
+        return true;
+    }
     if (name.size() < 2) return false;
     const char kind = name[0];
     if (kind != 'b' && kind != 'u' && kind != 's' && kind != 'f') return false;
@@ -378,6 +382,7 @@ private:
         }
         v.type = type_directive();
         if (v.type.kind == 't') v.space = Space::tex;
+        if (v.type.kind == 'r') v.space = Space::surf;
         v.name = expect_kind(Token::Kind::ident).text;
         if (vector != 1) v.dims.push_back(static_cast<std::uint64_t>(vector));
         while (accept("[")) {

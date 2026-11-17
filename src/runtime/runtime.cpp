@@ -113,6 +113,14 @@ struct TexRef {
     int components = 1;
 };
 
+// A .surfref only needs a handle: APEX 1.3's IOFX looks up four after loading
+// its module but no kernel accesses a surface, and binding one
+// (cuSurfRefSetArray) is unsupported.
+struct SurfRef {
+    Module *module = nullptr;
+    std::string name;
+};
+
 // A compiled kernel variant. Entries live in State::kernels, keyed by PTX
 // content, so modules that are unloaded and registered again (PhysX does
 // this on every scene change) reuse kernels, shaders and pipelines.
@@ -135,6 +143,7 @@ struct Module {
     std::uint64_t ptx_hash = 0;
     std::map<std::string, std::pair<std::uint32_t, std::uint32_t>> globals; // address, size
     std::map<std::string, std::unique_ptr<TexRef>> texrefs;
+    std::map<std::string, std::unique_ptr<SurfRef>> surfrefs;
     std::map<std::string, std::unique_ptr<Function>> functions;
 };
 
@@ -262,6 +271,7 @@ CUresult initialize(State &s)
     s.options.float_atomic_add = caps.float_atomic_add;
     s.options.shader_clock = caps.shader_clock;
     s.options.subgroup_shuffle = caps.subgroup_shuffle;
+    s.options.subgroup_ballot = caps.subgroup_ballot;
     s.options.heap_window_shift = caps.heap_window_shift;
     s.options.heap_windows = caps.heap_windows;
     s.heap_limit = caps.max_heap_bytes;
@@ -279,12 +289,12 @@ CUresult initialize(State &s)
         s.device.load_pipeline_cache(s.pipeline_cache_path);
     }
     s.device.set_timing(s.profile);
-    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d preserve_denorm=%d subgroup_control=%d warp_subgroup=%u preserve_nan=%d shared=%u heap_limit=%lluMiB heap_windows=%u warp_emulation=%d float_atomics=%d ftz_emulation=%d nvapi=%s",
+    s.log.write("init device=\"%s\" vendor=%04x subgroup=%u native_ftz=%d preserve_denorm=%d subgroup_control=%d warp_subgroup=%u preserve_nan=%d shared=%u heap_limit=%lluMiB heap_windows=%u warp_emulation=%d float_atomics=%d ftz_emulation=%d sms=%u nvapi=%s",
                 caps.name.c_str(), caps.vendor_id, caps.subgroup_size, caps.native_ftz, caps.preserve_denorm,
                 caps.subgroup_control, caps.warp_subgroup_size, caps.preserve_nan, caps.max_shared_bytes,
                 static_cast<unsigned long long>(s.heap_limit >> 20),
                 caps.heap_windows, s.options.emulate_warps, s.options.float_atomic_add,
-                !caps.native_ftz && !s.options.no_ftz_emulation, pxvk::runtime::nvapi_mode());
+                !caps.native_ftz && !s.options.no_ftz_emulation, caps.multiprocessor_count, pxvk::runtime::nvapi_mode());
     return CUDA_SUCCESS;
 }
 
@@ -411,6 +421,13 @@ CUresult load_ptx(State &s, const std::string &text, CUmodule *output)
             ref->name = v.name;
             s.texrefs.insert(ref.get());
             module->texrefs[v.name] = std::move(ref);
+            continue;
+        }
+        if (v.space == ptx::Space::surf) {
+            auto ref = std::make_unique<SurfRef>();
+            ref->module = module.get();
+            ref->name = v.name;
+            module->surfrefs[v.name] = std::move(ref);
             continue;
         }
         if (v.space != ptx::Space::global && v.space != ptx::Space::constant) continue;
@@ -930,6 +947,15 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuDeviceGetAttribute(int *output, CUdevice_att
             static_cast<std::uint32_t>(value), caps.max_workgroup_count[attribute - CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X]));
         break;
     case CU_DEVICE_ATTRIBUTE_INTEGRATED: value = caps.discrete ? 0 : 1; break;
+    // The real SM count where Vulkan reports it (NVIDIA): APEX 1.3 sizes the
+    // grids of its grid-stride kernels by it, as native CUDA does.
+    case CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT:
+        if (caps.multiprocessor_count != 0) value = static_cast<int>(caps.multiprocessor_count);
+        break;
+    // pxvk cannot map host memory into the heap. PhysX 3 GPU (APEX 1.3 in
+    // Batman: Arkham Origins) then copies with cuMemcpy*Async instead of its
+    // MemCopyBatchedAsync kernel writing mapped pinned memory.
+    case CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY: value = 0; break;
     default: break;
     }
     *output = value;
@@ -1196,6 +1222,18 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuModuleGetTexRef(CUtexref *output, CUmodule h
     return CUDA_SUCCESS;
 }
 
+PXVK_EXPORT CUresult PXVK_CUDAAPI cuModuleGetSurfRef(CUsurfref *output, CUmodule handle, const char *name)
+{
+    if (!output || !name) return CUDA_ERROR_INVALID_VALUE;
+    LOCK;
+    Module *m = module_of(s, handle);
+    if (!m) return CUDA_ERROR_INVALID_HANDLE;
+    const auto found = m->surfrefs.find(name);
+    if (found == m->surfrefs.end()) return CUDA_ERROR_NOT_FOUND;
+    *output = reinterpret_cast<CUsurfref>(found->second.get());
+    return CUDA_SUCCESS;
+}
+
 // ============================================================================
 // Memory
 // ============================================================================
@@ -1326,6 +1364,20 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD8_v2(CUdeviceptr destination, unsigne
 }
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD8(CUdeviceptr d, unsigned char v, size_t n) { return cuMemsetD8_v2(d, v, n); }
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD8Async(CUdeviceptr d, unsigned char v, size_t n, CUstream) { return cuMemsetD8_v2(d, v, n); }
+
+// PhysX 3 GPU and APEX 1.3 bind these (Batman: Arkham Origins).
+PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD32_v2(CUdeviceptr destination, unsigned int value, size_t count)
+{
+    LOCK;
+    API_LOG("memset32 dst=%08x value=%08x count=%u", destination, value, static_cast<unsigned>(count));
+    if (count == 0) return CUDA_SUCCESS;
+    if ((destination & 3) != 0 || count > 0x3fffffffu || !valid_range(s, destination, count * 4))
+        return CUDA_ERROR_INVALID_VALUE;
+    std::string error;
+    if (!s.device.fill32(destination, value, count, error)) return failure(s, "memset", error);
+    return s.sync_everything && !s.device.synchronize(error) ? failure(s, "sync", error) : CUDA_SUCCESS;
+}
+PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD32Async(CUdeviceptr d, unsigned int v, size_t n, CUstream) { return cuMemsetD32_v2(d, v, n); }
 
 // ============================================================================
 // Texture references

@@ -6,6 +6,7 @@ cuArrayGetDescriptor_v2
 cuCtxDisablePeerAccess
 cuCtxEnablePeerAccess
 cuD3D10CtxCreateOnDevice
+cuD3D10CtxCreate_v2
 cuD3D10GetDevice
 cuD3D10GetDevices
 cuD3D10GetDirect3DDevice
@@ -20,11 +21,13 @@ cuD3D10ResourceSetMapFlags
 cuD3D10UnmapResources
 cuD3D10UnregisterResource
 cuD3D11CtxCreateOnDevice
+cuD3D11CtxCreate_v2
 cuD3D11GetDevice
 cuD3D11GetDevices
 cuD3D11GetDirect3DDevice
 cuD3D9Begin
 cuD3D9CtxCreateOnDevice
+cuD3D9CtxCreate_v2
 cuD3D9End
 cuD3D9GetDevice
 cuD3D9GetDevices
@@ -104,12 +107,9 @@ cuMemsetD16Async
 cuMemsetD16_v2
 cuMemsetD2D8Async
 cuMemsetD2D8_v2
-cuMemsetD32Async
-cuMemsetD32_v2
 cuMipmappedArrayCreate
 cuMipmappedArrayDestroy
 cuMipmappedArrayGetLevel
-cuModuleGetSurfRef
 cuModuleLoad
 cuParamSetSize
 cuParamSetv

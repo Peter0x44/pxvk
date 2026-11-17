@@ -63,6 +63,12 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuD3D10CtxCreateOnDevice(std::uint32_t, std::u
     pxvk_log_unsupported("cuD3D10CtxCreateOnDevice");
     return CUDA_ERROR_NOT_SUPPORTED;
 }
+// 16 bytes of arguments
+PXVK_EXPORT CUresult PXVK_CUDAAPI cuD3D10CtxCreate_v2(std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t)
+{
+    pxvk_log_unsupported("cuD3D10CtxCreate_v2");
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
 // 8 bytes of arguments
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuD3D10GetDevice(std::uint32_t, std::uint32_t)
 {
@@ -147,6 +153,12 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuD3D11CtxCreateOnDevice(std::uint32_t, std::u
     pxvk_log_unsupported("cuD3D11CtxCreateOnDevice");
     return CUDA_ERROR_NOT_SUPPORTED;
 }
+// 16 bytes of arguments
+PXVK_EXPORT CUresult PXVK_CUDAAPI cuD3D11CtxCreate_v2(std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t)
+{
+    pxvk_log_unsupported("cuD3D11CtxCreate_v2");
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
 // 8 bytes of arguments
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuD3D11GetDevice(std::uint32_t, std::uint32_t)
 {
@@ -175,6 +187,12 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuD3D9Begin(std::uint32_t)
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuD3D9CtxCreateOnDevice(std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t)
 {
     pxvk_log_unsupported("cuD3D9CtxCreateOnDevice");
+    return CUDA_ERROR_NOT_SUPPORTED;
+}
+// 16 bytes of arguments
+PXVK_EXPORT CUresult PXVK_CUDAAPI cuD3D9CtxCreate_v2(std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t)
+{
+    pxvk_log_unsupported("cuD3D9CtxCreate_v2");
     return CUDA_ERROR_NOT_SUPPORTED;
 }
 // 0 bytes of arguments
@@ -651,18 +669,6 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD2D8_v2(std::uint32_t, std::uint32_t, 
     pxvk_log_unsupported("cuMemsetD2D8_v2");
     return CUDA_ERROR_NOT_SUPPORTED;
 }
-// 16 bytes of arguments
-PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD32Async(std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t)
-{
-    pxvk_log_unsupported("cuMemsetD32Async");
-    return CUDA_ERROR_NOT_SUPPORTED;
-}
-// 12 bytes of arguments
-PXVK_EXPORT CUresult PXVK_CUDAAPI cuMemsetD32_v2(std::uint32_t, std::uint32_t, std::uint32_t)
-{
-    pxvk_log_unsupported("cuMemsetD32_v2");
-    return CUDA_ERROR_NOT_SUPPORTED;
-}
 // 12 bytes of arguments
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuMipmappedArrayCreate(std::uint32_t, std::uint32_t, std::uint32_t)
 {
@@ -679,12 +685,6 @@ PXVK_EXPORT CUresult PXVK_CUDAAPI cuMipmappedArrayDestroy(std::uint32_t)
 PXVK_EXPORT CUresult PXVK_CUDAAPI cuMipmappedArrayGetLevel(std::uint32_t, std::uint32_t, std::uint32_t)
 {
     pxvk_log_unsupported("cuMipmappedArrayGetLevel");
-    return CUDA_ERROR_NOT_SUPPORTED;
-}
-// 12 bytes of arguments
-PXVK_EXPORT CUresult PXVK_CUDAAPI cuModuleGetSurfRef(std::uint32_t, std::uint32_t, std::uint32_t)
-{
-    pxvk_log_unsupported("cuModuleGetSurfRef");
     return CUDA_ERROR_NOT_SUPPORTED;
 }
 // 8 bytes of arguments

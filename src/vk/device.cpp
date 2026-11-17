@@ -599,7 +599,15 @@ bool Device::initialize(int index, std::string &error)
         *tail = &subgroup_props;
         tail = &subgroup_props.pNext;
     }
+    VkPhysicalDeviceShaderSMBuiltinsPropertiesNV sm_props{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SM_BUILTINS_PROPERTIES_NV};
+    const bool sm_ext = has_extension(VK_NV_SHADER_SM_BUILTINS_EXTENSION_NAME);
+    if (sm_ext) {
+        *tail = &sm_props;
+        tail = &sm_props.pNext;
+    }
     vkGetPhysicalDeviceProperties2(d.physical, &props2);
+    c.multiprocessor_count = sm_ext ? sm_props.shaderSMCount : 0;
     c.subgroup_size = subgroup_basic.subgroupSize;
     c.min_subgroup_size = subgroup_ext ? subgroup_props.minSubgroupSize : subgroup_basic.subgroupSize;
     c.native_ftz = float_controls && float_props.shaderDenormFlushToZeroFloat32;
@@ -637,6 +645,8 @@ bool Device::initialize(int index, std::string &error)
     c.shader_clock = clock_ext && clock_features.shaderSubgroupClock;
     c.subgroup_shuffle = (subgroup_basic.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
                          (subgroup_basic.supportedOperations & VK_SUBGROUP_FEATURE_SHUFFLE_BIT);
+    c.subgroup_ballot = (subgroup_basic.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+                        (subgroup_basic.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT);
     c.int64 = features2.features.shaderInt64;
     c.max_workgroup_subgroups = subgroup_ext ? subgroup_props.maxComputeWorkgroupSubgroups : 0;
     const bool size_control = subgroup_ext && subgroup_features.subgroupSizeControl &&
@@ -970,6 +980,20 @@ bool Device::fill(std::uint64_t offset, std::uint8_t value, std::size_t bytes, s
         std::uint8_t tail[4] = {value, value, value, value};
         if (!upload(aligned_end, tail, static_cast<std::size_t>(end - aligned_end), error)) return false;
     }
+    return true;
+}
+
+bool Device::fill32(std::uint64_t offset, std::uint32_t word, std::size_t count, std::string &error)
+{
+    Impl &d = *impl_;
+    const std::uint64_t bytes = static_cast<std::uint64_t>(count) * 4;
+    if ((offset & 3) != 0 || offset + bytes > d.heap.size) {
+        error = "fill32 outside the heap or unaligned";
+        return false;
+    }
+    if (count == 0) return true;
+    d.barrier();
+    vkCmdFillBuffer(d.cmd, d.heap.buffer, offset, bytes, word);
     return true;
 }
 

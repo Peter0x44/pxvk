@@ -35,9 +35,10 @@ passes `spirv-val`; it does not mean the results were compared with native.
 | 2.8.1, 2.8.3 (two builds) | 17–18 modules | compiles | – |
 | 2.8.4 (eight builds, 2.8.4.9 – 2.8.4.12) | 17 modules | compiles (float atomic add, new in 2.8.4 for the GPU cloth normal kernels `PxgCudaDeformable(Uber)PreCalNormals`, is supported); **FluidMark validated** (bit-exact replays; it does not launch the cloth normal kernels) | – |
 | PhysX 3.3 x86 (`PhysX3Gpu_x86` 3.3.0.2, beside APEX Particles and Turbulence) | 5 modules, PTX 5.0 | 50 of 51 kernels compile; never run | `simulateCloths` uses `atom.global.inc.u32` (wrapping increment) |
-| APEX Particles x86 | 20 modules | 65 of 66 kernels compile; never run | one module fails to parse (`.surfref`, `IOFX_surfRefOutput0`); one kernel uses `.f64` |
-| APEX Turbulence x86 | 9 modules | 38 of 45 kernels compile; never run | 7 kernels use `.f64` |
-| GRB x86 (`GRB_1_x86`, GPU rigid bodies) | 22 modules | 153 of 222 kernels compile; never run | texture objects (65 kernels), `vote.ballot`, `bfind`, `.f64` |
+| APEX Particles x86 | 20 modules | 68 of 69 kernels compile; never run | `madc.hi.u32` (IOFX mesh output) |
+| APEX Turbulence x86 | 9 modules | 43 of 45 kernels compile; never run | two double-to-float grid copies load `.f64` |
+| `Engine\4F8D3BB436C7`: PhysX 2.8.4.9 core, APEX 1.3.0.4 Particles and TurbulenceFS (CHECKED builds), `PhysX3GpuCHECKED_x86` | 17 + 14 + 9 + 1 modules | **runs in Batman: Arkham Origins**; 190 of 193 kernels compile | `madc.hi.u32` (IOFX mesh output) and two double-to-float grid copies, none launched natively |
+| GRB x86 (`GRB_1_x86`, GPU rigid bodies) | 22 modules | 155 of 222 kernels compile; never run | texture objects (65 kernels), `bfind`, `.f64` |
 | 64-bit: `PhysXCore64` 2.8.3, `PhysX3Gpu_x64` 3.3.1.4 | 64-bit pointers | later (charter stage 4) | a 64-bit pxvk |
 
 The whole 2.7/2.8 family compiles: all 17 GPU runtimes, 1,824 kernels,
@@ -63,7 +64,8 @@ other Vulkan devices.
 
 Only the runtimes of Mirror's Edge and Unreal Tournament 3 (by hash),
 Borderlands 2 and Batman: Arkham City (from the running games' loaded
-modules) are confirmed. The other runtime assignments are
+modules) and Batman: Arkham Origins (its update GUID and a native trace)
+are confirmed. The other runtime assignments are
 unverified estimates from release dates and engines. A game's
 `PhysXLoader.dll` alone does not decide it: the update loader can swap in a
 System Software core for a GUID the game passes, so check what a running
@@ -169,6 +171,58 @@ per second (about 117 with cloth), with 7–8% of the time spent waiting for
 the GPU. The tester saw the effects as correct. Native captures were not
 made, so nothing was compared bit-exact.
 
+Batman: Arkham Origins (GOG, November 2026) runs on pxvk on the RTX 5070
+laptop with PhysX High, through the drop-in `dinput8.dll` (setup in
+[`install.md`](install.md)). It is not a PhysX 3 game: it ships PhysX
+2.8.4.8 plus APEX 1.3.0.1 in CHECKED builds (optimized, with NVIDIA's
+internal checks), whose GPU code is cubins only. `BatmanOrigins.exe`
+carries the update GUID `56C8B958-C577-4BC6-AEB7-4F8D3BB436C7`, which the
+System Software maps to `Engine\4F8D3BB436C7`: a 2.8.4.9 core, APEX
+Particles and TurbulenceFS 1.3.0.4 and, as an implicit library,
+`PhysX3GpuCHECKED_x86.dll`, all with PTX; APEX ClothingGPU has no update and
+never runs on the GPU. A native trace of the benchmark (`tools/nvcuda-trace`,
+which logs graphics interop calls) shows 5.4 million launches of 78
+kernels, mostly APEX Turbulence (smoke and steam), field samplers, IOFX
+particle output and 2.8.4 cloth, and no graphics interop: no D3D context or
+resource registration, no surface binding. APEX's IOFX declares four
+`.surfref`s but no kernel uses a surface instruction; its output reaches the
+host through `PhysX3Gpu`'s `MemCopyBatchedAsync` kernel writing mapped
+pinned memory, and the game uploads it into the textures its sprite vertex
+shader reads.
+
+What pxvk needed (all checked with opcheck, bit-exact against the native
+driver on NVIDIA):
+
+- `.surfref` declarations (parsed, `cuModuleGetSurfRef` returns a handle);
+- `cvt.sat.f32.f32` (IOFX colour packing);
+- `vote.ballot.b32` (IOFX bounding boxes), as a subgroup ballot;
+- `setp.f64` of a float widened by `cvt.f64.f32` against a double
+  constant (`x < 1e-7` without an `f`; TurbulenceFS and BasicFS),
+  rewritten as an exact f32 comparison;
+- `cuMemsetD32(Async)`, and stubs for the D3D context creation entry points
+  `PhysX3Gpu` binds but never calls (it fails to start if any is missing);
+- `CAN_MAP_HOST_MEMORY` reported as 0: with mapping `PhysX3Gpu` asks for
+  device pointers of pinned memory, which pxvk cannot provide (the APEX
+  smoke and steam were missing); without it, it copies with
+  `cuMemcpy*Async` and every effect renders;
+- the real SM count (36, from `VK_NV_shader_sm_builtins`) instead of the
+  persona's 16: APEX sizes its grid-stride launches by it, and the field
+  samplers, 39% of pxvk's GPU time, ran on half the workgroups.
+
+The tester saw smoke, steam, paper, newspapers and snow tracks. Measured
+back to back after a reboot, on AC power, from the game's own benchmark
+(`BMGame\Logs\benchmark.log`, 2560×1600, PhysX High; one run each):
+
+| | Avg fps | Min fps |
+|---|---|---|
+| native 32-bit CUDA (driver 621.01) | 163.6 | 131.5 |
+| pxvk | 207.4 | 158.7 |
+| PhysX Off (for reference, earlier) | 237.3 | 154.4 |
+
+An earlier pair measured in a slower power state gave 84 native against
+113 pxvk, and on battery the GPU's Battery Boost caps the game at 30 fps.
+No native captures were made, so replays were not compared bit-exact.
+
 | Likely runtime | Games |
 |---|---|
 | 2.7.x / early 2.8 | Ghost Recon Advanced Warfighter 2, Monster Madness: Battle for Suburbia, Warmonger: Operation Downtown Destruction, Crazy Machines 2, Armageddon Riders |
@@ -178,7 +232,8 @@ made, so nothing was compared bit-exact.
 | 2.8.4.12 (confirmed, through the update loader) | Batman: Arkham City ★ |
 | 2.8.1 – 2.8.3 | Sacred 2: Fallen Angel and Ice & Blood, Cryostasis, Darkest of Days, Batman: Arkham Asylum, Shattered Horizon, Metro 2033 ★, Dark Void, Mafia II ★, Blur |
 | 2.8.4, often with APEX | Alice: Madness Returns ★, The Bureau: XCOM Declassified, Metro: Last Light ★, Hydrophobia: Prophecy, The Secret World, Rise of the Triad, Mars: War Logs, Gas Guzzlers: Combat Carnage, Deep Black, Depth Hunter |
-| possibly PhysX 3.3 (APEX Turbulence) | Assassin's Creed IV: Black Flag ★, Batman: Arkham Origins ★ |
+| 2.8.4.9 + APEX 1.3 (confirmed, through the update loader) | Batman: Arkham Origins ★ |
+| possibly PhysX 3.3 (APEX Turbulence) | Assassin's Creed IV: Black Flag ★ |
 | unknown | Star Trek D-A-C, Star Trek (2013), 7554, QQ Dance and QQ Dance 2, Hot Dance Party and Hot Dance Party II, Jianxia 3, MStar, Continent of the Ninth, Passion Leads Army |
 
 ## 64-bit games
@@ -192,3 +247,21 @@ Killing Floor 2's gore use FleX, a separate CUDA library. Their runtimes are
 mostly PhysX 3.x, whose PTX uses 64-bit pointers, which pxvk's design (a
 device pointer is a 32-bit offset into one buffer) does not handle yet. It
 is the charter's last stage, for later.
+
+## Games with their own CUDA effects
+
+Some games call CUDA directly instead of through PhysX. The charter puts
+them in a later stage (5).
+
+- **Just Cause 2** (32-bit, D3D10; GOG Complete Edition checked): GPU
+  water simulation and bokeh, NVIDIA-only options. `JustCause2.exe` imports
+  the CUDA runtime `cudart.dll` (about CUDA 2.3, PTX ISA 1.4), and the game
+  ships `cufft.dll`, likely for the FFT ocean. The executable holds 3 PTX
+  modules (sm_10) and cuFFT about 120 (sm_10, sm_13). It uses the legacy
+  launch path (`cudaConfigureCall`, `cudaSetupArgument`, `cudaLaunch`; the
+  runtime calls `cuParamSet*` and `cuLaunchGrid`), texture references
+  (`cudaBindTexture2D`) and D3D9/D3D10 resource interop
+  (`cudaD3D10RegisterResource`, `cudaD3D10MapResources`,
+  `cudaD3D10ResourceGetMappedPointer`, ...), which pxvk only stubs. Not
+  traced natively yet: a `tools/nvcuda-trace` run with GPU water on would
+  show which kernels and interop calls it really uses.

@@ -20,6 +20,7 @@ typedef struct CUmod_st *CUmodule;
 typedef struct CUfunc_st *CUfunction;
 typedef struct CUstream_st *CUstream;
 typedef struct CUtexref_st *CUtexref;
+typedef struct CUsurfref_st *CUsurfref;
 typedef struct CUevent_st *CUevent;
 typedef int32_t CUdevice_attribute;
 typedef int32_t CUarray_format;

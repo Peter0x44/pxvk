@@ -6,7 +6,7 @@ Some older games, such as **Mirror's Edge**, have extra physics effects
 CPU, where they are very slow, or can't be turned on at all.
 
 pxvk makes those effects run on the GPU you have: **AMD, Intel or NVIDIA**.
-It works with games using PhysX 2.7 and 2.8 (roughly 2007–2012) on Windows, and
+It works with games using PhysX 2.7 and 2.8 (roughly 2007–2013) on Windows, and
 needs no NVIDIA driver.
 
 ## What works
@@ -17,11 +17,13 @@ needs no NVIDIA driver.
 - **Batman: Arkham City** (GOG): tested with its built-in benchmark.
 - **Unreal Tournament 3** (Steam): the three maps of NVIDIA's free PhysX Mod
   Pack (Tornado, LightHouse, HeatRay): debris, hail and cloth.
+- **Batman: Arkham Origins** (GOG): smoke, steam, snow, paper and cloth,
+  tested with its built-in benchmark.
 - **Geeks3D FluidMark** benchmark.
 - The **PhysX 2.8 SDK samples** (cloth and fluid demos).
 
 Physics runs as fast as with NVIDIA's own driver or faster, and in heavy
-scenes several times faster than CPU PhysX. Other PhysX 2.7 and 2.8 games may work too but haven't been
+scenes several times faster than CPU PhysX. Other PhysX 2.7 and 2.8 games, and games with APEX effects, may work too but haven't been
 tried.
 
 **[Download the latest release](https://github.com/Peter0x44/pxvk/releases/latest)**

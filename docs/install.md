@@ -50,7 +50,8 @@ driver (AMD, Intel or NVIDIA), and an NVIDIA driver is not required.
 
 Tested with Borderlands 2 started from Steam through its 2K launcher, both
 ways, with the drop-in on GOG's Batman: Arkham City, started directly and
-through its own launcher, and with the drop-in on Steam's Unreal Tournament 3.
+through its own launcher, and with the drop-in on Steam's Unreal Tournament 3
+and GOG's Batman: Arkham Origins.
 
 ## How loading works
 
@@ -241,6 +242,23 @@ Look for `pxvk.log` in `Binaries\Win32` to check that
 PhysX runs on pxvk ("Checking that hardware PhysX is active" above). Kernel
 launches start in-game or in the benchmark (Graphics settings), not at the
 menu. Tested on an RTX 5070 laptop and its Intel GPU; AMD is untested.
+
+## Batman: Arkham Origins (GOG)
+
+Install the PhysX System Software first: the game's bundled PhysX and APEX
+cannot run on pxvk, and the game uses the System Software's newer copies.
+Then copy the `game-folder` files into `SinglePlayer\Binaries\Win32`.
+
+Hardware PhysX is set in the game's own options (Off, Normal or High; High
+adds steam, smoke and snow) and takes effect after a restart. A fresh
+install starts with it off. The setting is stored as `HardwarePhysX` in
+`Documents\WB Games\Batman Arkham Origins\GFXSettings.BatmanArkhamOrigins.xml`
+(UTF-16). The game's benchmark is in the options menu (**Benchmark**); it
+writes its results to `SinglePlayer\BMGame\Logs\benchmark.log`.
+
+Kernel launches start in-game or in the benchmark. On battery, NVIDIA's
+Battery Boost caps the game at 30 fps, natively too. Tested on an RTX 5070
+laptop with PhysX High; Intel and AMD are untested.
 
 ## Unreal Tournament 3 (Steam)
 

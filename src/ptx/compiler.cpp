@@ -4,8 +4,12 @@
 #include "spirv_builder.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <functional>
+#include <limits>
 #include <map>
+#include <optional>
 #include <set>
 
 namespace pxvk::ptx {
@@ -1400,6 +1404,22 @@ private:
         return b_.value(SpvOpBitcast, b_.t_f32(), {result});
     }
 
+    // .sat: clamp to [0, 1], NaN to +0. Done on the bits so that no driver
+    // flushes a denormal or picks a signed zero: negative values (and -0)
+    // give +0, values above 1 (and +inf) give 1.
+    std::uint32_t saturate(std::uint32_t value)
+    {
+        const std::uint32_t u32 = b_.t_u32(), boolean = b_.t_bool();
+        const std::uint32_t bits = b_.value(SpvOpBitcast, u32, {value});
+        const std::uint32_t magnitude = b_.value(SpvOpBitwiseAnd, u32, {bits, b_.u32(0x7fffffffu)});
+        const std::uint32_t nan = b_.value(SpvOpUGreaterThan, boolean, {magnitude, b_.u32(0x7f800000u)});
+        const std::uint32_t negative = b_.value(SpvOpUGreaterThanEqual, boolean, {bits, b_.u32(0x80000000u)});
+        const std::uint32_t above_one = b_.value(SpvOpUGreaterThan, boolean, {bits, b_.u32(0x3f800000u)});
+        std::uint32_t r = b_.value(SpvOpSelect, u32, {above_one, b_.u32(0x3f800000u), bits});
+        r = b_.value(SpvOpSelect, u32, {b_.value(SpvOpLogicalOr, boolean, {nan, negative}), b_.u32(0), r});
+        return b_.value(SpvOpBitcast, b_.t_f32(), {r});
+    }
+
     std::uint32_t fin(const Instruction &in, std::size_t index)
     {
         const std::uint32_t v = operand(in.operands[index], Type{'f', 32}, in.line);
@@ -1603,6 +1623,29 @@ private:
         if (!in.pred_dest.empty()) write_reg(in.pred_dest, valid, boolean, line);
     }
 
+    // vote.ballot.b32 d, {!}p: bit i of d is p of lane i of the warp, for
+    // the lanes executing the instruction (APEX IOFX). As for shfl, a warp is
+    // a subgroup or half of a 64-lane one, so the warp's word of the
+    // subgroup ballot is the invocation id / 32.
+    void lower_vote(const Instruction &in)
+    {
+        const int line = in.line;
+        if (!in.has("ballot") || !in.has("b32") || in.has("sync") || in.operands.size() != 2)
+            throw Error("unsupported " + in.text(), line);
+        if (options_.emulate_warps) throw Error("vote needs subgroups of 32 lanes", line);
+        if (!options_.subgroup_ballot) throw Error("vote needs subgroup ballots", line);
+        info_.warp_synchronous = true;
+        b_.capability(SpvCapabilityGroupNonUniform);
+        b_.capability(SpvCapabilityGroupNonUniformBallot);
+        const std::uint32_t u32 = b_.t_u32();
+        const std::uint32_t predicate = operand(in.operands[1], Type{'p', 1}, line);
+        const std::uint32_t ballot =
+            b_.value(SpvOpGroupNonUniformBallot, b_.t_vec(u32, 4), {b_.u32(SpvScopeSubgroup), predicate});
+        const std::uint32_t invocation = b_.value(SpvOpLoad, u32, {builtin_scalar(SpvBuiltInSubgroupLocalInvocationId)});
+        const std::uint32_t word = b_.value(SpvOpShiftRightLogical, u32, {invocation, b_.u32(5)});
+        write(in.operands[0], b_.value(SpvOpVectorExtractDynamic, u32, {ballot, word}), Type{'b', 32}, line);
+    }
+
     // ---- instruction dispatch -------------------------------------------------
     void lower_instruction(const Instruction &in)
     {
@@ -1639,6 +1682,7 @@ private:
         const int line = in.line;
         if (!in.pred_dest.empty() && op != "shfl") throw Error("second destination on " + in.text(), line);
         if (op == "shfl") return lower_shfl(in);
+        if (op == "vote") return lower_vote(in);
         if (op == "ld") return lower_load(in);
         if (op == "st") return lower_store(in);
         if (op == "tex") return lower_texture(in);
@@ -1977,7 +2021,8 @@ private:
         for (const auto &m : in.mods)
             if (m == "rn" || m == "rz" || m == "rm" || m == "rp" || m == "rni" || m == "rzi" || m == "rmi" || m == "rpi")
                 rounding = m;
-        if (in.has("sat")) throw Error("cvt.sat is unsupported", line);
+        const bool sat = in.has("sat");
+        if (sat && !(dst.kind == 'f' && src.kind == 'f')) throw Error("cvt.sat is unsupported", line);
         const bool ftz = in.has("ftz") && emulate_ftz_;
         if (dst.kind == 'f' && src.kind == 'f') {
             if (dst.bits != 32 || src.bits != 32) throw Error("only f32 cvt is supported", line);
@@ -1986,8 +2031,11 @@ private:
             const GLSLstd450 code = rounding == "rni" ? GLSLstd450RoundEven : rounding == "rzi" ? GLSLstd450Trunc
                                   : rounding == "rmi" ? GLSLstd450Floor : rounding == "rpi" ? GLSLstd450Ceil
                                   : GLSLstd450FAbs;
-            if (code == GLSLstd450FAbs) throw Error("unsupported f32->f32 cvt", line);
-            v = b_.ext(b_.t_f32(), code, {v});
+            // Without a rounding modifier only .sat is allowed (APEX IOFX:
+            // cvt.sat.f32.f32 packs colours into bytes).
+            if (code == GLSLstd450FAbs && !sat) throw Error("unsupported f32->f32 cvt", line);
+            if (code != GLSLstd450FAbs) v = b_.ext(b_.t_f32(), code, {v});
+            if (sat) v = saturate(v);
             if (ftz) v = flush(v);
             write(in.operands[0], v, dst, line);
             return;
@@ -2412,6 +2460,144 @@ private:
 
 } // namespace
 
+namespace {
+
+// ---- f64 comparisons of widened floats ------------------------------------------
+// APEX 1.3 (TurbulenceFS, BasicFS) compares floats with double literals,
+// `x < 1e-7` without an f suffix: cvt.f64.f32 widens x into an .f64 register
+// whose only uses are setp.f64 against a 0d constant. Widening is exact and
+// monotonic, so each comparison has an exact f32 equivalent and no f64
+// arithmetic is needed; only constants of normal float magnitude are handled
+// (f32_comparison). Kernels that use .f64 registers any other way are left
+// alone (and fail to compile).
+
+bool is_f64_register_type(const Type &t) { return t.kind == 'f' && t.bits == 64; }
+
+Operand f32_immediate(std::uint32_t bits)
+{
+    Operand o;
+    o.kind = Operand::Kind::fimm;
+    o.fbits = bits;
+    o.fwidth = 32;
+    return o;
+}
+
+std::uint32_t float_bits(float f)
+{
+    std::uint32_t bits;
+    std::memcpy(&bits, &f, 4);
+    return bits;
+}
+
+// setp.<cmp>.f64 p, x, c with x widened from f32: the f32 comparison and
+// constant giving the same result for every x.
+std::optional<std::pair<std::string, std::uint32_t>> f32_comparison(const std::string &cmp, double c)
+{
+    // Only constants of normal float magnitude (APEX uses 1e-7, 1e-8, 0.4).
+    // NVIDIA's Vulkan driver flushes denormal comparison operands; against
+    // a normal constant that gives the same result, against zero or a
+    // denormal it does not.
+    const double max = std::numeric_limits<float>::max(), min = std::numeric_limits<float>::min();
+    if (!(std::fabs(c) >= min && std::fabs(c) <= max)) return std::nullopt;
+    if (cmp == "num" || cmp == "nan") return std::pair<std::string, std::uint32_t>{cmp, 0}; // x's NaN-ness alone
+    const float f = static_cast<float>(c);
+    if (static_cast<double>(f) == c) return std::pair<std::string, std::uint32_t>{cmp, float_bits(f)};
+    // Not a float: x < c and x <= c both mean x < hi, the smallest float
+    // above c; x > c and x >= c mean x > lo, the largest float below c.
+    // Both are normal: c is at least FLT_MIN in magnitude.
+    const float float_max = std::numeric_limits<float>::max();
+    const float lo = f < c ? f : std::nextafter(f, -float_max); // float overloads: a double
+    const float hi = f > c ? f : std::nextafter(f, float_max);  // target would round back to f
+    if (cmp == "lt" || cmp == "le") return std::pair<std::string, std::uint32_t>{"lt", float_bits(hi)};
+    if (cmp == "ltu" || cmp == "leu") return std::pair<std::string, std::uint32_t>{"ltu", float_bits(hi)};
+    if (cmp == "gt" || cmp == "ge") return std::pair<std::string, std::uint32_t>{"gt", float_bits(lo)};
+    if (cmp == "gtu" || cmp == "geu") return std::pair<std::string, std::uint32_t>{"gtu", float_bits(lo)};
+    if (cmp == "ne") return std::pair<std::string, std::uint32_t>{"num", 0};  // x == c never: true unless NaN
+    if (cmp == "equ") return std::pair<std::string, std::uint32_t>{"nan", 0}; // only NaN
+    return std::nullopt; // eq and neu would be constant
+}
+
+std::string mirrored(const std::string &cmp)
+{
+    static const std::map<std::string, std::string> m = {{"lt", "gt"}, {"le", "ge"}, {"gt", "lt"}, {"ge", "le"},
+                                                         {"ltu", "gtu"}, {"leu", "geu"}, {"gtu", "ltu"},
+                                                         {"geu", "leu"}};
+    const auto found = m.find(cmp);
+    return found == m.end() ? cmp : found->second;
+}
+
+// The function with its f64 comparisons rewritten as f32 ones, or nothing if
+// it has no .f64 registers or uses them some other way.
+std::optional<Function> demote_f64_comparisons(const Function &f)
+{
+    std::set<std::string> wide;
+    for (const RegDecl &decl : f.regs) {
+        if (!is_f64_register_type(decl.type)) continue;
+        if (decl.count == 0) wide.insert(decl.name);
+        else
+            for (std::uint32_t i = 0; i < decl.count; ++i) wide.insert(decl.name + std::to_string(i));
+    }
+    if (wide.empty()) return std::nullopt;
+    auto is_wide = [&](const Operand &o) { return o.kind == Operand::Kind::reg && wide.count(o.name); };
+    std::function<bool(const Operand &)> mentions = [&](const Operand &o) {
+        if ((o.kind == Operand::Kind::reg || (o.kind == Operand::Kind::address && o.base == Operand::Base::reg)) &&
+            wide.count(o.name))
+            return true;
+        for (const Operand &e : o.elems)
+            if (mentions(e)) return true;
+        return false;
+    };
+    Function out = f;
+    for (Statement &s : out.body) {
+        if (s.is_label) continue;
+        Instruction &in = s.inst;
+        bool touches = false;
+        for (const Operand &o : in.operands) touches |= mentions(o);
+        const bool f64_type = std::find(in.mods.begin(), in.mods.end(), "f64") != in.mods.end();
+        if (!touches && !f64_type) continue;
+        if (in.op == "cvt" && in.mods == std::vector<std::string>{"f64", "f32"} && in.operands.size() == 2 &&
+            is_wide(in.operands[0]) && in.operands[1].kind == Operand::Kind::reg && !wide.count(in.operands[1].name)) {
+            in.op = "mov";
+            in.mods = {"f32"};
+            continue;
+        }
+        if (in.op != "setp" || in.mods.empty() || in.mods.back() != "f64" || !in.pred_dest.empty() ||
+            in.operands.size() < 3 || mentions(in.operands[0]) || (in.operands.size() > 3 && mentions(in.operands[3])))
+            return std::nullopt;
+        std::string cmp, combine;
+        for (const std::string &m : in.mods) {
+            if (m == "f64") continue;
+            if (m == "and" || m == "or" || m == "xor") combine = m;
+            else if (cmp.empty()) cmp = m;
+            else return std::nullopt; // .ftz is not allowed with f64
+        }
+        Operand &a = in.operands[1], &b = in.operands[2];
+        auto is_double = [](const Operand &o) { return o.kind == Operand::Kind::fimm && o.fwidth == 64; };
+        if (is_double(a) && is_wide(b)) {
+            std::swap(a, b);
+            cmp = mirrored(cmp);
+        }
+        if (is_wide(a) && is_double(b)) {
+            double c;
+            std::memcpy(&c, &b.fbits, 8);
+            const auto f32 = f32_comparison(cmp, c);
+            if (!f32) return std::nullopt;
+            cmp = f32->first;
+            b = (cmp == "num" || cmp == "nan") ? a : f32_immediate(f32->second);
+        } else {
+            return std::nullopt; // two widened registers: NVIDIA's flushed f32 compare would differ on denormals
+        }
+        in.mods = {cmp};
+        if (!combine.empty()) in.mods.push_back(combine);
+        in.mods.push_back("f32");
+    }
+    for (RegDecl &decl : out.regs)
+        if (is_f64_register_type(decl.type)) decl.type = Type{'f', 32};
+    return out;
+}
+
+} // namespace
+
 CompiledKernel compile_kernel(const Module &module, const std::string &entry,
                               const CompileOptions &options)
 {
@@ -2419,7 +2605,8 @@ CompiledKernel compile_kernel(const Module &module, const std::string &entry,
     const Function *function = module.find(entry);
     if (function == nullptr || !function->is_entry || !function->has_body)
         throw Error("no kernel entry named " + entry, 1);
-    return KernelCompiler(module, *function, options).run();
+    const std::optional<Function> demoted = demote_f64_comparisons(*function);
+    return KernelCompiler(module, demoted ? *demoted : *function, options).run();
 }
 
 } // namespace pxvk::ptx

@@ -231,6 +231,89 @@ Warp branch_out_of_block(const std::uint32_t *records)
     return a;
 }
 
+// vote.ballot.b32: bit i is the predicate (bit 0 of word a) of lane i.
+template <bool negated>
+Warp ballot(const std::uint32_t *records)
+{
+    std::uint32_t mask = 0;
+    for (int lane = 0; lane < 32; ++lane)
+        if (((records[lane * 4] & 1) != 0) != negated) mask |= 1u << lane;
+    return splat(mask);
+}
+
+// The same executed only by lanes whose b is set: the others contribute 0
+// and keep d = 0.
+Warp ballot_guarded(const std::uint32_t *records)
+{
+    std::uint32_t mask = 0;
+    for (int lane = 0; lane < 32; ++lane)
+        if ((records[lane * 4] & 1) && (records[lane * 4 + 1] & 1)) mask |= 1u << lane;
+    Warp d;
+    for (int lane = 0; lane < 32; ++lane) d[lane] = (records[lane * 4 + 1] & 1) ? mask : 0;
+    return d;
+}
+
+// cvt.sat.f32.f32: clamp to [0, 1]; NaN and negative values (-0 too) give +0.
+Warp saturate(const std::uint32_t *records)
+{
+    Warp d;
+    for (int lane = 0; lane < 32; ++lane) {
+        const std::uint32_t b = records[lane * 4];
+        d[lane] = (b & 0x7fffffffu) > 0x7f800000u || (b & 0x80000000u) ? 0u : b > 0x3f800000u ? 0x3f800000u : b;
+    }
+    return d;
+}
+
+// setp.f64 on floats widened by cvt.f64.f32 (APEX 1.3), evaluated in double.
+enum class Cmp { eq, ne, lt, le, gt, ge, equ, neu, ltu, leu, gtu, geu, num, nan };
+
+bool compare_double(Cmp cmp, double x, double y)
+{
+    const bool unordered = std::isnan(x) || std::isnan(y);
+    switch (cmp) {
+    case Cmp::eq: return x == y;
+    case Cmp::ne: return !unordered && x != y;
+    case Cmp::lt: return x < y;
+    case Cmp::le: return x <= y;
+    case Cmp::gt: return x > y;
+    case Cmp::ge: return x >= y;
+    case Cmp::equ: return unordered || x == y;
+    case Cmp::neu: return unordered || x != y;
+    case Cmp::ltu: return unordered || x < y;
+    case Cmp::leu: return unordered || x <= y;
+    case Cmp::gtu: return unordered || x > y;
+    case Cmp::geu: return unordered || x >= y;
+    case Cmp::num: return !unordered;
+    case Cmp::nan: return unordered;
+    }
+    return false;
+}
+
+double widened(std::uint32_t bits)
+{
+    float f;
+    std::memcpy(&f, &bits, 4);
+    return f;
+}
+
+// x (word a) against a double constant, on the left when swapped; with
+// combine, and-ed with the predicate in word b.
+template <Cmp cmp, std::uint64_t constant, bool swapped, bool combine = false>
+Warp setp_f64_constant(const std::uint32_t *records)
+{
+    const std::uint64_t bits = constant;
+    double c;
+    std::memcpy(&c, &bits, 8);
+    Warp d;
+    for (int lane = 0; lane < 32; ++lane) {
+        const double x = widened(records[lane * 4]);
+        bool r = swapped ? compare_double(cmp, c, x) : compare_double(cmp, x, c);
+        if (combine) r = r && (records[lane * 4 + 1] & 1);
+        d[lane] = r;
+    }
+    return d;
+}
+
 // ---- test generation ----------------------------------------------------------
 // Operand classes: f = f32, i = 32-bit int, h = 16-bit int, b = 8-bit int,
 // l = 64-bit int, p = predicate.
@@ -240,6 +323,19 @@ struct Variant {
     const char *srcs;    // operand classes of a, b, c
     Reference reference = nullptr; // CPU reference (--cpu-reference)
 };
+
+// setp.<cmp>.f64 of a float widened into an .f64 register, against a double
+// constant (APEX 1.3 writes `x < 1e-7`); the C variants put the constant
+// first.
+#define F64_SETP(cmp, hex)                                                                              \
+    {"{ .reg .f64 w; cvt.f64.f32 w, {a}; setp." #cmp ".f64 {d}, w, 0d" #hex "; }", 'p', "f",            \
+     setp_f64_constant<Cmp::cmp, 0x##hex##ull, false>}
+#define F64_SETP_C(cmp, hex)                                                                            \
+    {"{ .reg .f64 w; cvt.f64.f32 w, {a}; setp." #cmp ".f64 {d}, 0d" #hex ", w; }", 'p', "f",            \
+     setp_f64_constant<Cmp::cmp, 0x##hex##ull, true>}
+#define F64_SETP_ORDER(hex)                                                                             \
+    F64_SETP(lt, hex), F64_SETP(le, hex), F64_SETP(gt, hex), F64_SETP(ge, hex), F64_SETP(ne, hex),      \
+        F64_SETP(ltu, hex), F64_SETP(gtu, hex)
 
 const Variant kVariants[] = {
     {"add.ftz.f32 {d}, {a}, {b};", 'f', "ff"},
@@ -406,6 +502,37 @@ const Variant kVariants[] = {
     {"and.pred {d}, {a}, {b};", 'p', "pp"},
     {"or.pred {d}, {a}, {b};", 'p', "pp"},
     {"not.pred {d}, {a};", 'p', "p"},
+    // Warp ballot (APEX 1.3 IOFX), also with lanes inactive.
+    {"vote.ballot.b32 {d}, {a};", 'i', "p", ballot<false>},
+    {"vote.ballot.b32 {d}, !{a};", 'i', "p", ballot<true>},
+    {"mov.u32 {d}, 0; @{b} vote.ballot.b32 {d}, {a};", 'i', "pp", ballot_guarded},
+    // Saturating float copy (APEX 1.3 IOFX packs colours with it).
+    {"cvt.sat.f32.f32 {d}, {a};", 'f', "f", saturate},
+    // Comparisons of floats widened to f64 (APEX 1.3 TurbulenceFS, BasicFS):
+    // every comparison against 1e-7 as the game has it except eq and neu,
+    // which are only supported against constants that are floats; the
+    // ordered ones against the game's other constants and nearby cases (near
+    // 1.0 and FLT_MIN). Inputs include NaN, infinities and denormals. Zero
+    // and denormal constants are not supported (NVIDIA's Vulkan driver
+    // flushes denormal comparison operands), nor two widened registers.
+    F64_SETP(ne, 3E7AD7F29ABCAF48), F64_SETP(lt, 3E7AD7F29ABCAF48), F64_SETP(le, 3E7AD7F29ABCAF48),
+    F64_SETP(gt, 3E7AD7F29ABCAF48), F64_SETP(ge, 3E7AD7F29ABCAF48), F64_SETP(equ, 3E7AD7F29ABCAF48),
+    F64_SETP(ltu, 3E7AD7F29ABCAF48), F64_SETP(leu, 3E7AD7F29ABCAF48), F64_SETP(gtu, 3E7AD7F29ABCAF48),
+    F64_SETP(geu, 3E7AD7F29ABCAF48), F64_SETP(num, 3E7AD7F29ABCAF48), F64_SETP(nan, 3E7AD7F29ABCAF48),
+    F64_SETP_ORDER(3E45798EE2308C3A), // 1e-8
+    F64_SETP_ORDER(3FD999999999999A), // 0.4
+    F64_SETP_ORDER(3FE0000000000000), // 0.5, a float
+    F64_SETP(eq, 3FE0000000000000), F64_SETP(neu, 3FE0000000000000),
+    F64_SETP_ORDER(3FF0000004000000), // just above 1
+    F64_SETP_ORDER(3FEFFFFFF8000000), // just below 1
+    F64_SETP_ORDER(BFF0000004000000), // just below -1
+    F64_SETP_ORDER(3810000000000000), // FLT_MIN, against denormal inputs
+    F64_SETP_ORDER(3810000000000001), // just above FLT_MIN
+    F64_SETP_ORDER(B810000000000001), // just below -FLT_MIN
+    F64_SETP_C(lt, 3E7AD7F29ABCAF48), F64_SETP_C(ge, 3E7AD7F29ABCAF48), F64_SETP_C(ltu, 3E7AD7F29ABCAF48),
+    F64_SETP_C(eq, 3FE0000000000000),
+    {"{ .reg .f64 w; cvt.f64.f32 w, {a}; setp.lt.and.f64 {d}, w, 0d3E7AD7F29ABCAF48, {b}; }", 'p', "fp",
+     setp_f64_constant<Cmp::lt, 0x3E7AD7F29ABCAF48ull, false, true>},
 };
 
 std::string reg_for(char cls, int index)
@@ -532,6 +659,7 @@ int main(int argc, char **argv)
     options.float_atomic_add = device.caps().float_atomic_add;
     options.shader_clock = device.caps().shader_clock;
     options.subgroup_shuffle = device.caps().subgroup_shuffle;
+    options.subgroup_ballot = device.caps().subgroup_ballot;
     options.no_contraction = no_contraction;
 
     const std::size_t bytes = count * 16;

@@ -4,8 +4,9 @@
 
 Run NVIDIA GPU PhysX CUDA workloads on any Vulkan GPU, so games with GPU
 PhysX effects can use them on non-NVIDIA hardware and on NVIDIA cards that
-dropped 32-bit CUDA (RTX 50). This is a focused compatibility project, not a
-general CUDA-on-Vulkan implementation.
+dropped 32-bit CUDA (RTX 50). This is a focused compatibility project for
+games, not a general CUDA-on-Vulkan implementation: GPU PhysX first, then
+the few games that run their own CUDA effects (stage 5).
 
 The long-term aim is every GPU PhysX game (`docs/compatibility.md` lists
 them). Stages are taken on one at a time, in this order:
@@ -18,7 +19,7 @@ them). Stages are taken on one at a time, in this order:
    Mirror's Edge on pxvk with native GPU PhysX on an NVIDIA card: the
    effects looked the same and frame rates matched (about 72 against 70
    FPS in a GPU-bound path-traced scene with cloth).
-2. **Now: the rest of 32-bit PhysX 2.x.** Every 2.7.x and 2.8.x runtime in
+2. **Done (November 2026): the rest of 32-bit PhysX 2.x.** Every 2.7.x and 2.8.x runtime in
    the PhysX System Software, which covers most of the 32-bit game list.
    An offline scan (`docs/compatibility.md`) found all of them compiling
    except for three features:
@@ -42,13 +43,21 @@ them). Stages are taken on one at a time, in this order:
    and a 2.7.5 game if one is identified (an Ageia-era title such as Ghost
    Recon Advanced Warfighter 2; a game's `PhysXLoader.dll` version tells).
    Unreal Tournament 3 turned out to use 2.7.3, and runs (its PhysX Mod Pack
-   maps, fluid and cloth, not yet compared with native).
-3. **Later: 32-bit PhysX 3.x and APEX.** The GPU runtime of the late 32-bit
-   titles (likely Assassin's Creed IV, Batman: Arkham Origins), APEX
+   maps, fluid and cloth, not yet compared with native). The stage was
+   closed with Borderlands 2, Batman: Arkham City and Unreal Tournament 3
+   running; a 2.8.4 game with GPU cloth normals (Alice, Mafia II Classic)
+   and a 2.7.5 game were not traced.
+3. **Now: 32-bit PhysX 3.x and APEX.** The GPU runtime of the late 32-bit
+   titles (Batman: Arkham Origins, likely Assassin's Creed IV), APEX
    Particles/Turbulence and GPU rigid bodies (GRB), plus whatever graphics
-   interop they turn out to need. APEX GPU particles probably write into the
-   game's Direct3D vertex buffers through CUDA graphics interop; native
-   traces of the target games must confirm that first. Intended approach:
+   interop they turn out to need. Batman: Arkham Origins, the first target,
+   runs (November 2026): it is PhysX 2.8.4 with APEX 1.3 and its PhysX 3
+   GPU helper (`docs/compatibility.md`), and a native trace showed no
+   graphics interop: APEX copies its particle output to the host. It
+   needed `vote.ballot`, `cvt.sat`, `.surfref` declarations, float
+   comparisons against double constants and pinned memory without device
+   mapping. Other games may still need interop; native traces must show
+   it first. Intended approach:
    under DXVK, run pxvk's work on DXVK's own Vulkan device (its interop
    interfaces, `IDXGIVkInteropDevice` and `ID3D9VkInteropDevice`, expose the
    device and a submission-queue lock), so registered D3D resources are
@@ -61,6 +70,11 @@ them). Stages are taken on one at a time, in this order:
    matters on non-NVIDIA hardware. Their PTX uses 64-bit pointers, which
    the current design (a device pointer is a 32-bit offset into one
    buffer) does not handle.
+5. **Later: games' own CUDA effects.** Games that call CUDA directly
+   rather than through PhysX, such as Just Cause 2's GPU water and bokeh
+   (`docs/compatibility.md`). They need older CUDA runtimes, CUDA libraries
+   the game ships (cuFFT) and D3D interop, so they come after the PhysX
+   stages and start with native traces of the game.
 
 An RTX 3070 Laptop GPU is the native NVIDIA reference system. CUDA-visible
 warp size remains 32.
@@ -77,13 +91,15 @@ warp size remains 32.
 
 ## Out of scope
 
-Out of scope for the current stage (the rest of 32-bit PhysX 2.x) until a
+Out of scope for the current stage (32-bit PhysX 3.x and APEX) until a
 target workload requires them or the stage changes: later-stage items above
-(PhysX 3.x, APEX, GRB, 64-bit, D3D/OpenGL–CUDA graphics interop).
+(64-bit, games' own CUDA effects), and within the stage anything no traced
+game uses (D3D/OpenGL–CUDA graphics interop, GRB, f64 arithmetic).
 
-Out of scope for good: general CUDA support, and NVIDIA libraries other
-than PhysX (FleX, Flow, OptiX) unless a game on the list needs one for its
-GPU PhysX effects.
+Out of scope for good: CUDA applications that are not games (Blender,
+compute and machine-learning software), and general CUDA support beyond
+what game workloads use. NVIDIA libraries other than PhysX (FleX, Flow,
+cuFFT, ...) only as far as a game needs them for its effects.
 
 Mobile (Winlator on Qualcomm Adreno) is a separate later goal;
 `docs/roadmap.md` records what it would need.

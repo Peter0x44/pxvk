@@ -93,6 +93,25 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     and against its CPU reference on the Radeon 8060S with 32- and 64-wide
     subgroups. No PhysX 2.x kernel uses `shfl`. Warp emulation does not
     cover it: such kernels fail to compile on those devices.
+  - `vote.ballot.b32` (APEX 1.3 IOFX) is `OpGroupNonUniformBallot`; the
+    warp's word of the 128-bit ballot is the subgroup invocation id / 32,
+    as for `shfl`. Lanes not executing it contribute 0. Not under warp
+    emulation either.
+  - `cvt.sat.f32.f32` clamps on the bits (negative values and -0 give +0,
+    NaN gives +0), so no driver flushes a denormal on the way.
+  - `.f64` registers fail to compile, except for one pattern APEX 1.3
+    writes (`x < 1e-7` without an `f`): a float widened by `cvt.f64.f32`
+    and only compared, with `setp.f64`, against a double constant of
+    normal float magnitude. A pass before compilation
+    (`demote_f64_comparisons`) rewrites such a kernel to f32: widening is
+    exact, so `x < c` and `x <= c` become `x < hi` (the smallest float
+    above c), `x > c` and `x >= c` become `x > lo`, `ne`/`equ` become NaN
+    tests, and float constants stay. Zero or denormal constants and two
+    widened registers are not rewritten: NVIDIA's Vulkan driver flushes
+    denormal comparison operands, which only gives the native result
+    against a normal constant.
+  - `.surfref` declarations parse (APEX's IOFX declares four and never uses
+    them); surface instructions are unsupported.
 
 ### Fallbacks for limited devices
 
@@ -234,7 +253,11 @@ CUDA (0.7 s vs 1.7 s at startup, 107–215 ms vs 146–260 ms per switch).
   slots are in the "private export tables" section). The device presents an
   sm_52 persona whose
   attributes mirror a real NVIDIA driver (CUDART validates against them; e.g.
-  texture bindings fail if limits read as zero). Allocations follow the native
+  texture bindings fail if limits read as zero). The multiprocessor count
+  is the device's real SM count where Vulkan reports it
+  (`VK_NV_shader_sm_builtins`, NVIDIA; the first log line's `sms=`),
+  otherwise the persona's 16: APEX 1.3 sizes grid-stride launches by it,
+  and with 16 its field samplers ran on half the native workgroups. Allocations follow the native
   driver's alignment (4 KiB, 2 MiB for large blocks): PhysX sub-allocates
   inside a pool and CUDART rejects texture bindings that are not 512-byte
   aligned. New allocations are zeroed, as the native driver's are in
@@ -337,8 +360,11 @@ behaves like a mobile driver: a 128 MiB storage range and 8-lane subgroups.
   above native regardless.
 - Streams and events are serialized on one queue; no host-mapped memory,
   arrays, surfaces or graphics interop (unused by the targets). The device
-  still reports `CAN_MAP_HOST_MEMORY` like the NVIDIA card it imitates, and
-  `cuMemHostAlloc` accepts `DEVICEMAP` without providing a device pointer.
+  reports `CAN_MAP_HOST_MEMORY` as 0, so PhysX 3 GPU (Batman: Arkham
+  Origins) copies with `cuMemcpy*Async` instead of having its
+  `MemCopyBatchedAsync` kernel write mapped pinned memory;
+  `cuMemHostAlloc` still accepts `DEVICEMAP` without providing a device
+  pointer.
 - Events are timestamped when `cuEventRecord` is called, not when the GPU
   reaches them, because work is batched until a synchronization:
   `cuEventElapsedTime` measures host time. Use `PXVK_PROFILE` for GPU times.

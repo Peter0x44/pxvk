@@ -36,6 +36,8 @@ struct Capabilities {
     bool float_atomic_add = false;
     bool shader_clock = false; // VK_KHR_shader_clock subgroup clock (enabled)
     bool subgroup_shuffle = false; // VK_SUBGROUP_FEATURE_SHUFFLE_BIT in compute
+    bool subgroup_ballot = false; // VK_SUBGROUP_FEATURE_BALLOT_BIT in compute
+    std::uint32_t multiprocessor_count = 0; // NVIDIA SM count (VK_NV_shader_sm_builtins), 0 if unknown
     std::uint32_t max_workgroup_subgroups = 0; // with subgroup_control, at warp_subgroup_size
     std::uint32_t min_subgroup_size = 0; // smallest size compute may run with (no size control)
     // Compute may run with subgroups narrower than a CUDA warp and cannot be
@@ -110,6 +112,8 @@ public:
     // by the caller: offsets here are heap byte offsets).
     bool upload(std::uint64_t offset, const void *data, std::size_t bytes, std::string &error);
     bool fill(std::uint64_t offset, std::uint8_t value, std::size_t bytes, std::string &error);
+    // count 32-bit words of value at a 4-byte aligned offset.
+    bool fill32(std::uint64_t offset, std::uint32_t value, std::size_t count, std::string &error);
     bool copy(std::uint64_t dst, std::uint64_t src, std::size_t bytes, std::string &error);
     // Submits outstanding work, waits, and reads memory back.
     bool download(void *data, std::uint64_t offset, std::size_t bytes, std::string &error);

@@ -20,9 +20,12 @@ struct Error : std::runtime_error {
     int line;
 };
 
-enum class Space { none, reg, global, shared, local, constant, param, tex };
+// `surf` holds .surfref declarations (APEX 1.3's IOFX module declares four
+// it never accesses); no surface instruction is supported.
+enum class Space { none, reg, global, shared, local, constant, param, tex, surf };
 
-// Scalar PTX type such as .u32 or .f32. `kind` is one of b/u/s/f/pred/texref.
+// Scalar PTX type such as .u32 or .f32. `kind` is one of b/u/s/f, 'p' for
+// .pred, 't' for .texref and 'r' for .surfref.
 struct Type {
     char kind = 'b';
     int bits = 32;

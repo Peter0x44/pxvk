@@ -29,8 +29,9 @@ and run that copy instead. Two variants then report `native JIT failed`: driver
 denormals there and cannot be told not to (`architecture.md`).
 
 Without an NVIDIA driver, `--cpu-reference` compares pxvk with a CPU
-implementation instead, for the variants that have one: `shfl`, and global
-float atomic add, with the semantics established on NVIDIA. `--block N`
+implementation instead, for the variants that have one: `shfl`, global
+float atomic add, `vote.ballot`, `cvt.sat` and the f64 comparisons of
+widened floats (APEX 1.3), with the semantics established on NVIDIA. `--block N`
 (a multiple of 32, default 256) sets the block size. `PXVK_SUBGROUP_SIZE=64`
 runs warp-synchronous kernels in 64-wide subgroups on devices that offer
 them (RDNA), two warps per subgroup as on AMD GCN:

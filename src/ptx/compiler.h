@@ -79,6 +79,9 @@ struct CompileOptions {
     // Device supports subgroup shuffles (VK_SUBGROUP_FEATURE_SHUFFLE_BIT):
     // kernels with shfl fail to compile without them.
     bool subgroup_shuffle = true;
+    // Device supports subgroup ballots (VK_SUBGROUP_FEATURE_BALLOT_BIT):
+    // kernels with vote.ballot fail to compile without them.
+    bool subgroup_ballot = true;
     // Device supports VK_KHR_shader_clock's shaderSubgroupClock: %clock reads
     // it (otherwise %clock is 0).
     bool shader_clock = false;
