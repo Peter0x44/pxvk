@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """pxvk regression checks.
 
-  check.py [--build DIR] [--ptx DIR] [--captures DIR ...] [--capture-ptx DIR]
-           [--device NAME ...] [--no-opcheck]
+  check.py [--build DIR] [--ptx DIR] [--captures DIR ...] [--device NAME ...]
+           [--no-opcheck]
 
 Steps (each skipped when its inputs are absent):
   1. build the 32-bit tree with CMake/Ninja (i686 MinGW by default)
@@ -12,10 +12,7 @@ Steps (each skipped when its inputs are absent):
      (needs the NVIDIA driver; the only known difference, div.rn, is unused
      by PhysX and expected)
   4. pxvk-replay of every capture directory on every --device; any launch
-     graded BAD or FAIL fails the check, except kernels in RACY_KERNELS.
-     --capture-ptx is passed to every replay as --ptx-dir: PTX for kernels
-     of modules the tracer does not see (APEX's, loaded with
-     cuModuleLoadFatBinary)
+     graded BAD or FAIL fails the check, except kernels in RACY_KERNELS
 
 Captures and PTX come from proprietary PhysX binaries and stay local; see
 docs/testing.md for how to produce them.
@@ -45,7 +42,6 @@ def main():
     parser.add_argument("--build", default=str(ROOT / "build" / "x86"))
     parser.add_argument("--ptx", help="directory of extracted .ptx modules")
     parser.add_argument("--captures", nargs="*", default=[], help="capture directories (nvcuda-trace output)")
-    parser.add_argument("--capture-ptx", help="PTX folder for kernels the captures do not include (pxvk-replay --ptx-dir)")
     parser.add_argument("--device", nargs="*", default=[""], help="Vulkan device name fragments to test")
     parser.add_argument("--no-opcheck", action="store_true")
     parser.add_argument("--no-build", action="store_true")
@@ -128,8 +124,7 @@ def main():
     for capture in args.captures:
         for device in args.device:
             step(f"replay {capture} on {device or 'default device'}")
-            command = ([str(build / "pxvk-replay.exe")] + (["--device", device] if device else [])
-                       + (["--ptx-dir", args.capture_ptx] if args.capture_ptx else []) + [capture])
+            command = [str(build / "pxvk-replay.exe")] + (["--device", device] if device else []) + [capture]
             r = subprocess.run(command, capture_output=True, text=True)
             lines = r.stdout.splitlines()
             if r.returncode == 2 or not lines:

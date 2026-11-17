@@ -737,16 +737,75 @@ static bool write_memory_range_file(const wchar_t *file_name, const void *memory
     return true;
 }
 
-static void capture_fatbin(const pxvk_fatbin_wrapper *wrapper, unsigned int ordinal)
+#define PXVK_FATBIN_WRAPPER_MAGIC 0x466243b1u
+#define PXVK_FATBIN_MAGIC 0xba55ed50u
+#define PXVK_ELF_MAGIC 0x464c457fu
+
+/* PTX text image: saved as fatbin_NNNN.ptx, up to its terminating NUL. */
+static void capture_ptx_text(const char *text, unsigned int ordinal)
+{
+    char block[4096];
+    size_t length = 0;
+    wchar_t file_name[128];
+
+    for (;;) {
+        /* Never read past the current page: the text may end just before
+         * an unreadable one. */
+        const size_t to_page_end = 4096 - ((uintptr_t)(text + length) & 4095);
+        const size_t chunk = to_page_end < sizeof(block) ? to_page_end : sizeof(block);
+        size_t i;
+        if (length >= PXVK_MAX_FATBIN_BYTES) {
+            trace_log("fatbin ordinal=%u status=oversize kind=ptx", ordinal);
+            return;
+        }
+        if (!read_current_process(NULL, text + length, block, chunk)) {
+            trace_log("fatbin ordinal=%u status=unreadable kind=ptx", ordinal);
+            return;
+        }
+        for (i = 0; i < chunk && block[i] != '\0'; ++i) {
+        }
+        length += i;
+        if (i < chunk) break;
+    }
+    swprintf(file_name, sizeof(file_name) / sizeof(file_name[0]), L"fatbin_%04u.ptx", ordinal);
+    if (write_memory_range_file(file_name, text, length)) {
+        trace_log("fatbin ordinal=%u status=saved kind=ptx bytes=%lu", ordinal, (unsigned long)length);
+    } else {
+        trace_log("fatbin ordinal=%u status=write_failed kind=ptx bytes=%lu", ordinal, (unsigned long)length);
+    }
+}
+
+/* Any module image: a fatbin wrapper (CUDA runtime registration, also
+ * accepted by cuModuleLoadFatBinary), a bare fatbin container, PTX text, or
+ * an ELF cubin (not saved: pxvk cannot run it). */
+static void capture_fatbin(const void *image, unsigned int ordinal)
 {
     pxvk_fatbin_wrapper wrapper_copy;
     pxvk_fatbin_header header;
+    const pxvk_fatbin_header *data = image;
+    uint32_t magic = 0;
     uint64_t total_size;
     wchar_t file_name[128];
 
-    if (!read_current_process(NULL, wrapper, &wrapper_copy, sizeof(wrapper_copy)) ||
-        wrapper_copy.data == NULL ||
-        !read_current_process(NULL, wrapper_copy.data, &header, sizeof(header))) {
+    if (image == NULL || !read_current_process(NULL, image, &magic, sizeof(magic))) {
+        trace_log("fatbin ordinal=%u status=unreadable", ordinal);
+        return;
+    }
+    if (magic == PXVK_FATBIN_WRAPPER_MAGIC) {
+        if (!read_current_process(NULL, image, &wrapper_copy, sizeof(wrapper_copy)) ||
+            wrapper_copy.data == NULL) {
+            trace_log("fatbin ordinal=%u status=unreadable", ordinal);
+            return;
+        }
+        data = wrapper_copy.data;
+    } else if (magic == PXVK_ELF_MAGIC) {
+        trace_log("fatbin ordinal=%u status=skipped kind=cubin", ordinal);
+        return;
+    } else if (magic != PXVK_FATBIN_MAGIC) {
+        capture_ptx_text(image, ordinal);
+        return;
+    }
+    if (!read_current_process(NULL, data, &header, sizeof(header))) {
         trace_log("fatbin ordinal=%u status=unreadable", ordinal);
         return;
     }
@@ -758,7 +817,7 @@ static void capture_fatbin(const pxvk_fatbin_wrapper *wrapper, unsigned int ordi
         return;
     }
     swprintf(file_name, sizeof(file_name) / sizeof(file_name[0]), L"fatbin_%04u.bin", ordinal);
-    if (write_memory_range_file(file_name, wrapper_copy.data, (size_t)total_size)) {
+    if (write_memory_range_file(file_name, data, (size_t)total_size)) {
         trace_log("fatbin ordinal=%u status=saved magic=%08lx version=%u bytes=%llu",
                   ordinal,
                   (unsigned long)header.magic,
@@ -1404,18 +1463,56 @@ DEFINE_FORWARDER_1(cuCtxPushCurrent, CUcontext, context)
 DEFINE_FORWARDER_1(cuCtxPushCurrent_v2, CUcontext, context)
 DEFINE_FORWARDER_1(cuCtxPopCurrent, CUcontext *, context)
 DEFINE_FORWARDER_1(cuCtxPopCurrent_v2, CUcontext *, context)
-DEFINE_FORWARDER_2(cuModuleLoadData, CUmodule *, module, const void *, image)
-DEFINE_FORWARDER_5(cuModuleLoadDataEx,
-                   CUmodule *,
-                   module,
-                   const void *,
-                   image,
-                   unsigned int,
-                   option_count,
-                   CUjit_option *,
-                   options,
-                   void **,
-                   option_values)
+/* Modules loaded through the driver API directly (APEX uses
+ * cuModuleLoadFatBinary) are saved like the CUDA runtime's registrations, so
+ * their launches name a fatbin_NNNN file too. */
+static unsigned int capture_module_image(const void *image)
+{
+    const unsigned int ordinal = (unsigned int)InterlockedIncrement(&g_fatbin_ordinal);
+    capture_fatbin(image, ordinal);
+    return ordinal;
+}
+
+static void note_loaded_module(const char *name, CUmodule *module, unsigned int ordinal, CUresult result)
+{
+    if (result == CUDA_SUCCESS && module != NULL) capture_note_module(*module, ordinal);
+    trace_log("%s ordinal=%u module=%p result=%d", name, ordinal,
+              module != NULL ? (void *)*module : NULL, (int)result);
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuModuleLoadData(CUmodule *module, const void *image)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUmodule *, const void *);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuModuleLoadData");
+    const unsigned int ordinal = capture_module_image(image);
+    const CUresult result = real_function(module, image);
+    note_loaded_module("cuModuleLoadData", module, ordinal, result);
+    return result;
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuModuleLoadDataEx(CUmodule *module,
+                                                const void *image,
+                                                unsigned int option_count,
+                                                CUjit_option *options,
+                                                void **option_values)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUmodule *, const void *, unsigned int, CUjit_option *, void **);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuModuleLoadDataEx");
+    const unsigned int ordinal = capture_module_image(image);
+    const CUresult result = real_function(module, image, option_count, options, option_values);
+    note_loaded_module("cuModuleLoadDataEx", module, ordinal, result);
+    return result;
+}
+
+PXVK_EXPORT CUresult CUDAAPI cuModuleLoadFatBinary(CUmodule *module, const void *image)
+{
+    typedef CUresult(CUDAAPI *function_type)(CUmodule *, const void *);
+    RESOLVE_OR_RETURN(function_type, real_function, "cuModuleLoadFatBinary");
+    const unsigned int ordinal = capture_module_image(image);
+    const CUresult result = real_function(module, image);
+    note_loaded_module("cuModuleLoadFatBinary", module, ordinal, result);
+    return result;
+}
 PXVK_EXPORT CUresult CUDAAPI cuModuleUnload(CUmodule module)
 {
     typedef CUresult(CUDAAPI *function_type)(CUmodule);

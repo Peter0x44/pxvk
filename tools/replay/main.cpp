@@ -210,8 +210,8 @@ int main(int argc, char **argv)
     }
 
     std::map<unsigned, std::unique_ptr<ModuleCache>> modules;
-    // --ptx-dir: kernels of modules the tracer did not see (fatbin 0, e.g.
-    // APEX's, loaded with cuModuleLoadFatBinary) are looked up by entry name
+    // --ptx-dir: kernels of modules the tracer did not see (fatbin 0: older
+    // tracers missed cuModuleLoadData(Ex), which APEX uses) are looked up by entry name
     // among the .ptx files of a folder extracted from the same runtime DLLs.
     std::vector<fs::path> ptx_files;
     std::map<std::string, unsigned> ptx_file_of; // entry name -> index into ptx_files
@@ -264,16 +264,24 @@ int main(int argc, char **argv)
             if (!cache) {
                 cache = std::make_unique<ModuleCache>();
                 char name[32];
-                std::snprintf(name, sizeof(name), "fatbin_%04u.bin", c.fatbin);
-                std::ifstream in(dir / name, std::ios::binary);
-                std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-                const auto ptx = pxvk::fatbin::extract_ptx(bytes.data(), bytes.size());
-                if (ptx.empty()) throw std::runtime_error("fatbin has no PTX");
-                // The PTX the runtime would load: highest virtual architecture.
-                const auto best = std::max_element(ptx.begin(), ptx.end(), [](const auto &a, const auto &b) {
-                    return a.sm_version < b.sm_version;
-                });
-                cache->module = pxvk::ptx::parse(best->text);
+                std::snprintf(name, sizeof(name), "fatbin_%04u.ptx", c.fatbin);
+                if (fs::exists(dir / name)) {
+                    // PTX text loaded with cuModuleLoadData(Ex).
+                    std::ifstream in(dir / name, std::ios::binary);
+                    cache->module = pxvk::ptx::parse(
+                        std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()));
+                } else {
+                    std::snprintf(name, sizeof(name), "fatbin_%04u.bin", c.fatbin);
+                    std::ifstream in(dir / name, std::ios::binary);
+                    std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                    const auto ptx = pxvk::fatbin::extract_ptx(bytes.data(), bytes.size());
+                    if (ptx.empty()) throw std::runtime_error("fatbin has no PTX");
+                    // The PTX the runtime would load: highest virtual architecture.
+                    const auto best = std::max_element(ptx.begin(), ptx.end(), [](const auto &a, const auto &b) {
+                        return a.sm_version < b.sm_version;
+                    });
+                    cache->module = pxvk::ptx::parse(best->text);
+                }
                 if (!ptx_override.empty()) {
                     // The override replaces only the module it was edited from:
                     // one that defines every entry of this fatbin.

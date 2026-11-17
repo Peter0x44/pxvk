@@ -236,9 +236,8 @@ back to back after a reboot, on AC power, from the game's own benchmark
 An earlier pair measured in a slower power state gave 84 native against
 113 pxvk, and on battery the GPU's Battery Boost caps the game at 30 fps.
 97 native captures of 49 APEX kernels (two launches each, taken mid-
-benchmark with `PXVK_CAPTURE_KERNEL`; replayed with `pxvk-replay
---ptx-dir` and the PTX of `Engine\4F8D3BB436C7`) replay 88 EXACT and 7–8
-ok on NVIDIA and on Intel. The rest (1–2) are
+benchmark with `PXVK_CAPTURE_KERNEL`) replay 90 EXACT and 5 ok on
+NVIDIA, 89 EXACT and 6 ok on Intel. The other 2 are
 `TurbulenceFS_Multigrid8x8x8Solve`, which races by design and differs
 between replays (`architecture.md`). They are part of the regression check
 (`testing.md`). On the Intel iGPU (PhysX there,

@@ -58,8 +58,11 @@ forwards to the real `nvcuda.dll` and logs every call; with
 `PXVK_CAPTURE_KERNEL` (the first `PXVK_CAPTURE_COUNT` launches of a kernel
 whose name contains this text, for games whose ordinals vary) it snapshots
 all device memory around selected launches and records parameters, texture
-bindings and module globals. Capturing needs an NVIDIA GPU; replaying works
-on any Vulkan device.
+bindings and module globals. Every module image is saved, whether the CUDA
+runtime registers it or the program loads it with `cuModuleLoadData(Ex)` or
+`cuModuleLoadFatBinary`, as `fatbin_NNNN.bin` (or `.ptx` for PTX text), and
+each capture names its module's number. Capturing needs an NVIDIA GPU;
+replaying works on any Vulkan device.
 Lines starting with `interop` record graphics interop and surface calls
 (D3D/GL context creation, resource registration, map/unmap, 2D copies,
 `cuModuleGetSurfRef`); per-frame ones are logged the first 32 times, then
@@ -89,9 +92,10 @@ Replay options: `--verbose` (show the first wrong words), `--mismatches`
 (every differing word with its grade: ulp4, near, wrong, wrong-int),
 `--time N` (GPU timing),
 `--storage-shared` (force storage-backed shared memory), `--ptx-dir DIR`
-(for captures whose module the tracer did not see, `fatbin 0`, such as
-APEX's, loaded with `cuModuleLoadFatBinary`: the kernel is looked up by
-name among the `.ptx` files under DIR, extracted with
+(for captures whose module the tracer did not see, `fatbin 0`: older
+tracers missed modules loaded with `cuModuleLoadData(Ex)` or
+`cuModuleLoadFatBinary`, as APEX's are; the kernel is looked up by name
+among the `.ptx` files under DIR, extracted with
 `tools/extract-physx-ptx.py` from the same runtime folder), `--ptx FILE`
 (override the module PTX, e.g. with hand-inserted probes storing to a
 `.global pxvk_debug[]` symbol, which replay maps to a scratch area and
@@ -211,10 +215,7 @@ device) makes the check fail. The reference capture sets on the development
 machine are `test-output/bench/capture-all/trace/SampleCloth.exe_*` (all nine
 cloth scenes) and `test-output/bench/fluid-capture/trace/SampleParticleFluid.exe_*`.
 
-APEX loads its modules with `cuModuleLoadFatBinary`, which the tracer does
-not capture, so its captures need the PTX extracted from the same runtime
-DLLs: `--capture-ptx DIR` passes it to every replay as `--ptx-dir`. Kernels
-listed in `check.py`'s `RACY_KERNELS` (APEX 1.3's
+Kernels listed in `check.py`'s `RACY_KERNELS` (APEX 1.3's
 `TurbulenceFS_Multigrid8x8x8Solve`, whose result depends on thread timing)
 are reported but not graded. On the RTX 5070 laptop the check runs with
 Batman: Arkham City's cloth and fluid captures, Borderlands 2's and the 97
@@ -223,8 +224,7 @@ Arkham Origins APEX captures (`compatibility.md`):
 ```powershell
 python tools\check.py --ptx tmp\extracted-ptx --device nvidia intel `
     --captures test-output\bac-capture-cloth\BatmanAC.exe_18288 test-output\bac-capture-fluid\BatmanAC.exe_19300 `
-               test-output\bl2-capture\Borderlands2.exe_4796 test-output\bao-capture-apex\BatmanOrigins.exe_26000 `
-    --capture-ptx tmp\bao-ptx-4F8D
+               test-output\bl2-capture\Borderlands2.exe_4796 test-output\bao-capture-apex2\BatmanOrigins.exe_3772
 ```
 
 | Captures | RTX 5070 | Intel iGPU |
@@ -232,7 +232,7 @@ python tools\check.py --ptx tmp\extracted-ptx --device nvidia intel `
 | Arkham City cloth (60 launches) | 60 EXACT | 45 EXACT, 14 ok, 1 tolerated BAD |
 | Arkham City fluid (60 launches) | 60 EXACT | 32 EXACT, 28 ok |
 | Borderlands 2 (4 launches) | 4 EXACT | 4 tolerated BAD |
-| Arkham Origins APEX (97 launches) | 88 EXACT, 7–8 ok, 1–2 racy | 88 EXACT, 7–8 ok, 1–2 racy |
+| Arkham Origins APEX (97 launches) | 90 EXACT, 5 ok, 2 racy | 89 EXACT, 6 ok, 2 racy |
 
 Expected results on the reference laptop, and on the Radeon 8060S laptop
 (drivers 26.9.1 and 26.10.1, no NVIDIA driver):
