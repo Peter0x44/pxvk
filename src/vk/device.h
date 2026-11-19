@@ -38,6 +38,10 @@ struct Capabilities {
     bool shader_clock = false; // VK_KHR_shader_clock subgroup clock (enabled)
     bool subgroup_shuffle = false; // VK_SUBGROUP_FEATURE_SHUFFLE_BIT in compute
     bool subgroup_ballot = false; // VK_SUBGROUP_FEATURE_BALLOT_BIT in compute
+    // VK_KHR_shader_maximal_reconvergence (enabled; off with
+    // PXVK_NO_MAXIMAL_RECONVERGENCE): warp-synchronous code gets subgroup
+    // control barriers at reconvergence points instead of memory fences.
+    bool maximal_reconvergence = false;
     std::uint32_t multiprocessor_count = 0; // NVIDIA SMs / AMD compute units, 0 if unknown (Intel)
     // PXVK_VALIDATION: "off", "on" (with synchronization validation), or why it could not be enabled.
     std::string validation = "off";

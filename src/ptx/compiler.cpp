@@ -1346,14 +1346,31 @@ private:
 
     // Around volatile shared stores in warp-synchronous code (not emulated).
     // Such stores are often under a branch only some lanes take (APEX's
-    // BasicIOS_compactKernel), where a subgroup control barrier would not be
-    // reached by the whole subgroup, which Vulkan leaves undefined (a driver
-    // could hang). The memory-only fence is valid there; lanes are kept in
-    // step by the hardware, as on NVIDIA and Intel (pxvk-warptest checks).
+    // BasicIOS_compactKernel). A subgroup control barrier there synchronizes
+    // only the lanes executing it together (its tangle); without maximal
+    // reconvergence which lanes those are is up to the driver, and NVIDIA's
+    // split skewed lanes apart (pxvk-warptest's control mode). So with
+    // WarpSync::maximal the kernel declares MaximallyReconvergesKHR and gets
+    // control barriers here and at the merge of each construct containing
+    // such a store (merge_barrier), where every lane that entered it has
+    // reconverged, so lanes that skipped the store synchronize with those
+    // that made it. Otherwise (WarpSync::fence) the memory-only fence, valid
+    // anywhere, with lanes kept in step by the hardware as on NVIDIA, Intel
+    // and AMD.
+    bool maximal() const
+    {
+        return options_.warp_sync == CompileOptions::WarpSync::maximal && !options_.emulate_warps;
+    }
+
     void warp_store_barrier()
     {
-        if (options_.warp_sync == CompileOptions::WarpSync::control) warp_barrier();
+        if (options_.warp_sync == CompileOptions::WarpSync::control || maximal()) warp_barrier();
         else warp_fence();
+    }
+
+    void merge_barrier(const StructNode &node)
+    {
+        if (maximal() && contains_warp_sync(node)) warp_barrier();
     }
 
     // Before a volatile shared load in warp-synchronous code, and around such
@@ -1696,6 +1713,9 @@ private:
             lower_unguarded(in);
             b_.branch(merge);
             b_.label(merge);
+            // A guarded volatile shared store: lanes that skipped it
+            // synchronize with those that made it (see warp_store_barrier).
+            if (maximal() && is_warp_sync_store(in)) warp_barrier();
         } else {
             lower_unguarded(in);
         }
@@ -2211,6 +2231,7 @@ private:
             emit(node.children[1]);
             if (b_.open()) b_.branch(merge);
             b_.label(merge);
+            merge_barrier(node);
             // If both arms exited, the merge block is unreachable. Following
             // code (if any) will still be emitted here; an OpUnreachable is
             // added at the end of the function when nothing follows.
@@ -2236,11 +2257,15 @@ private:
             b_.branch(c.header);
             stack_.pop_back();
             b_.label(c.merge);
+            merge_barrier(node);
             if (c.needs_ladder) emit_ladder();
             break;
         }
         case StructNode::Kind::br:
             emit_br(node.construct);
+            break;
+        case StructNode::Kind::exit:
+            emit_exit(node.construct);
             break;
         }
     }
@@ -2268,6 +2293,7 @@ private:
         // find_transparent_blocks): it skips nothing.
         if (node.kind == StructNode::Kind::br && !inside.count(node.construct) && !constructs_[node.construct].transparent)
             return true;
+        if (node.kind == StructNode::Kind::exit && !inside.count(node.construct)) return true;
         for (const StructNode &child : node.children)
             if (leaves_early(child, inside)) return true;
         return false;
@@ -2399,6 +2425,24 @@ private:
         b_.branch(constructs_[innermost].merge);
     }
 
+    // Pending value for leaving loop `target` (rather than continuing it).
+    static std::uint32_t exit_code(int target) { return (static_cast<std::uint32_t>(target) + 1u) | 0x80000000u; }
+
+    // Leave loop `target` for the code after it: a break to its merge block,
+    // dispatched like emit_br when nested constructs are in between.
+    void emit_exit(int target)
+    {
+        const int innermost = stack_.back();
+        if (target == innermost) {
+            b_.branch(constructs_[target].merge);
+            return;
+        }
+        for (auto it = stack_.rbegin(); it != stack_.rend() && *it != target; ++it)
+            constructs_[*it].needs_ladder = true;
+        b_.op(SpvOpStore, {pending(), b_.u32(exit_code(target))});
+        b_.branch(constructs_[innermost].merge);
+    }
+
     // Emitted at the merge block of a construct that a multi-level branch
     // passed through; we are now directly inside the enclosing construct.
     void emit_ladder()
@@ -2409,11 +2453,15 @@ private:
         const std::uint32_t active = b_.value(SpvOpINotEqual, boolean, {value, b_.u32(0)});
         const std::uint32_t here = b_.value(SpvOpIEqual, boolean,
             {value, b_.u32(static_cast<std::uint32_t>(enclosing) + 1u)});
+        // An exit of `enclosing` (emit_exit) ends at its merge block, which
+        // the loop branch below takes for anything but a continue.
+        const std::uint32_t leaving = b_.value(SpvOpIEqual, boolean, {value, b_.u32(exit_code(enclosing))});
+        const std::uint32_t done = b_.value(SpvOpLogicalOr, boolean, {here, leaving});
         const std::uint32_t go = b_.id(), rest = b_.id();
         b_.op(SpvOpSelectionMerge, {rest, SpvSelectionControlMaskNone});
         b_.branch_conditional(active, go, rest);
         b_.label(go);
-        b_.op(SpvOpStore, {pending(), b_.value(SpvOpSelect, u32, {here, b_.u32(0), value})});
+        b_.op(SpvOpStore, {pending(), b_.value(SpvOpSelect, u32, {done, b_.u32(0), value})});
         Construct &e = constructs_[enclosing];
         if (is_loop_[enclosing]) {
             b_.branch_conditional(here, e.cont, e.merge);
@@ -2446,6 +2494,12 @@ private:
             b_.extension("SPV_KHR_float_controls");
             b_.capability(SpvCapabilitySignedZeroInfNanPreserve);
             b_.execution_mode(main_, SpvExecutionModeSignedZeroInfNanPreserve, {32});
+        }
+        if (maximal() && info_.warp_synchronous) {
+            // Reconvergence at merge blocks, which the barriers of
+            // warp_store_barrier and merge_barrier rely on.
+            b_.extension("SPV_KHR_maximal_reconvergence");
+            b_.execution_mode(main_, SpvExecutionModeMaximallyReconvergesKHR, {});
         }
         if (info_.uses_int64) {
             if (!options_.int64) throw Error("kernel uses 64-bit integers, which the device does not support", 0);

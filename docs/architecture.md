@@ -37,7 +37,14 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
   are all in tail position (typical if/else joins) is emitted inline, since
   drivers compile plain selections better. Branches that leave several
   constructs at once use a small "pending target" dispatch at each merge.
-  Barriers therefore stay in structured, uniform control flow.
+  Barriers therefore stay in structured, uniform control flow. One
+  departure from the paper: code a loop header dominates but that lies
+  outside the loop (where its exits lead) is emitted after the loop
+  construct, not inside its body. The paper's placement runs the same,
+  but SPIR-V reconverges invocations at a construct's merge, so code
+  nested in a loop body runs once per exit iteration with only the
+  invocations that left in it. That split warp-synchronous code after a
+  loop with per-lane trip counts (below).
 - `compiler.cpp` lowers each instruction. Notable semantics:
   - PTX registers are function variables (drivers promote them to SSA).
   - Generic loads/stores are resolved to global/shared/local by register
@@ -91,29 +98,39 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     guaranteed to see another lane's store if it synchronizes itself (a
     release by the writer, an acquire by the reader). pxvk recreates the
     guarantee with barriers.
-  - Warp-synchronous code (volatile shared memory) gets subgroup memory
-    barriers (`OpMemoryBarrier`, acquire-release, no execution sync)
-    before and after each volatile shared store and before each volatile
-    shared load, and the pipeline requests full 32-wide subgroups. Memory
-    barriers are valid in divergent code, which warp-synchronous code
-    often is: APEX 1.3's `BasicIOS_compactKernel` stores under a branch
-    only some lanes take, then every lane reads those values. The lanes
-    that skipped the branch need their own acquire; without it they read
-    stale shared memory on Intel (particles vanished).
-  - pxvk used to put subgroup control barriers (`OpControlBarrier`)
-    around the stores. Those are undefined where only part of the
-    subgroup reaches them, and `pxvk-warptest` (`testing.md`) shows they
-    break in practice: on NVIDIA a warp scan whose lanes are skewed by a
-    little busy work got 87% of its results wrong with control barriers,
-    and none with memory barriers or with no barriers at all. Without
-    barriers, neither the RTX 5070 nor the Intel iGPU ever showed a lane
-    stale data in that test, so the memory barriers make the code correct
-    by the rules rather than fix a failure seen there (apart from the
-    Intel acquire above). The fully defined design would need
-    VK_KHR_shader_maximal_reconvergence and a barrier at every
-    reconvergence point. The swap cost nothing measurable in Arkham
-    Origins: NVIDIA 205.8 fps against 206–208; Intel 108.0 and 106.8
-    against 105.2 with control barriers, back to back. Wider
+  - Warp-synchronous code (volatile shared memory) runs in full 32-wide
+    subgroups and is often divergent: APEX 1.3's `BasicIOS_compactKernel`
+    stores under a branch only some lanes take, then every lane reads
+    those values. Where the device has `VK_KHR_shader_maximal_reconvergence`
+    (current NVIDIA, AMD, Intel, Arm, Qualcomm and Imagination drivers),
+    such kernels declare `MaximallyReconvergesKHR` and get subgroup control
+    barriers (`OpControlBarrier`, acquire-release) around each volatile
+    shared store and at the merge of every `if` or loop containing one, plus
+    an acquire before each volatile shared load. A subgroup-scope control
+    barrier synchronizes the invocations executing it together (its
+    tangle; SPIR-V leaves it undefined only for workgroup scope and
+    wider), and maximal reconvergence makes the tangles follow the
+    structured control flow, so after a merge every lane that skipped a
+    store is synchronized with the lanes that made it. This is defined
+    by the Vulkan memory model.
+  - Without the extension (or with `PXVK_NO_MAXIMAL_RECONVERGENCE`), the
+    stores get memory-only subgroup barriers (`OpMemoryBarrier`) instead,
+    valid anywhere but relying on the hardware to keep a warp's lanes
+    together, as NVIDIA, Intel and AMD do (`pxvk-warptest`,
+    `testing.md`). The load acquire matters there: without it, lanes that
+    skipped the branch read stale shared memory on Intel (particles
+    vanished).
+  - Before the structurizer placed loop-exit code after loops, control
+    barriers broke a warp scan whose lanes spin a lane-dependent number of
+    iterations before each step: the step's store sat inside the spin
+    loop, so lanes finishing in different iterations were in different
+    tangles (582 million of 671 million checks wrong, identically on NVIDIA
+    and Intel). This was pxvk's SPIR-V, not the drivers.
+  - Cost in Arkham Origins, back to back: NVIDIA 201.6 fps with maximal
+    reconvergence against 204.2 with fences; Intel 116.9 against 108.7.
+    Both are within run-to-run noise. In `pxvk-warptest` the barrier-heavy
+    scan is slower on Intel (16.8 against 12.0 ms per launch) and
+    unchanged on NVIDIA. Wider
     subgroups hold whole warps and work too (64 lanes, as on AMD GCN:
     `PXVK_SUBGROUP_SIZE=64` requests them on RDNA for testing). Devices that
     cannot guarantee subgroups of at least 32 lanes use warp emulation
@@ -336,6 +353,7 @@ Optional, with fallbacks:
 | float controls: fp32 `DenormFlushToZero` | 1.2 | native `.ftz` | emulated (slower on small launches; NVIDIA today) |
 | float controls: `SignedZeroInfNanPreserve` | 1.2 | correct unordered comparisons | NaN comparisons may be wrong on some drivers |
 | `subgroupSizeControl` + `computeFullSubgroups` | 1.3 | 32-wide subgroups for warp-synchronous kernels | fine if compute never runs narrower than 32 lanes; otherwise warp emulation |
+| `VK_KHR_shader_maximal_reconvergence` | ext | defined synchronization of warp-synchronous code | memory-only barriers; relies on the hardware keeping lanes together |
 | `maxStorageBufferRange` ≥ 512 MiB | limit | the whole heap in one descriptor | split heap (needs `shaderStorageBufferArrayNonUniformIndexing`, 1.2) |
 | `shaderInt64` | 1.0 feature | PTX using 64-bit integers | such kernels fail to compile (PhysX has not needed it) |
 | ≥ 42 KiB shared memory | limit | cloth solver shared memory as Workgroup memory | storage-buffer fallback (slower) |

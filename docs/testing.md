@@ -146,9 +146,12 @@ it in practice. It compiles two self-checking PTX kernels:
   lane's slot;
 - scan: a padded warp inclusive scan through volatile shared memory.
 
-Each runs with no barriers (`none`), pxvk's memory barriers (`fence`) and
-the old subgroup control barriers (`control`), with lanes skewed by 0, 3
-or 31 iterations of busy work, and counts wrong results:
+Each runs with pxvk's two strategies, control barriers under maximal
+reconvergence (`maximal`, skipped where the device lacks the extension)
+and memory-only barriers (`fence`), and for comparison with no barriers
+(`none`) and control barriers without the extension (`control`). Lanes are
+skewed by 0, 3 or 31 iterations of busy work, and wrong results are
+counted:
 
 ```
 build\x86\pxvk-warptest.exe --device nvidia
@@ -156,10 +159,14 @@ build\x86\pxvk-warptest.exe --device intel --blocks 64 --runs 2
 ```
 
 The defaults are 512 blocks of 256 threads, 256 rounds and 20 launches,
-about 671 million checks per case. The exit code is 1 if `fence` or
-`control` mismatched. In November 2026 every case was 0 on the RTX 5070
-and the Intel iGPU, except `control` on NVIDIA with skew 3 and 31: 583
-and 598 million wrong (87–89%).
+about 671 million checks per case. The exit code is 1 if `maximal` or
+`fence` mismatched. In November 2026 every case was 0 on the RTX 5070 and
+the Intel iGPU; an earlier version without `maximal` showed no problem on
+an AMD GPU (tester's report, no counts recorded). The skewed scan first
+failed with control barriers, identically on both GPUs, until the
+structurizer stopped nesting post-loop code in loop bodies
+(`architecture.md`). Per-launch times are printed too; on Intel the scan
+takes 16.8 ms with `maximal` against 12.0 with `fence`.
 
 ## 3. Applications: `tools/bench.py`
 

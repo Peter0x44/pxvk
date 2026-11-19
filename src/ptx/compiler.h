@@ -83,13 +83,22 @@ struct CompileOptions {
     // kernels with vote.ballot fail to compile without them.
     bool subgroup_ballot = true;
     // How warp-synchronous code (volatile shared memory) is made to work
-    // without lockstep, when warps are not emulated: fence = memory-only
-    // subgroup barriers around volatile shared stores and before such loads
-    // (valid in divergent code); control = subgroup control barriers around
-    // the stores (undefined where only part of the subgroup reaches them)
-    // plus the load fences; none = no barriers (pxvk-warptest only, to see
-    // what the hardware does by itself).
-    enum class WarpSync { fence, control, none };
+    // without lockstep, when warps are not emulated:
+    // maximal = the kernel declares MaximallyReconvergesKHR (the device must
+    //   enable VK_KHR_shader_maximal_reconvergence); subgroup control
+    //   barriers around volatile shared stores and at the merge of every
+    //   construct containing one, where all lanes that entered it have
+    //   reconverged, plus fences before such loads. Defined by the Vulkan
+    //   memory model;
+    // fence = memory-only subgroup barriers around the stores and before the
+    //   loads (valid in divergent code, but lanes are only kept in step by
+    //   the hardware);
+    // control = subgroup control barriers around the stores without
+    //   maximal reconvergence, so which lanes they synchronize is up to the
+    //   driver, plus the load fences (pxvk-warptest only: breaks on NVIDIA);
+    // none = no barriers (pxvk-warptest only, to see what the hardware does
+    //   by itself).
+    enum class WarpSync { fence, maximal, control, none };
     WarpSync warp_sync = WarpSync::fence;
     // Device supports VK_KHR_shader_clock's shaderSubgroupClock: %clock reads
     // it (otherwise %clock is 0).

@@ -194,6 +194,7 @@ int main(int argc, char **argv)
     options.shader_clock = caps.shader_clock;
     options.subgroup_shuffle = caps.subgroup_shuffle;
     options.subgroup_ballot = caps.subgroup_ballot;
+    if (caps.maximal_reconvergence) options.warp_sync = pxvk::ptx::CompileOptions::WarpSync::maximal;
     options.heap_window_shift = caps.heap_window_shift;
     options.heap_windows = caps.heap_windows;
     options.no_contraction = no_contraction;

@@ -140,6 +140,7 @@ public:
         compute_dominators();
 
         loop_header_.assign(n, false);
+        back_sources_.assign(n, {});
         forward_preds_.assign(n, 0);
         for (int b : order_) {
             for (int s : successors(cfg_.blocks[b])) {
@@ -148,6 +149,7 @@ public:
                         throw Error("irreducible control flow is unsupported",
                                     cfg_.blocks[b].line);
                     loop_header_[s] = true;
+                    back_sources_[s].push_back(b);
                 } else {
                     ++forward_preds_[s];
                 }
@@ -165,10 +167,28 @@ public:
 
 private:
     struct Context {
-        enum class Kind { block_followed_by, loop_headed_by, branch_if } kind;
+        // loop_exited_to: label is the code directly after loop `construct`.
+        enum class Kind { block_followed_by, loop_headed_by, loop_exited_to, branch_if } kind;
         int label;
         int construct;
     };
+
+    // The natural loop of header h: h and every block that reaches one of
+    // its back-edge sources without passing through h.
+    std::vector<bool> loop_body(int h) const
+    {
+        std::vector<bool> body(cfg_.blocks.size(), false);
+        body[h] = true;
+        std::vector<int> work(back_sources_[h].begin(), back_sources_[h].end());
+        while (!work.empty()) {
+            const int b = work.back();
+            work.pop_back();
+            if (body[b]) continue;
+            body[b] = true;
+            for (int p : preds_[b]) work.push_back(p);
+        }
+        return body;
+    }
 
     bool dominates(int a, int b) const
     {
@@ -218,15 +238,53 @@ private:
         std::sort(merges.begin(), merges.end(),
                   [&](int a, int b) { return rpo_index_[a] > rpo_index_[b]; });
         if (loop_header_[x]) {
-            const int construct = new_construct(true);
-            context.push_back({Context::Kind::loop_headed_by, x, construct});
-            StructNode loop;
-            loop.kind = StructNode::Kind::loop;
-            loop.construct = construct;
-            loop.children.push_back(node_within(x, merges, 0, context));
-            return loop;
+            // Children inside the loop are handled within its body; those
+            // outside (where its exits lead) follow the loop, latest
+            // outermost as for merges.
+            const std::vector<bool> body = loop_body(x);
+            std::vector<int> inner, outside;
+            for (int c : merges)
+                if (body[c]) inner.push_back(c);
+            for (int c : children_[x])
+                if (!body[c]) outside.push_back(c);
+            std::sort(outside.begin(), outside.end(),
+                      [&](int a, int b) { return rpo_index_[a] > rpo_index_[b]; });
+            return loop_followed_by(x, inner, outside, 0, context);
         }
         return node_within(x, merges, 0, context);
+    }
+
+    // The loop headed by x, enclosed in a Block construct for each of
+    // outside[i..] but the last, which directly follows the loop.
+    StructNode loop_followed_by(int x, const std::vector<int> &inner, const std::vector<int> &outside,
+                                std::size_t i, std::vector<Context> context)
+    {
+        if (i + 1 < outside.size()) {
+            const int y = outside[i];
+            const int construct = new_construct(false);
+            auto within = context;
+            within.push_back({Context::Kind::block_followed_by, y, construct});
+            StructNode block;
+            block.kind = StructNode::Kind::block;
+            block.construct = construct;
+            block.children.push_back(loop_followed_by(x, inner, outside, i + 1, within));
+            StructNode seq;
+            seq.children.push_back(std::move(block));
+            seq.children.push_back(do_tree(y, context));
+            return seq;
+        }
+        const int construct = new_construct(true);
+        auto within = context;
+        if (i < outside.size()) within.push_back({Context::Kind::loop_exited_to, outside[i], construct});
+        within.push_back({Context::Kind::loop_headed_by, x, construct});
+        StructNode loop;
+        loop.kind = StructNode::Kind::loop;
+        loop.construct = construct;
+        loop.children.push_back(node_within(x, inner, 0, within));
+        StructNode seq;
+        seq.children.push_back(std::move(loop));
+        if (i < outside.size()) seq.children.push_back(do_tree(outside[i], context));
+        return seq;
     }
 
     StructNode node_within(int x, const std::vector<int> &merges, std::size_t i,
@@ -280,6 +338,19 @@ private:
     StructNode do_branch(int source, int target, const std::vector<Context> &context)
     {
         const bool backward = rpo_index_[target] <= rpo_index_[source];
+        if (!backward) {
+            // Code following a loop (loop_followed_by) is reached by leaving
+            // it, whether or not it is a merge node.
+            for (auto it = context.rbegin(); it != context.rend(); ++it) {
+                if (it->label != target) continue;
+                if (it->kind == Context::Kind::loop_exited_to || it->kind == Context::Kind::block_followed_by) {
+                    StructNode br;
+                    br.kind = it->kind == Context::Kind::loop_exited_to ? StructNode::Kind::exit : StructNode::Kind::br;
+                    br.construct = it->construct;
+                    return br;
+                }
+            }
+        }
         if (backward || is_merge(target)) {
             const auto kind =
                 backward ? Context::Kind::loop_headed_by : Context::Kind::block_followed_by;
@@ -304,7 +375,7 @@ private:
 
     const Cfg &cfg_;
     std::vector<int> order_, rpo_index_, idom_, forward_preds_;
-    std::vector<std::vector<int>> preds_, children_;
+    std::vector<std::vector<int>> preds_, children_, back_sources_;
     std::vector<bool> loop_header_;
     std::vector<bool> construct_is_loop_;
 };

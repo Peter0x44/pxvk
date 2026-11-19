@@ -766,8 +766,17 @@ bool Device::initialize(int index, std::string &error)
     }
     VkPhysicalDeviceShaderClockFeaturesKHR clock_features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR};
     const bool clock_ext = has_extension(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
-    if (clock_ext) *feature_tail = &clock_features;
+    if (clock_ext) {
+        *feature_tail = &clock_features;
+        feature_tail = &clock_features.pNext;
+    }
+    VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR reconvergence_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MAXIMAL_RECONVERGENCE_FEATURES_KHR};
+    const bool reconvergence_ext = has_extension(VK_KHR_SHADER_MAXIMAL_RECONVERGENCE_EXTENSION_NAME);
+    if (reconvergence_ext) *feature_tail = &reconvergence_features;
     vkGetPhysicalDeviceFeatures2(d.physical, &features2);
+    c.maximal_reconvergence = reconvergence_ext && reconvergence_features.shaderMaximalReconvergence &&
+                              !env_switch("PXVK_NO_MAXIMAL_RECONVERGENCE");
     c.float_atomic_add = atomic_float_ext && atomic_float_features.shaderBufferFloat32AtomicAdd &&
                          !env_switch("PXVK_NO_FLOAT_ATOMICS");
     c.shader_clock = clock_ext && clock_features.shaderSubgroupClock;
@@ -879,6 +888,14 @@ bool Device::initialize(int index, std::string &error)
         enable_clock.pNext = enable.pNext;
         enable.pNext = &enable_clock;
         enabled_extensions.push_back(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
+    }
+    VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR enable_reconvergence{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MAXIMAL_RECONVERGENCE_FEATURES_KHR};
+    if (c.maximal_reconvergence) {
+        enable_reconvergence.shaderMaximalReconvergence = VK_TRUE;
+        enable_reconvergence.pNext = enable.pNext;
+        enable.pNext = &enable_reconvergence;
+        enabled_extensions.push_back(VK_KHR_SHADER_MAXIMAL_RECONVERGENCE_EXTENSION_NAME);
     }
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enable_executable_info{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};

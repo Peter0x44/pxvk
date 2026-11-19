@@ -660,6 +660,7 @@ int main(int argc, char **argv)
     options.shader_clock = device.caps().shader_clock;
     options.subgroup_shuffle = device.caps().subgroup_shuffle;
     options.subgroup_ballot = device.caps().subgroup_ballot;
+    if (device.caps().maximal_reconvergence) options.warp_sync = pxvk::ptx::CompileOptions::WarpSync::maximal;
     options.no_contraction = no_contraction;
 
     const std::size_t bytes = count * 16;

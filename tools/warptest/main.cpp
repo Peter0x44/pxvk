@@ -5,9 +5,13 @@
 // Warp-synchronous PTX (PhysX, APEX) exchanges values between the lanes of a
 // warp through volatile shared memory without barriers, relying on lockstep
 // execution, which neither CUDA nor Vulkan promises. pxvk compiles it with
-// memory-only subgroup fences (CompileOptions::WarpSync::fence); the other
-// strategies are subgroup control barriers (control, undefined where only part
-// of the subgroup reaches them) and nothing at all (none). Each test kernel
+// subgroup control barriers at reconvergence points under
+// VK_KHR_shader_maximal_reconvergence (CompileOptions::WarpSync::maximal,
+// skipped where the device lacks it), or else memory-only subgroup fences
+// (fence). For comparison: control barriers without maximal reconvergence
+// (control, where the driver decides which lanes a barrier joins) and
+// nothing at all (none). The exit code is 1 if a mode pxvk uses (maximal,
+// fence) mismatches. Each test kernel
 // checks itself: every lane computes which values the other lanes of its warp
 // must have stored under lockstep and counts the loads that differ. The
 // patterns, each over many rounds that overwrite the same slots:
@@ -223,7 +227,15 @@ struct Mode {
 };
 const Mode kModes[] = {{"none", pxvk::ptx::CompileOptions::WarpSync::none},
                        {"fence", pxvk::ptx::CompileOptions::WarpSync::fence},
+                       {"maximal", pxvk::ptx::CompileOptions::WarpSync::maximal},
                        {"control", pxvk::ptx::CompileOptions::WarpSync::control}};
+
+// Modes pxvk compiles with; the others are only for comparison.
+bool used_by_pxvk(pxvk::ptx::CompileOptions::WarpSync sync)
+{
+    return sync == pxvk::ptx::CompileOptions::WarpSync::fence ||
+           sync == pxvk::ptx::CompileOptions::WarpSync::maximal;
+}
 
 } // namespace
 
@@ -252,8 +264,9 @@ int main(int argc, char **argv)
         return 2;
     }
     const auto &caps = device.caps();
-    std::printf("device: %s (subgroup %u, warp subgroup %u, subgroup control %d)\n", caps.name.c_str(),
-                caps.subgroup_size, caps.warp_subgroup_size, caps.subgroup_control);
+    std::printf("device: %s (subgroup %u, warp subgroup %u, subgroup control %d, maximal reconvergence %d)\n",
+                caps.name.c_str(), caps.subgroup_size, caps.warp_subgroup_size, caps.subgroup_control,
+                caps.maximal_reconvergence);
     std::printf("%u blocks x %u threads, %u rounds per launch, %u launches per case\n", blocks, block, rounds, runs);
     const std::uint32_t threads = blocks * block;
     const std::size_t bytes = static_cast<std::size_t>(threads) * 8;
@@ -266,6 +279,10 @@ int main(int argc, char **argv)
     bool any = false;
     for (const Test &test : kTests) {
         for (const Mode &mode : kModes) {
+            if (mode.sync == pxvk::ptx::CompileOptions::WarpSync::maximal && !caps.maximal_reconvergence) {
+                std::printf("%-9s %-7s skipped: no VK_KHR_shader_maximal_reconvergence\n", test.name, mode.name);
+                continue;
+            }
             pxvk::ptx::CompileOptions options;
             options.native_ftz = caps.native_ftz;
             options.preserve_denorm = caps.preserve_denorm;
@@ -314,7 +331,7 @@ int main(int argc, char **argv)
                 std::printf("%-9s %-7s skew %-2u %12llu mismatches in %llu checks  (%.2f ms per launch)\n", test.name,
                             mode.name, skew, static_cast<unsigned long long>(mismatches),
                             static_cast<unsigned long long>(loads), ms / runs);
-                if (mismatches != 0 && mode.sync != pxvk::ptx::CompileOptions::WarpSync::none) any = true;
+                if (mismatches != 0 && used_by_pxvk(mode.sync)) any = true;
             }
         }
     }
