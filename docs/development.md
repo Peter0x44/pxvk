@@ -44,6 +44,7 @@ run the GPU tests.
 | [`mirrors-edge.md`](mirrors-edge.md) | Mirror's Edge setup, scenes and workloads |
 | [`install.md`](install.md) | installing, running and reporting (for testers) |
 | [`compatibility.md`](compatibility.md) | PhysX runtimes, games and what pxvk runs |
+| [`gpus.md`](gpus.md) | tested GPUs, vendor quirks, subgroup sizes and extension support |
 | [`nvidia-32bit-physx.md`](nvidia-32bit-physx.md) | how NVIDIA's driver restores 32-bit PhysX on RTX 50 |
 | [`roadmap.md`](roadmap.md) | open work |
 | [`charter.md`](charter.md) | goal and scope |

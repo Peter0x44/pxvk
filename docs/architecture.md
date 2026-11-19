@@ -359,6 +359,7 @@ Optional, with fallbacks:
 | ≥ 42 KiB shared memory | limit | cloth solver shared memory as Workgroup memory | storage-buffer fallback (slower) |
 | `VK_KHR_pipeline_executable_properties` | ext | `PXVK_PIPELINE_STATS` | — |
 
+Per-vendor behaviour and data on untested GPUs are collected in `gpus.md`.
 In practice this is any GPU with a current Windows Vulkan driver: NVIDIA
 Kepler and later, AMD GCN and later, Intel Gen9 (Skylake) and later. With
 the fallbacks above it also runs on Mesa's lavapipe (software Vulkan), which
