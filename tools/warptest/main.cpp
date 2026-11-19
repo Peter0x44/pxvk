@@ -267,6 +267,12 @@ int main(int argc, char **argv)
     std::printf("device: %s (subgroup %u, warp subgroup %u, subgroup control %d, maximal reconvergence %d)\n",
                 caps.name.c_str(), caps.subgroup_size, caps.warp_subgroup_size, caps.subgroup_control,
                 caps.maximal_reconvergence);
+    if (caps.narrow_subgroups()) {
+        // Emulation replaces every strategy with workgroup barriers, and
+        // rejects these kernels: their per-lane busy loops are non-uniform.
+        std::fprintf(stderr, "warp emulation in effect (subgroups narrower than 32 lanes): nothing to test\n");
+        return 2;
+    }
     std::printf("%u blocks x %u threads, %u rounds per launch, %u launches per case\n", blocks, block, rounds, runs);
     const std::uint32_t threads = blocks * block;
     const std::size_t bytes = static_cast<std::size_t>(threads) * 8;

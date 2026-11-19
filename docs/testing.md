@@ -33,8 +33,8 @@ implementation instead, for the variants that have one: `shfl`, global
 float atomic add, `vote.ballot`, `cvt.sat` and the f64 comparisons of
 widened floats (APEX 1.3), with the semantics established on NVIDIA. `--block N`
 (a multiple of 32, default 256) sets the block size. `PXVK_SUBGROUP_SIZE=64`
-runs warp-synchronous kernels in 64-wide subgroups on devices that offer
-them (RDNA), two warps per subgroup as on AMD GCN:
+runs kernels in 64-wide subgroups on devices that offer them (RDNA), two
+warps per subgroup as on AMD GCN:
 
 ```powershell
 build\x86\pxvk-opcheck.exe --device radeon --cpu-reference
@@ -348,6 +348,33 @@ cloth 28 EXACT, 55 ok, 7 tolerated BAD). `pxvk-replay --emulate-warps`
 forces warp emulation on any device; on NVIDIA the results must stay
 bit-exact. `pxvk-ptxc --emulate-warps --split-heap` compiles the corpus
 with both fallbacks for `spirv-val`.
+
+On real hardware with narrow subgroups, `PXVK_SUBGROUP_SIZE` runs every
+kernel at that width with warp emulation (`environment.md`). On the Intel
+iGPU (November 2026):
+
+- 16 lanes: the Arkham City cloth and fluid and Borderlands 2 captures give
+  the same results as at 32. Of the 97 Arkham Origins APEX captures 32 fail
+  to compile: 15 kernels have warp-synchronous code under branches with
+  nested control flow, which emulation rejects, and `BasicIOS_scan2Kernel`
+  uses `shfl`.
+- 8 lanes: also blocks above 512 threads, as the device allows 64
+  subgroups per workgroup (Borderlands 2's 1024-thread cloth solver and 56
+  APEX launches fail).
+- `pxvk-warptest` has nothing to test: its kernels are deliberately
+  non-uniform, which emulation rejects.
+- Timing: the width makes no difference. Arkham City's cloth solver
+  launches take 1.80 ms in total at 32 lanes (with maximal reconvergence,
+  fences or emulation) and at 16 lanes (emulated), measured with
+  `pxvk-replay --time 200` in alternating rounds.
+
+Timing on the Intel iGPU needs many repetitions: `pxvk-replay --time N`
+uploads the launch's memory before each dispatch, the GPU idles meanwhile,
+and with `--time 10` the same launch measured 2–3 times slower in some runs
+than in others (the GPU's clock state). An apparent 2× cloth speedup at 16
+lanes was this. Use `--time 200` or more, and alternate the configurations
+being compared. `pxvk-warptest` dispatches back to back and is stable to
+1–2% between runs.
 
 lavapipe's subgroup size is its LLVM vector width divided by 32 bits, and it
 offers exactly that one size: 8 by default on an AVX2 CPU (256 bits), 4 with

@@ -28,9 +28,11 @@ struct Capabilities {
     bool preserve_denorm = false;  // fp32 DenormPreserve execution mode
     bool preserve_nan = false;     // fp32 SignedZeroInfNanPreserve execution mode
     bool subgroup_control = false; // can require a subgroup size of warp_subgroup_size
-    // Required for warp-synchronous kernels: 32, or 64 with
-    // PXVK_SUBGROUP_SIZE=64 where the device offers it (as on AMD GCN).
+    // Required for warp-synchronous kernels: 32, or the PXVK_SUBGROUP_SIZE
+    // the device offers (then required for every kernel; below 32 warps are
+    // emulated, see narrow_subgroups).
     std::uint32_t warp_subgroup_size = 32;
+    bool forced_subgroup_size = false; // PXVK_SUBGROUP_SIZE in effect
     std::uint32_t subgroup_size = 0;
     // VK_EXT_shader_atomic_float buffer float32 atomic add (enabled; off with
     // PXVK_NO_FLOAT_ATOMICS).
@@ -49,7 +51,11 @@ struct Capabilities {
     std::uint32_t min_subgroup_size = 0; // smallest size compute may run with (no size control)
     // Compute may run with subgroups narrower than a CUDA warp and cannot be
     // forced to 32: warp-synchronous code must be emulated (lavapipe: 8).
-    bool narrow_subgroups() const { return !subgroup_control && min_subgroup_size < 32; }
+    // (Or PXVK_SUBGROUP_SIZE asked for fewer than 32.)
+    bool narrow_subgroups() const
+    {
+        return warp_subgroup_size < 32 || (!subgroup_control && min_subgroup_size < 32);
+    }
     std::uint32_t max_workgroup_invocations = 0;
     std::uint32_t max_workgroup_size[3] = {0, 0, 0};
     std::uint32_t max_workgroup_count[3] = {0, 0, 0};

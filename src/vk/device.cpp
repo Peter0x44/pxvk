@@ -399,10 +399,10 @@ struct Device::Impl {
         info.layout = pipeline_layout;
         VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT subgroup{
             VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT};
-        if (shader.warp_synchronous && caps.subgroup_control) {
+        if ((shader.warp_synchronous || caps.forced_subgroup_size) && caps.subgroup_control) {
             // Warp-synchronous PTX needs 32-lane subgroups that are fully
-            // populated, exactly like a CUDA warp (or 64-lane ones holding
-            // two warps, with PXVK_SUBGROUP_SIZE=64).
+            // populated, exactly like a CUDA warp (or wider ones holding
+            // whole warps). PXVK_SUBGROUP_SIZE applies to every kernel.
             const std::uint32_t size = caps.warp_subgroup_size;
             const std::uint64_t threads = std::uint64_t{shape.block[0]} * shape.block[1] * shape.block[2];
             if (threads > std::uint64_t{size} * caps.max_workgroup_subgroups) {
@@ -792,8 +792,16 @@ bool Device::initialize(int index, std::string &error)
     auto can_require = [&](std::uint32_t size) {
         return size_control && subgroup_props.minSubgroupSize <= size && subgroup_props.maxSubgroupSize >= size;
     };
-    // PXVK_SUBGROUP_SIZE=64 puts two warps in each subgroup, as on AMD GCN.
-    c.warp_subgroup_size = env("PXVK_SUBGROUP_SIZE") == "64" && can_require(64) ? 64 : 32;
+    // PXVK_SUBGROUP_SIZE=N runs every kernel in N-lane subgroups, for any
+    // power of two the device can require: 64 puts two warps in each
+    // subgroup (as on AMD GCN), below 32 warps are emulated (Intel offers 8
+    // and 16). Unset, warp-synchronous kernels require 32 and the rest run
+    // at the driver's choice.
+    const std::string wanted = env("PXVK_SUBGROUP_SIZE");
+    const unsigned long wanted_size = wanted.empty() ? 0 : std::strtoul(wanted.c_str(), nullptr, 10);
+    const bool power_of_two = wanted_size != 0 && (wanted_size & (wanted_size - 1)) == 0;
+    c.forced_subgroup_size = power_of_two && wanted_size <= 128 && can_require(static_cast<std::uint32_t>(wanted_size));
+    c.warp_subgroup_size = c.forced_subgroup_size ? static_cast<std::uint32_t>(wanted_size) : 32;
     c.subgroup_control = can_require(c.warp_subgroup_size);
 
     vkGetPhysicalDeviceMemoryProperties(d.physical, &d.memory_properties);
