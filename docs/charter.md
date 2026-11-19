@@ -6,7 +6,7 @@ Run NVIDIA GPU PhysX CUDA workloads on any Vulkan GPU, so games with GPU
 PhysX effects can use them on non-NVIDIA hardware and on NVIDIA cards that
 dropped 32-bit CUDA (RTX 50). This is a focused compatibility project for
 games, not a general CUDA-on-Vulkan implementation: GPU PhysX first, then
-the few games that run their own CUDA effects (stage 5).
+the few games that run their own CUDA effects (stage 6).
 
 The long-term aim is every GPU PhysX game (`docs/compatibility.md` lists
 them). Stages are taken on one at a time, in this order:
@@ -48,7 +48,8 @@ them). Stages are taken on one at a time, in this order:
    running; a 2.8.4 game with GPU cloth normals (Alice, Mafia II Classic)
    and a 2.7.5 game were not traced.
 3. **Now: 32-bit PhysX 3.x and APEX.** The GPU runtime of the late 32-bit
-   titles (Batman: Arkham Origins, likely Assassin's Creed IV), APEX
+   titles (Batman: Arkham Origins; Assassin's Creed IV is not planned, as
+   its only effect, APEX smoke, uses the same modules), APEX
    Particles/Turbulence and GPU rigid bodies (GRB), plus whatever graphics
    interop they turn out to need. Batman: Arkham Origins, the first target,
    runs (November 2026): it is PhysX 2.8.4 with APEX 1.3 and its PhysX 3
@@ -66,11 +67,25 @@ them). Stages are taken on one at a time, in this order:
    trip: on unmap, download the data and write it through the D3D API
    (particle buffers are small).
 4. **Later: 64-bit.** A 64-bit pxvk for 64-bit GPU PhysX games (Batman:
-   Arkham Knight, the Metro Redux games, Metro Exodus, ...), which only
-   matters on non-NVIDIA hardware. Their PTX uses 64-bit pointers, which
-   the current design (a device pointer is a 32-bit offset into one
-   buffer) does not handle.
-5. **Later: games' own CUDA effects.** Games that call CUDA directly
+   Arkham Knight, the Metro Redux games, ...), which only matters on
+   non-NVIDIA hardware. Their PTX uses 64-bit pointers, which the current
+   design (a device pointer is a 32-bit offset into one buffer) does not
+   handle. Later 64-bit APEX titles may need graphics interop (ZLUDA's
+   GameWorks support registers D3D11 2D and 3D textures, which suggests
+   volume textures for smoke), so the stage starts with a 64-bit build of
+   `tools/nvcuda-trace` and a native trace of Arkham Knight. Whether Metro
+   Exodus's Advanced PhysX uses the GPU is unknown (a review and forum
+   posts say CPU only, unconfirmed); its install (a PhysX GPU DLL) or a
+   native trace would tell.
+5. **Later: NVIDIA FleX.** GPU PhysX in games largely ended around
+   2015–2016 with Arkham Knight; the newer NVIDIA simulation in games is
+   FleX, a separate particle-based library: Fallout 4's weapon debris
+   (patch 1.3) and Killing Floor 2's gore and fluids. Its kernels,
+   runtime and rendering path differ from the PhysX SDK's, so it is a
+   stage of its own after the PhysX ones. Native traces come first:
+   whether these builds use FleX's CUDA backend (rather than its Direct3D
+   compute one) and which interop they need.
+6. **Later: games' own CUDA effects.** Games that call CUDA directly
    rather than through PhysX, such as Just Cause 2's GPU water and bokeh
    (`docs/compatibility.md`). They need older CUDA runtimes, CUDA libraries
    the game ships (cuFFT) and D3D interop, so they come after the PhysX

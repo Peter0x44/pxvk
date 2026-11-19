@@ -158,12 +158,18 @@ bit-exact on NVIDIA, if the 32-bit driver still runs it.
 Batman: Arkham Origins (APEX 1.3, charter stage 3) runs on NVIDIA and
 Intel, and 97 native captures of its APEX kernels replay EXACT or ok apart
 from the racy multigrid solver (`compatibility.md`); they are part of the
-regression check (`testing.md`). Assassin's Creed IV is the other
-stage 3 candidate: trace it natively first. On AMD pxvk reports the
+regression check (`testing.md`). Assassin's Creed IV, the other stage 3
+title, is not planned: its only GPU PhysX effect is smoke from APEX
+Particles and Turbulence, the modules Arkham Origins already exercises,
+and no copy is available for testing. On AMD pxvk reports the
 compute-unit count as the SM count (`architecture.md`); check `sms=` and
-the benchmark on the Radeon 8060S. The occupancy answer still assumes
-2048 threads per SM where the RTX 5070's driver reports 1536, so APEX may
-launch more workgroups than native for 1024-thread blocks.
+the benchmark on the Radeon 8060S.
+
+pxvk's occupancy answer assumes 2048 threads per SM where the RTX 5070's
+driver reports 1536, but it does not change Arkham Origins' launches: in
+a native benchmark (5.5 million launches) and a minute on pxvk (1.6
+million), APEX's grid-stride kernels never exceed 32 blocks at any block
+size, and every APEX launch shape pxvk made also occurs natively.
 
 ### 11. Smaller launch captures
 
