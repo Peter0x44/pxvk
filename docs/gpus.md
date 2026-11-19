@@ -113,13 +113,16 @@ them per vendor.
 
 Default `subgroupSize` reported to the Vulkan hardware database
 (vulkan.gpuinfo.org, November 2026). Drivers with subgroup size control may
-offer other sizes.
+offer other sizes. A few reports disagree with the rest for the same GPU
+(a Mali-G715 at 4, a Mali-G710 at 128); their drivers do not use Arm's
+version numbering, so they are taken to be translation layers or modified
+drivers.
 
 | Default size | GPUs | What pxvk would need |
 |---|---|---|
 | 1 | older PowerVR (Rogue GE8300/8320/8322, small A- and B-Series) | warp emulation; no `shfl` or `vote` |
-| 4–8 | Mesa software drivers, older Arm Mali (Bifrost) | warp emulation |
-| 16 | Arm Mali (Valhall and newer), Broadcom VideoCore (V3D, Raspberry Pi 4 and 5) | warp emulation; 15 APEX kernels fail as on Intel at 16 |
+| 4–8 | Mesa software drivers, Arm Mali Bifrost (4 on the first generation, G71/G72; 8 on G52/G76) | warp emulation; probably too slow for GPU PhysX to pay off |
+| 16 | Arm Mali from Valhall (2019) to the newest (Immortalis-G925, Mali-G1-Ultra, Mali-G2-Ultra), Broadcom VideoCore (V3D, Raspberry Pi 4 and 5) | warp emulation; 15 APEX kernels fail as on Intel at 16 |
 | 32 | NVIDIA, Intel, Apple | — |
 | 64 | AMD, Qualcomm Adreno, Samsung Xclipse | whole warps per subgroup, as on GCN |
 | 128 | Qualcomm Adreno (some modes), newer PowerVR (B-Series BXM-8/BXT, C-Series, D-Series) | whole warps per subgroup |
