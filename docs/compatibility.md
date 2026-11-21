@@ -146,6 +146,12 @@ p99). By eye, paper and leaves move differently between runs and the sparks
 look right; blue fragments might differ, which is unconfirmed and could be
 ordinary variation. Effects outside the GPU kernels were not compared.
 
+On AMD (Radeon 8060S, November 2026, build d72d826, through `pxvk-launch`)
+the benchmark also ran at PhysX High: 623,708 launches of 75 kernels, fluid
+and cloth, with no pxvk errors, and the tester found the effects looked
+right. It was not compared with native, and later builds have not been run
+there.
+
 Unreal Tournament 3 (Steam, November 2026) runs on pxvk on the RTX 5070
 laptop through the drop-in `dinput8.dll`, with NVIDIA's free PhysX Mod Pack
 (August 2008), whose three maps are the game's GPU PhysX content (setup in

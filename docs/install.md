@@ -241,7 +241,8 @@ The drop-in works whether the game is started from the launcher or directly.
 Look for `pxvk.log` in `Binaries\Win32` to check that
 PhysX runs on pxvk ("Checking that hardware PhysX is active" above). Kernel
 launches start in-game or in the benchmark (Graphics settings), not at the
-menu. Tested on an RTX 5070 laptop and its Intel GPU; AMD is untested.
+menu. Tested on an RTX 5070 laptop and its Intel GPU, and on an AMD
+Radeon 8060S.
 
 ## Batman: Arkham Origins (GOG)
 
