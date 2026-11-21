@@ -13,7 +13,7 @@ them per vendor.
 | NVIDIA GeForce RTX 3070 Laptop (Ampere) | — | earlier native reference (`charter.md`) | 32 | |
 | Intel iGPU ("Intel(R) Graphics") | 101.8331 | second GPU in the RTX 5070 laptop | 8, 16, 32 | |
 | Intel UHD | — | earlier test iGPU | 32 (required) | |
-| AMD Radeon 8060S (RDNA 3.5) | 26.8.1–26.10.1 | AMD test laptop, no NVIDIA driver | 32, 64 | Arkham Origins not yet run |
+| AMD Radeon 8060S (RDNA 3.5) | 26.8.1–26.11.1 | AMD test laptop, no NVIDIA driver | 32, 64 | Arkham Origins not yet run |
 | Mesa lavapipe (software) | Mesa 26.2.6 | fallback paths without a second GPU | 8 (vector width / 32) | `testing.md` |
 
 ## NVIDIA
@@ -91,12 +91,14 @@ them per vendor.
   storage-backed shared memory.
 - **SM count:** pxvk reports the compute-unit count, from
   `VK_AMD_shader_core_properties2`.
+- **Warp synchronization:** `VK_KHR_shader_maximal_reconvergence` is
+  supported (driver 26.11.1). `pxvk-warptest` never saw lanes out of step,
+  with any barrier strategy, at 32 or 64 lanes, and the regression check
+  gives the same results with maximal reconvergence as before (November
+  2026).
 - **Not yet run on AMD hardware:**
   - the compute-unit count;
-  - maximal reconvergence;
-  - Arkham Origins;
-  - the current `pxvk-warptest`. An earlier version without the `maximal`
-    mode showed no problems.
+  - Arkham Origins.
 
 ## lavapipe (Mesa software Vulkan)
 
@@ -138,11 +140,11 @@ Other limits relevant to mobile GPUs (`roadmap.md`, Winlator on Adreno):
 
 | Vendor | Drivers |
 |---|---|
-| NVIDIA | Windows/Linux 538.31 and later (January 2024); Mesa NVK, back to Maxwell |
-| AMD | Windows 2.0.299 and later (February 2024); Mesa RADV 24.0, back to GCN |
-| Intel | Mesa ANV 24.0 (Gen9 to Arc); Windows 101.6xxx and later on Arc and Arc iGPUs |
-| Arm Mali | r49 and later (September 2024) |
-| Qualcomm Adreno | 512.762 and later, including Snapdragon X |
+| NVIDIA | Windows/Linux 538.31 and later (January 2024); Mesa NVK 24.1, back to Kepler |
+| AMD | Windows 2.0.299 and later (February 2024); Mesa RADV 24.1, back to GCN |
+| Intel | Mesa ANV 24.1 (Gen9 to Arc); Windows 101.6xxx and later on Arc and Arc iGPUs |
+| Arm Mali | r49 and later (September 2024); Mesa PanVK 25.1 (Valhall and later) |
+| Qualcomm Adreno | 512.762 and later, including Snapdragon X; not Mesa's Turnip, which Winlator often uses |
 | Imagination PowerVR | Pixel 10's D-Series and some MediaTek phones (2025) |
 
 Without it pxvk uses memory-only barriers, which rely on the hardware

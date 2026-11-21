@@ -7,7 +7,9 @@
 Steps (each skipped when its inputs are absent):
   1. build the 32-bit tree with CMake/Ninja (i686 MinGW by default)
   2. compile every kernel entry of every module in --ptx with pxvk-ptxc and
-     validate the SPIR-V with spirv-val (when on PATH)
+     validate the SPIR-V with spirv-val (when on PATH): first with maximal
+     reconvergence, as on desktop drivers, then with the memory-fence
+     fallback for devices without it
   3. pxvk-opcheck: every PhysX instruction variant against native CUDA
      (needs the NVIDIA driver; the only known difference, div.rn, is unused
      by PhysX and expected)
@@ -67,34 +69,38 @@ def main():
         print(f"  no .ptx files in {args.ptx}. Extract them with tools/extract-physx-ptx.py (docs/testing.md).")
         failures.append(f"missing PTX corpus {args.ptx}")
     elif args.ptx:
-        step(f"compile corpus {args.ptx}")
         spirv_val = shutil.which("spirv-val")
-        with tempfile.TemporaryDirectory() as out:
-            compiled = invalid = 0
-            for module in sorted(Path(args.ptx).glob("*.ptx")):
-                target = Path(out) / module.stem
-                target.mkdir()
-                r = subprocess.run([str(build / "pxvk-ptxc.exe"), "-o", str(target), str(module)],
-                                   capture_output=True, text=True)
-                fail_lines = [line for line in r.stdout.splitlines() if line.startswith("FAIL")]
-                for line in fail_lines:
-                    failures.append(f"{module.name}: {line}")
-                    print(f"  {module.name}: {line}")
-                # pxvk-ptxc returns 1 when an entry failed (reported above);
-                # anything else non-zero, or 1 without a FAIL line, is a parse
-                # error or a crash.
-                if r.returncode not in (0, 1) or (r.returncode == 1 and not fail_lines):
-                    reason = r.stderr.strip() or f"exit code {r.returncode}"
-                    failures.append(f"{module.name}: pxvk-ptxc failed: {reason}")
-                    print(f"  {module.name}: pxvk-ptxc failed: {reason}")
-                for spv in target.glob("*.spv"):
-                    compiled += 1
-                    if spirv_val and subprocess.run([spirv_val, "--target-env", "vulkan1.1", str(spv)],
-                                                    capture_output=True).returncode != 0:
-                        invalid += 1
-                        failures.append(f"{module.name}/{spv.name}: spirv-val failed")
-            print(f"  {compiled} kernels compiled, {invalid} failed validation"
-                  + ("" if spirv_val else " (spirv-val not found)"))
+        # Maximal reconvergence is what every desktop driver gets; the
+        # memory-fence fallback is for devices without the extension.
+        for mode, flags in (("maximal reconvergence", []),
+                            ("fence fallback", ["--no-maximal-reconvergence"])):
+            step(f"compile corpus {args.ptx} ({mode})")
+            with tempfile.TemporaryDirectory() as out:
+                compiled = invalid = 0
+                for module in sorted(Path(args.ptx).glob("*.ptx")):
+                    target = Path(out) / module.stem
+                    target.mkdir()
+                    r = subprocess.run([str(build / "pxvk-ptxc.exe"), *flags, "-o", str(target), str(module)],
+                                       capture_output=True, text=True)
+                    fail_lines = [line for line in r.stdout.splitlines() if line.startswith("FAIL")]
+                    for line in fail_lines:
+                        failures.append(f"{module.name} ({mode}): {line}")
+                        print(f"  {module.name}: {line}")
+                    # pxvk-ptxc returns 1 when an entry failed (reported
+                    # above); anything else non-zero, or 1 without a FAIL
+                    # line, is a parse error or a crash.
+                    if r.returncode not in (0, 1) or (r.returncode == 1 and not fail_lines):
+                        reason = r.stderr.strip() or f"exit code {r.returncode}"
+                        failures.append(f"{module.name} ({mode}): pxvk-ptxc failed: {reason}")
+                        print(f"  {module.name}: pxvk-ptxc failed: {reason}")
+                    for spv in target.glob("*.spv"):
+                        compiled += 1
+                        if spirv_val and subprocess.run([spirv_val, "--target-env", "vulkan1.1", str(spv)],
+                                                        capture_output=True).returncode != 0:
+                            invalid += 1
+                            failures.append(f"{module.name}/{spv.name} ({mode}): spirv-val failed")
+                print(f"  {compiled} kernels compiled, {invalid} failed validation"
+                      + ("" if spirv_val else " (spirv-val not found)"))
 
     if not args.no_opcheck:
         step("instruction semantics vs native CUDA")

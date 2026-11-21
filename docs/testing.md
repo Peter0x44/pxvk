@@ -214,7 +214,13 @@ python tools\check.py --ptx tmp\extracted-ptx --captures <capture dirs> --device
 ```
 
 Builds, compiles and validates every kernel of the PTX corpus (with
-`spirv-val` when it is on `PATH`), runs opcheck and replays the captures. On
+`spirv-val` when it is on `PATH`), runs opcheck and replays the captures.
+The corpus is compiled twice: with maximal reconvergence, which every
+desktop driver has and `pxvk-ptxc` uses by default, and with the
+memory-fence fallback for devices without it
+(`pxvk-ptxc --no-maximal-reconvergence`). Replay and opcheck use whichever
+the device supports, so they test maximal reconvergence on desktop GPUs;
+`PXVK_NO_MAXIMAL_RECONVERGENCE` makes them test the fallback. On
 NVIDIA exact semantics are required; on other vendors approximation-unit
 differences are tolerated. A tool that crashes, exits with an unexpected
 code, or stops before its summary line (and a `--device` that matches no

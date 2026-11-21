@@ -2,6 +2,9 @@
 //   pxvk-ptxc [--native-ftz] [-o <dir>] [--entry <name>]... <module.ptx>
 // Without --entry every .entry in the module is compiled. Prints one line per
 // entry with its interface metadata; returns nonzero if any entry failed.
+// Warp-synchronous code is compiled for VK_KHR_shader_maximal_reconvergence,
+// as on every desktop driver; --no-maximal-reconvergence gives the
+// memory-fence fallback for devices without it.
 #include "compiler.h"
 
 #include <cstdio>
@@ -17,6 +20,7 @@ int main(int argc, char **argv)
     std::string input, out_dir;
     std::vector<std::string> entries;
     pxvk::ptx::CompileOptions options;
+    options.warp_sync = pxvk::ptx::CompileOptions::WarpSync::maximal;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "-o" && i + 1 < argc) out_dir = argv[++i];
@@ -26,12 +30,12 @@ int main(int argc, char **argv)
         else if (arg == "--float-atomics") options.float_atomic_add = true;
         else if (arg == "--shader-clock") options.shader_clock = true;
         else if (arg == "--preserve-denorm") options.preserve_denorm = true;
-        else if (arg == "--maximal-reconvergence") options.warp_sync = pxvk::ptx::CompileOptions::WarpSync::maximal;
+        else if (arg == "--no-maximal-reconvergence") options.warp_sync = pxvk::ptx::CompileOptions::WarpSync::fence;
         else if (arg == "--split-heap") options.heap_window_shift = 27, options.heap_windows = 8; // as on a 128 MiB device
         else input = arg;
     }
     if (input.empty()) {
-        std::fprintf(stderr, "usage: pxvk-ptxc [--native-ftz] [--emulate-warps] [--float-atomics] [--shader-clock] [--preserve-denorm] [--maximal-reconvergence] [--split-heap] [-o dir] [--entry name]... module.ptx\n");
+        std::fprintf(stderr, "usage: pxvk-ptxc [--native-ftz] [--emulate-warps] [--float-atomics] [--shader-clock] [--preserve-denorm] [--no-maximal-reconvergence] [--split-heap] [-o dir] [--entry name]... module.ptx\n");
         return 2;
     }
     std::ifstream file(input, std::ios::binary);
