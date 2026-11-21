@@ -90,15 +90,17 @@ them per vendor.
 - **Memory limits:** shared memory is 32 KiB, so the cloth solver uses
   storage-backed shared memory.
 - **SM count:** pxvk reports the compute-unit count, from
-  `VK_AMD_shader_core_properties2`.
+  `VK_AMD_shader_core_properties2`: 40 on the Radeon 8060S (`sms=40`, and
+  `cuDeviceGetAttribute` returns 40), its real count. Whether 40 or the
+  persona's 16 suits APEX better on AMD is unmeasured: RDNA pairs compute
+  units into workgroup processors, so the CU is not a certain match for an
+  SM.
 - **Warp synchronization:** `VK_KHR_shader_maximal_reconvergence` is
   supported (driver 26.11.1). `pxvk-warptest` never saw lanes out of step,
   with any barrier strategy, at 32 or 64 lanes, and the regression check
   gives the same results with maximal reconvergence as before (November
   2026).
-- **Not yet run on AMD hardware:**
-  - the compute-unit count;
-  - Arkham Origins.
+- **Not yet run on AMD hardware:** Arkham Origins.
 
 ## lavapipe (Mesa software Vulkan)
 

@@ -162,8 +162,11 @@ regression check (`testing.md`). Assassin's Creed IV, the other stage 3
 title, is not planned: its only GPU PhysX effect is smoke from APEX
 Particles and Turbulence, the modules Arkham Origins already exercises,
 and no copy is available for testing. On AMD pxvk reports the
-compute-unit count as the SM count (`architecture.md`); check `sms=` and
-the benchmark on the Radeon 8060S.
+compute-unit count as the SM count (`architecture.md`), 40 on the Radeon
+8060S as expected. An RDNA workgroup processor (two compute units, 20 on
+the 8060S) matches an SM more closely: four 32-lane SIMDs, one pool of
+shared memory and about 2048 resident threads. Run the benchmark there
+with `PXVK_SM_COUNT` at 16, 20 and 40 to see which count suits APEX.
 
 pxvk's occupancy answer assumes 2048 threads per SM where the RTX 5070's
 driver reports 1536, but it does not change Arkham Origins' launches: in
