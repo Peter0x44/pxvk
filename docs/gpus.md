@@ -58,6 +58,14 @@ them per vendor.
   driver, not the hardware. The scan in `pxvk-warptest` takes 1.8 to 4.8
   times the proprietary driver's GPU time, and a plain integer loop about
   twice; nouveau does not expose clocks to tell how much is clock speed.
+  nouveau powers the GPU down after 5 idle
+  seconds (runtime power management), even with pxvk's device open, and
+  moves the contents of VRAM to system memory first; they stay there after
+  it wakes. pxvk's heap is created at startup, so after a pause, such as a
+  game's menu, every kernel reads it across PCIe. Arkham City's fluid
+  kernels then took 20–120 ms per launch instead of about 0.02 ms (kernel
+  7.3.5). `echo on > /sys/bus/pci/devices/<GPU>/power/control` (as root,
+  until reboot) or `nouveau.runpm=0` on the kernel command line avoids it.
 
 ## Intel
 
