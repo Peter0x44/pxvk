@@ -70,7 +70,10 @@ them per vendor.
     flattening the scan's lane-dependent loops. Nothing measurable in
     Arkham Origins (`testing.md`). The driver marks every loop merge when
     the mode is declared, reusing its Direct3D `dx.break` mechanism
-    (`maximal-reconvergence-drivers.md`).
+    (`maximal-reconvergence-drivers.md`). It is the Windows compiler, not
+    the hardware: Mesa's ANV (26.3.1, under Wine) compiles the scan
+    identically with and without the mode, though about 2.2 times slower
+    than the Windows driver in every mode.
 - **Memory limits:**
   - `maxStorageBufferRange` is 4 bytes short of 1 GiB, so pxvk reports the
     device's memory as total memory: Arkham Origins enables GPU APEX only
