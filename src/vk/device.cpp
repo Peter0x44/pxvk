@@ -1403,6 +1403,18 @@ bool Device::dispatch(Shader *shader, const DispatchShape &shape, const void *la
                             &dynamic_offset);
     vkCmdDispatch(d.cmd, shape.grid[0], shape.grid[1], shape.grid[2]);
     if (time_this) {
+        // Wait for the dispatch before the end timestamp. NVIDIA's driver
+        // (620.73.04 on Linux, RTX 5070) writes a BOTTOM_OF_PIPE timestamp
+        // once the last workgroup has been launched, not finished, so a grid
+        // that fits on the GPU at once measured ~0 ms and larger ones missed
+        // their last wave. Execution-only barriers and compute-to-compute
+        // memory barriers do not help; a memory barrier to the host stage
+        // does. Only recorded when timing, so normal runs are unaffected.
+        VkMemoryBarrier done{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        done.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        done.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        vkCmdPipelineBarrier(d.cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &done, 0,
+                             nullptr, 0, nullptr);
         vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, d.queries, d.timed * 2 + 1);
         d.timed_labels.push_back(label);
         ++d.timed;

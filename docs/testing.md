@@ -180,10 +180,12 @@ stopped nesting post-loop code in loop bodies (`architecture.md`).
 
 Per-launch times are printed too: wall-clock time (dispatch, wait and
 download) and GPU time from timestamp queries. Back-to-back dispatches keep
-them stable to about 1% between runs. NVIDIA's GPU times are too low:
-its driver (620.73.04 on Linux) writes the end timestamp once the last
-workgroup has started, so grids that fit on the GPU at once measure about
-0 ms and larger ones miss their last wave. The wall-clock figures below
+them stable to about 1% between runs. When timing, pxvk records a memory
+barrier to the host stage before each end timestamp (`Device::dispatch`):
+without it NVIDIA's driver (620.73.04 on Linux) wrote the end timestamp
+once the last workgroup had started, so grids that fit on the GPU at once
+measured about 0 ms and larger ones missed their last wave. This also
+applies to `PXVK_PROFILE`. The wall-clock figures below
 predate the GPU time. Medians of four alternating rounds on the Intel
 iGPU (driver 101.9175, November 2026), scan at skew 0, against `fence`:
 
