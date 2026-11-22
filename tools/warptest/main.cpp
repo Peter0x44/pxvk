@@ -11,7 +11,8 @@
 // (fence). For comparison: control barriers without maximal reconvergence
 // (control, where the driver decides which lanes a barrier joins) and
 // nothing at all (none). The exit code is 1 if a mode pxvk uses (maximal,
-// fence) mismatches. Each test kernel
+// fence) mismatches, or if the readback check (before the kernels) finds
+// stale words. Each test kernel
 // checks itself: every lane computes which values the other lanes of its warp
 // must have stored under lockstep and counts the loads that differ. The
 // patterns, each over many rounds that overwrite the same slots:
@@ -281,11 +282,37 @@ int main(int argc, char **argv)
     const std::size_t bytes = static_cast<std::size_t>(threads) * 8;
     const std::uint32_t base = 0x10000;
     device.set_heap_base(base);
+    device.set_timing(true); // GPU time per launch, beside the wall-clock time
     if (!device.ensure_heap(bytes, error)) {
         std::fprintf(stderr, "heap: %s\n", error.c_str());
         return 2;
     }
     bool any = false;
+    // Readback check: the GPU fills the output area with a new value each
+    // round and the host checks every word. Results that still hold an
+    // earlier round's value were read from a stale CPU cache, as happens
+    // with non-coherent readback memory that is not invalidated. The kernel
+    // results below cannot show this: their mismatch counts are 0 every
+    // launch, so a stale copy looks the same as a fresh one. Sizes alternate
+    // between the whole area and about a third of it.
+    {
+        const std::uint32_t kRounds = 16;
+        std::vector<std::uint32_t> words(bytes / 4);
+        std::uint64_t stale = 0, checked = 0;
+        for (std::uint32_t round = 0; round < kRounds; ++round) {
+            const std::size_t count = round % 2 ? words.size() : words.size() / 3 + 1;
+            const std::uint32_t value = 0xa5a50000u + round * 0x01010101u;
+            if (!device.fill32(0, value, count, error) || !device.download(words.data(), 0, count * 4, error)) {
+                std::printf("readback check failed: %s\n", error.c_str());
+                return 2;
+            }
+            for (std::size_t i = 0; i < count; ++i) stale += words[i] != value;
+            checked += count;
+        }
+        std::printf("readback  %u rounds of GPU fill and download: %llu stale words in %llu\n", kRounds,
+                    static_cast<unsigned long long>(stale), static_cast<unsigned long long>(checked));
+        if (stale != 0) any = true;
+    }
     for (const Test &test : kTests) {
         for (const Mode &mode : kModes) {
             using W = pxvk::ptx::CompileOptions::WarpSync;
@@ -319,7 +346,7 @@ int main(int argc, char **argv)
             }
             for (std::uint32_t skew : skews) {
                 std::uint64_t mismatches = 0, loads = 0;
-                double ms = 0;
+                double ms = 0, gpu_ms = 0;
                 for (std::uint32_t run = 0; run < runs; ++run) {
                     const std::uint32_t params[4] = {base, 0x9e3779b9u * (run + 1) + skew, rounds, skew};
                     std::vector<std::uint8_t> launch(kernel.info.launch_block_bytes, 0);
@@ -337,12 +364,13 @@ int main(int argc, char **argv)
                         break;
                     }
                     ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                    for (double t : device.last_dispatch_times()) gpu_ms += t;
                     for (std::uint32_t t = 0; t < threads; ++t) mismatches += out[t * 2];
                     loads += static_cast<std::uint64_t>(threads) * rounds;
                 }
-                std::printf("%-9s %-7s skew %-2u %12llu mismatches in %llu checks  (%.2f ms per launch)\n", test.name,
+                std::printf("%-9s %-7s skew %-2u %12llu mismatches in %llu checks  (%.2f ms per launch, %.2f ms GPU)\n", test.name,
                             mode.name, skew, static_cast<unsigned long long>(mismatches),
-                            static_cast<unsigned long long>(loads), ms / runs);
+                            static_cast<unsigned long long>(loads), ms / runs, gpu_ms / runs);
                 if (mismatches != 0 && used_by_pxvk(mode.sync)) any = true;
             }
         }

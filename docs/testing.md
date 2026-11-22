@@ -161,19 +161,31 @@ build\x86\pxvk-warptest.exe --device nvidia
 build\x86\pxvk-warptest.exe --device intel --blocks 64 --runs 2
 ```
 
-The defaults are 512 blocks of 256 threads, 256 rounds and 20 launches,
-about 671 million checks per case. The exit code is 1 if `maximal` or
-`fence` mismatched. In November 2026 every case was 0 on the RTX 5070, the
-Intel iGPU and the Radeon 8060S (driver 26.11.1, at 32 and 64 lanes). The
-skewed scan first failed with control barriers, identically on NVIDIA and
-Intel, until the
-structurizer stopped nesting post-loop code in loop bodies
-(`architecture.md`).
+Before the kernels, a readback check has the GPU fill the output area
+with a new value 16 times, downloads it each time (alternately all of it
+and about a third) and counts words still holding an earlier value. Those
+come from a stale CPU cache: readback memory that is cached but not
+coherent must be invalidated before each read. The kernel results cannot
+show this, since a stale copy of 0 mismatches looks like a fresh one. On
+ANV (Mesa 26.3.1, Arrow Lake, November 2026), reading such memory without
+the invalidate left about 90% of words stale.
 
-Per-launch times are printed too, and back-to-back dispatches keep them
-stable to about 1% between runs. Medians of four alternating rounds on the
-Intel iGPU (driver 101.9175, November 2026), scan at skew 0, against
-`fence`:
+The defaults are 512 blocks of 256 threads, 256 rounds and 20 launches,
+about 671 million checks per case. The exit code is 1 if the readback
+check found stale words or `maximal` or `fence` mismatched. In November
+2026 every case was 0 on the RTX 5070, the Intel iGPU and the Radeon 8060S
+(driver 26.11.1, at 32 and 64 lanes). The skewed scan first failed with
+control barriers, identically on NVIDIA and Intel, until the structurizer
+stopped nesting post-loop code in loop bodies (`architecture.md`).
+
+Per-launch times are printed too: wall-clock time (dispatch, wait and
+download) and GPU time from timestamp queries. Back-to-back dispatches keep
+them stable to about 1% between runs. NVIDIA's GPU times are too low:
+its driver (620.73.04 on Linux) writes the end timestamp once the last
+workgroup has started, so grids that fit on the GPU at once measure about
+0 ms and larger ones miss their last wave. The wall-clock figures below
+predate the GPU time. Medians of four alternating rounds on the Intel
+iGPU (driver 101.9175, November 2026), scan at skew 0, against `fence`:
 
 | Mode | 128 blocks | 512 blocks |
 |---|---|---|
