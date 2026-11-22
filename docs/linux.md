@@ -142,6 +142,10 @@ mapped by Wine (`/tmp/pxvk.log` is fine).
   Mesa probing the NVIDIA GPU, which it does not drive, and are harmless.
 - Wine has no NVIDIA CUDA driver (`nvcuda.dll`) or NVAPI of its own, so
   without pxvk PhysX games in Wine use CPU PhysX, even on NVIDIA GPUs.
+  Native CUDA is not available to opcheck either: NVIDIA's 32-bit Linux
+  `libcuda.so` (620.73.04) finds no device on an RTX 50 GPU (`cuInit`
+  returns 100), and Arch's WoW64 Wine could not load a 32-bit Linux library
+  anyway. Run the regression check's opcheck and replays on Windows.
 - Wine translates Direct3D 9 to OpenGL or Vulkan itself. DXVK
   (`winetricks dxvk`) is an alternative for the game's graphics and is
   independent of pxvk.

@@ -3,8 +3,8 @@
 How Intel's and NVIDIA's Vulkan compilers implement
 `VK_KHR_shader_maximal_reconvergence`, why it makes some warp-synchronous
 code slower on Intel's Windows driver but not on NVIDIA or on Mesa's Intel
-driver, and how the drivers were examined. AMD is not covered yet; a later
-section lists what to look for.
+and NVIDIA drivers (ANV, NVK), and how the drivers were examined. AMD is
+not covered yet; a later section lists what to look for.
 
 Measured and read on the development machine's Windows install in November
 2026 (the Linux drivers are listed under [Linux](#linux-mesa-and-nvidia)):
@@ -34,19 +34,23 @@ across divergent branches, and some branch flattening.
 
 ## Summary
 
-| | Intel, Windows | Intel, Mesa (ANV) | NVIDIA |
-|---|---|---|---|
-| Cost in `pxvk-warptest`'s scan | about 40% | none (identical machine code) | none measurable (Windows and Linux) |
-| Cost in Arkham Origins | none measurable | not measured | none measurable |
-| Compiler used for Vulkan | `igc32.dll`, LLVM 14.0.5 | brw (NIR, no LLVM) | `nvgpucomp32.dll`, LLVM 23.0.0 |
-| LLVM convergence tokens | no (LLVM 14 predates them) | not applicable | supported |
-| What the mode triggers | a `spv.loop.merge` marker at every loop merge, turned into opaque intrinsic calls before optimization | nothing: a flag no Intel compute path reads | dedicated reconvergence passes with a uniformity threshold and a clean-up pass |
-| Granularity | every loop merge, whether or not anything depends on it | none needed: NIR and the hardware's `IF`/`ENDIF`/`WHILE` are structured | apparently only where something depends on it |
+| | Intel, Windows | Intel, Mesa (ANV) | NVIDIA | NVIDIA, Mesa (NVK) |
+|---|---|---|---|---|
+| Cost in `pxvk-warptest`'s scan | about 40% | none (identical machine code) | none measurable (Windows and Linux) | none (identical machine code) |
+| Cost in Arkham Origins | none measurable | not measured | none measurable | not measured |
+| Compiler used for Vulkan | `igc32.dll`, LLVM 14.0.5 | brw (NIR, no LLVM) | `nvgpucomp32.dll`, LLVM 23.0.0 | NAK (NIR, no LLVM) |
+| LLVM convergence tokens | no (LLVM 14 predates them) | not applicable | supported | not applicable |
+| What the mode triggers | a `spv.loop.merge` marker at every loop merge, turned into opaque intrinsic calls before optimization | nothing: a flag no Intel compute path reads | dedicated reconvergence passes with a uniformity threshold and a clean-up pass | nothing: NAK never reads the flag |
+| Granularity | every loop merge, whether or not anything depends on it | none needed: NIR and the hardware's `IF`/`ENDIF`/`WHILE` are structured | apparently only where something depends on it | a convergence barrier (`BSSY`/`BSYNC`) at every divergent merge, in every shader |
 
 - **The cost is Intel's Windows compiler, not the hardware.** On the same
   Arrow Lake iGPU, Mesa's ANV compiles the scan to byte-identical machine
   code with and without the execution mode, and every variant times the
   same (below, [Linux](#linux-mesa-and-nvidia)).
+- **Mesa's NVIDIA driver gives the guarantee in every shader.** NVK's
+  compiler, NAK, rejoins lanes with a convergence barrier at every divergent
+  merge whether or not the mode is declared, and drops subgroup control
+  barriers as redundant ([NVK](#nvk)).
 - **On Intel's Windows driver the execution mode costs, the barriers
   don't.** Any scan
   variant that declares the mode is about 40% slower, even with only memory
@@ -207,7 +211,7 @@ Linux drivers (`linux.md`). November 2026:
 |---|---|
 | System | Arch Linux, kernel 7.3.5, Wine 11.22 |
 | Intel iGPU (Arrow Lake, Xe-LPG) | Mesa 26.3.1, ANV (`vulkan-intel`, `lib32-vulkan-intel`), kernel driver `i915` |
-| NVIDIA RTX 5070 Laptop | 620.73.04 (`nvidia-open`, `lib32-nvidia-utils`) |
+| NVIDIA RTX 5070 Laptop | 620.73.04 (`nvidia-open`, `lib32-nvidia-utils`); or NVK, Mesa 26.3.1 (`vulkan-nouveau`) with the `nouveau` kernel driver ([NVK](#nvk)) |
 
 ### Timing
 
@@ -312,6 +316,72 @@ the mode (marking every loop merge before optimization), not from the
 hardware: a compiler with structured control flow throughout gives the
 guarantee for free on the same GPU.
 
+### NVK
+
+The same laptop booted with the proprietary modules blacklisted and the
+`nouveau` kernel driver loaded, which NVK needs. Two snags:
+`nvidia-utils` installs `blacklist nouveau`, so `modules-load=nouveau` on the
+kernel command line is skipped and the module has to be loaded by name
+(`sudo modprobe nouveau`); and the first load failed to start the GPU's
+firmware (`gsp: GSP-FMC boot failed (mbox: 0xffffffff)`, probe error -5)
+while unloading and loading it again worked (GSP firmware 570.144, kernel
+7.3.5). Loading it by name early in boot, from a systemd service, worked
+first time.
+
+**Timing.** Four rounds as above, GPU time, scan:
+
+| Mode | skew 0 | skew 31 |
+|---|---|---|
+| `fence` | 4.72 ms | 17.05 ms |
+| `control` | +1% | +0% |
+| `merges` | +1% | +1% |
+| `mode` | +1% | +0% |
+| `nomerge` | +1% | +0% |
+| `maximal` | +1% | +0% |
+| `none` | −3% | +0% |
+
+Rounds agreed to within 1%; every case had 0 mismatches and the readback
+check found no stale words. The mode costs nothing. NVK is slower than
+NVIDIA's own driver on the same GPU, though: the proprietary driver takes
+about 2.6 ms (skew 0) and 3.5 ms (skew 31) for `fence` on Linux, so NVK
+needs 1.8 and 4.8 times as long. A separate shader that runs only a
+dependent integer loop also took about twice as long on NVK, so part of it
+is probably clocks, which nouveau does not expose.
+
+**Code.** `NAK_DEBUG=print` prints each shader's NIR and NAK IR to stderr.
+Each shader's output starts with `Structured NIR for compute shader:`, and
+the order varies between runs, so match kernels by their NIR's
+`source_blake3` (the SPIR-V hash: `fence` starts `0x0b1c499b`, `mode`
+`0xa92d4e6c`). For the scan, final NAK IR (after `calc_instr_deps`),
+identical in three runs:
+
+| Modes | NAK IR | `BSSY`/`BSYNC` | `MEMBAR.SC.CTA` |
+|---|---|---|---|
+| `fence`, `control`, `mode`, `nomerge` | identical, 161 instructions | 7 | 6 |
+| `maximal`, `merges` | identical, 163 instructions | 7 | 7 |
+
+The execution mode and the subgroup control barriers change nothing; the
+convergence barriers are there in every variant.
+
+**Source** (Mesa 26.3.1, `src/nouveau`):
+
+1. **The flag.** NVK advertises the extension (`nvk_physical_device.c`);
+   nothing in `src/nouveau` reads `shader_info::maximally_reconverges`.
+2. **Convergence barriers everywhere.** `nak_nir_lower_cf.c` turns
+   structured NIR into blocks and, for every `if` with a divergent
+   condition and every divergent loop, opens a scope with `bar_set_nv` and
+   closes it with `bar_sync_nv` at the merge (`push_scope`, `pop_scope`).
+   `from_nir.rs` emits those as `BSSY` and `BSYNC`, the hardware's
+   convergence barriers, so lanes rejoin at each structured merge in every
+   shader.
+3. **Subgroup barriers.** `nak_nir_remove_barrier_intrin` (`nak_nir.c`)
+   drops the execution part of any barrier at subgroup scope or narrower,
+   "because we're guaranteeing maximal convergence via warp barriers", and
+   `from_nir.rs` turns subgroup-scope memory barriers into `MEMBAR.SC.CTA`.
+
+So on NVIDIA hardware, as with Mesa on Intel, maximal reconvergence is
+what the open driver does for every shader.
+
 ## What is open source
 
 | Part | Open source? |
@@ -320,13 +390,13 @@ guarantee for free on the same GPU.
 | LLVM's convergence tokens, their verifier (`llvm/include/llvm/IR/GenericConvergenceVerifierImpl.h`) and `StripConvergenceIntrinsicsPass` (`llvm/lib/Transforms/Utils/StripConvergenceIntrinsics.cpp`) | yes; developed largely for LLVM's SPIR-V backend, and AMD's GPU backend uses tokens too |
 | Intel's shader compiler (IGC): optimization pipeline, GenISA intrinsics list | yes, github.com/intel/intel-graphics-compiler, but newer than what the driver ships |
 | Intel's Vulkan front end, `vulkan-convergence-control`, private GenISA intrinsics such as 0x2c0f | no |
-| Mesa: SPIR-V to NIR, ANV, the brw and Jay compilers (Intel), RADV and ACO (AMD) | yes, gitlab.freedesktop.org/mesa/mesa (MIT) |
+| Mesa: SPIR-V to NIR, ANV, the brw and Jay compilers (Intel), NVK and NAK (NVIDIA), RADV and ACO (AMD) | yes, gitlab.freedesktop.org/mesa/mesa (MIT) |
 | NVIDIA's `GLV*` passes, including the reconvergence passes | no; nothing by those names is in upstream LLVM |
 | NVIDIA's code generator (convergence barriers, SASS) | no |
 
 So in both Windows drivers the decisions examined here, where
 reconvergence points go and what they restrict, are closed source. Mesa's
-are open, and on Intel there is no such decision to make.
+are open, and on Intel and NVIDIA there is no such decision to make.
 
 ## How the drivers were examined
 
@@ -397,7 +467,12 @@ Not examined yet. A similar pass would start with:
   narrow it down.
 - Jay, Mesa's compiler for Xe2 and Xe3, is not covered: it needs a Lunar
   Lake, Battlemage or Panther Lake GPU.
-- NVK (Mesa's NVIDIA driver) on the RTX 5070 is not measured yet.
+- Answered: NVK pays nothing for the mode; its compiler rejoins lanes at
+  every divergent merge in every shader ([NVK](#nvk)).
+- NVK: why the scan takes 1.8 times (skew 0) to 4.8 times (skew 31) the
+  proprietary driver's GPU time on the same GPU. Clocks probably explain
+  part; the skew-31 gap, where per-lane busy loops dominate, suggests NAK
+  handles divergent loops worse.
 - NVIDIA: whether `GLVReconvergencePass` emits LLVM convergence tokens or its
   own `sync`/`reconverge` constructs, and what the uniformity threshold is.
 - A minimal case for a report to Intel: `pxvk-warptest`'s `mode` variant, the
@@ -418,4 +493,5 @@ On Linux, under Wine (cross-build as in `linux.md`):
 ```bash
 MESA_SHADER_CACHE_DISABLE=true wine build/x86/pxvk-warptest.exe --device intel --blocks 512 --runs 40
 wine build/x86/pxvk-warptest.exe --device nvidia --blocks 512 --runs 40
+MESA_SHADER_CACHE_DISABLE=true wine build/x86/pxvk-warptest.exe --device nvk --blocks 512 --runs 40
 ```

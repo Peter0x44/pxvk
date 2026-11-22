@@ -51,6 +51,13 @@ them per vendor.
   (`testing.md`).
 - **Host memory:** the readback buffer gets host-visible, cached and
   coherent memory, with no invalidate.
+- **NVK (Mesa 26.3.1, Linux):** maximal reconvergence costs nothing, since
+  its compiler places convergence barriers at every divergent merge in
+  every shader (`maximal-reconvergence-drivers.md`). Timestamps are
+  correct without pxvk's barrier, so the early timestamp is NVIDIA's
+  driver, not the hardware. The scan in `pxvk-warptest` takes 1.8 to 4.8
+  times the proprietary driver's GPU time, and a plain integer loop about
+  twice; nouveau does not expose clocks to tell how much is clock speed.
 
 ## Intel
 
