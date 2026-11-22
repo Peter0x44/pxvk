@@ -27,6 +27,7 @@ struct Buffer {
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
     void *mapped = nullptr;
+    bool coherent = true; // false: invalidate before the host reads (see invalidate())
 };
 
 // All variables are described in docs/environment.md.
@@ -107,21 +108,26 @@ struct Device::Impl {
     std::map<std::string, KernelTime> profile;
 
     // ---- buffers ------------------------------------------------------------
-    int find_memory(std::uint32_t bits, VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred) const
+    // The first type with `required` and `preferred | best`, else the first
+    // with `required` and `preferred`, else the first with `required`.
+    int find_memory(std::uint32_t bits, VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred,
+                    VkMemoryPropertyFlags best = 0) const
     {
-        int fallback = -1;
+        int fallback = -1, good = -1;
         for (std::uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
             if (!(bits & (1u << i))) continue;
             const VkMemoryPropertyFlags flags = memory_properties.memoryTypes[i].propertyFlags;
             if ((flags & required) != required) continue;
-            if ((flags & preferred) == preferred) return static_cast<int>(i);
+            if ((flags & (preferred | best)) == (preferred | best)) return static_cast<int>(i);
+            if (good < 0 && (flags & preferred) == preferred) good = static_cast<int>(i);
             if (fallback < 0) fallback = static_cast<int>(i);
         }
-        return fallback;
+        return good >= 0 ? good : fallback;
     }
 
     bool create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags required,
-                       VkMemoryPropertyFlags preferred, Buffer &out, std::string &error)
+                       VkMemoryPropertyFlags preferred, Buffer &out, std::string &error,
+                       VkMemoryPropertyFlags best = 0)
     {
         VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         info.size = size;
@@ -134,7 +140,7 @@ struct Device::Impl {
         }
         VkMemoryRequirements requirements;
         vkGetBufferMemoryRequirements(device, out.buffer, &requirements);
-        const int type = find_memory(requirements.memoryTypeBits, required, preferred);
+        const int type = find_memory(requirements.memoryTypeBits, required, preferred, best);
         if (type < 0) {
             error = "no suitable Vulkan memory type";
             destroy(out);
@@ -150,6 +156,7 @@ struct Device::Impl {
             return false;
         }
         vkBindBufferMemory(device, out.buffer, out.memory, 0);
+        out.coherent = (memory_properties.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
         if (required & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
             r = vkMapMemory(device, out.memory, 0, VK_WHOLE_SIZE, 0, &out.mapped);
             if (r != VK_SUCCESS) {
@@ -160,6 +167,20 @@ struct Device::Impl {
         }
         out.size = size;
         return true;
+    }
+
+    // Makes device writes to the first `bytes` of a non-coherent buffer
+    // visible to the host. Only that range: on non-coherent iGPUs this drops
+    // CPU cache lines one by one, and buffers keep their largest size.
+    void invalidate(const Buffer &b, VkDeviceSize bytes)
+    {
+        if (b.coherent || !b.mapped || bytes == 0) return;
+        const VkDeviceSize atom = std::max<VkDeviceSize>(limits.nonCoherentAtomSize, 1);
+        VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+        range.memory = b.memory;
+        range.size = (bytes + atom - 1) / atom * atom;
+        if (range.size >= b.size) range.size = VK_WHOLE_SIZE; // stay inside the allocation
+        vkInvalidateMappedMemoryRanges(device, 1, &range);
     }
 
     void destroy(Buffer &b)
@@ -1187,9 +1208,14 @@ bool Device::download(void *data, std::uint64_t offset, std::size_t bytes, std::
         d.destroy(d.readback);
         VkDeviceSize size = 1u << 20;
         while (size < bytes) size *= 2;
-        if (!d.create_buffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                             VK_MEMORY_PROPERTY_HOST_CACHED_BIT, d.readback, error))
+        // Cached and coherent memory if there is any, else cached memory
+        // (invalidated before each read), else any host-visible memory. CPU
+        // reads from uncached (write-combined) memory are slow, about 120 MB/s
+        // on ANV (Arrow Lake), which offers no type that is both cached and
+        // coherent.
+        if (!d.create_buffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                             VK_MEMORY_PROPERTY_HOST_CACHED_BIT, d.readback, error,
+                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
             return false;
     }
     d.barrier();
@@ -1201,6 +1227,7 @@ bool Device::download(void *data, std::uint64_t offset, std::size_t bytes, std::
     vkCmdPipelineBarrier(d.cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &b, 0,
                          nullptr, 0, nullptr);
     if (!d.submit_and_wait(error)) return false;
+    d.invalidate(d.readback, bytes);
     std::memcpy(data, d.readback.mapped, bytes);
     ++d.stats.downloads;
     d.stats.download_bytes += bytes;

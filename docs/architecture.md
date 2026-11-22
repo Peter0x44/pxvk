@@ -249,9 +249,17 @@ checked heap load using the binding table in the launch block.
   needs about one submission per simulation step.
 - Host-to-device copies snapshot their source at call time through a staging
   ring (PhysX reuses pinned staging memory relying on prompt DMA).
-- Pinned host memory (`cuMemHostAlloc`) is host-visible cached Vulkan memory,
-  so asynchronous device-to-host copies are recorded GPU copies with no extra
-  memcpy.
+- Synchronous device-to-host copies go through a readback buffer in
+  host-cached memory: coherent where the driver has such a type, otherwise
+  non-coherent and invalidated before each read (`Device::download`). CPU
+  reads from uncached, write-combined memory are slow: about 120 MB/s on
+  ANV (Arrow Lake), which offers cached or coherent host memory but never
+  both, so a 1 MB readback took about 8 ms. `pxvk-warptest`'s readback check
+  catches a missing invalidate (`testing.md`).
+- Pinned host memory (`cuMemHostAlloc`) is host-visible, coherent Vulkan
+  memory, cached where the driver offers that (not on ANV, Arrow Lake), so
+  asynchronous device-to-host copies are recorded GPU copies with no extra
+  memcpy. Where it is uncached, the host reads it slowly.
 - Pipelines are created per (kernel, block size, shared-memory bucket).
 
 ## Compilation caches
