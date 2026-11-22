@@ -94,6 +94,22 @@ divergent test (stores under a branch, no lane-dependent loop before them)
 stays within 3% in every mode. Driver 101.8331 gave the same pattern. On the
 RTX 5070 every mode is within a few percent of `fence`.
 
+These are wall-clock times. pxvk-warptest now also prints GPU time from
+timestamp queries; with the same driver (November 2026, after pxvk's
+readback moved to cached memory), the medians of four rounds alternating
+with NVIDIA were, wall-clock / GPU:
+
+| Mode | Intel, skew 0 | Intel, skew 31 | RTX 5070, skew 0 | RTX 5070, skew 31 |
+|---|---|---|---|---|
+| `fence` | 11.87 / 11.35 ms | 36.44 / 35.90 ms | 2.47 / 2.13 ms | 3.29 / 3.04 ms |
+| `mode` | 17.08 / 16.56 ms | 42.77 / 42.01 ms | 2.45 / 2.14 ms | 3.32 / 3.04 ms |
+| `maximal` | 16.24 / 15.58 ms | 39.08 / 38.57 ms | 2.42 / 2.13 ms | 3.29 / 3.05 ms |
+
+Intel's times rose from round to round (`fence` at skew 0: 10.85, 10.84,
+11.85, 12.96 ms GPU) while NVIDIA's stayed within 1%, so the iGPU probably
+clocked down as the laptop warmed. Wall-clock time exceeds GPU time by
+about 0.3–0.6 ms on both.
+
 Intel's pipeline statistics (`PXVK_PIPELINE_STATS=1`) for the scan:
 
 | Mode | Instructions | Basic blocks |
@@ -212,11 +228,17 @@ first round was slower in every mode), so on both the execution mode costs
 nothing. Every case had 0 mismatches, and the divergent test showed the
 same pattern.
 
-- **ANV is about 2.2 times slower than Intel's Windows driver in every
-  mode** (26.1 ms against 11.85 ms for `fence` at 512 blocks), so the
-  Windows driver's scan with the mode (about 16.8 ms) is still faster than
-  ANV's without it. Why is not examined here: it may be the compiler, the
-  GPU's clocks under Linux, or Wine.
+- **ANV runs the scan about 1.5 times slower than Intel's Windows driver
+  on the GPU.** These wall-clock times were 2.2 times Windows' (26.1 ms
+  against 11.85 ms for `fence` at 512 blocks), but about 8.7 ms of that was
+  the readback: pxvk read results from uncached memory, which ANV gives
+  where the Windows driver has a cached, coherent type (`architecture.md`).
+  With timestamp queries, `fence` at skew 0 takes about 17.3 ms of GPU time
+  on ANV, with the iGPU at its full 1900 MHz and not throttling, against
+  11.35 ms on Windows (median of four rounds; 10.84 ms in the two cooler
+  first rounds, so 1.5–1.6 times). GPU timestamps leave out Wine's and
+  pxvk's host-side work, so that gap is the driver or its compiler.
+  Windows' clocks were not recorded.
 - **NVIDIA on Linux matches Windows:** the mode costs nothing.
 
 ### ANV's machine code
@@ -367,10 +389,12 @@ Not examined yet. A similar pass would start with:
   Windows cost is Intel's Windows compiler, not the hardware
   ([Linux](#linux-mesa-and-nvidia)).
 - Answered: NVIDIA's Linux driver matches Windows, with no cost.
-- Intel on Linux: why ANV runs the scan about 2.2 times slower than Intel's
-  Windows driver in every mode (compiler, clocks or Wine). A native Linux
-  build of the test, or comparing `INTEL_DEBUG=cs` code against the Windows
-  driver's pipeline statistics, would narrow it down.
+- Intel on Linux: why ANV's scan takes about 1.5 times the Windows
+  driver's GPU time in every mode. The rest of the earlier 2.2 times was
+  uncached readback, since fixed. Comparing `INTEL_DEBUG=cs` code (brw's
+  240 instructions for `fence`) against the Windows driver's pipeline
+  statistics (306), or recording Windows' GPU clock during the run, would
+  narrow it down.
 - Jay, Mesa's compiler for Xe2 and Xe3, is not covered: it needs a Lunar
   Lake, Battlemage or Panther Lake GPU.
 - NVK (Mesa's NVIDIA driver) on the RTX 5070 is not measured yet.

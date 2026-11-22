@@ -43,6 +43,14 @@ them per vendor.
   later, so two opcheck variants have no native result.
 - **Pipeline statistics:** only register count and binary size; there is
   no machine code to inspect.
+- **Timestamps:** a `BOTTOM_OF_PIPE` timestamp after a dispatch is written
+  once its last workgroup has started, not finished, on Windows (621.01)
+  as on Linux (620.73.04): 64 blocks of the scan read 0.00 ms of GPU time
+  against 10.6 ms wall-clock. A memory barrier from shader writes to the
+  host stage before the timestamp fixes it, so pxvk records one when timing
+  (`testing.md`).
+- **Host memory:** the readback buffer gets host-visible, cached and
+  coherent memory, with no invalidate.
 
 ## Intel
 
@@ -72,8 +80,14 @@ them per vendor.
     the mode is declared, reusing its Direct3D `dx.break` mechanism
     (`maximal-reconvergence-drivers.md`). It is the Windows compiler, not
     the hardware: Mesa's ANV (26.3.1, under Wine) compiles the scan
-    identically with and without the mode, though about 2.2 times slower
-    than the Windows driver in every mode.
+    identically with and without the mode, though its code takes about
+    1.5 times the Windows driver's GPU time in every mode.
+- **Host memory:** the Windows driver (101.9175) has a host-visible type
+  that is cached and coherent (and device-local), which pxvk's readback
+  buffer uses with no invalidate. ANV (Mesa 26.3.1) offers cached or
+  coherent host memory but never both, so there the readback buffer is
+  cached and invalidated before each read; before that, uncached reads ran
+  at about 120 MB/s (`architecture.md`).
 - **Memory limits:**
   - `maxStorageBufferRange` is 4 bytes short of 1 GiB, so pxvk reports the
     device's memory as total memory: Arkham Origins enables GPU APEX only

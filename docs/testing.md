@@ -26,7 +26,10 @@ and run that copy instead. Two variants then report `native JIT failed`: driver
 621.01 cannot compile 32-bit `red.*.add.f32` for sm_120. PhysX uses only the
 `atom` forms, which do compile and have a variant of their own. On NVIDIA
 `add.f32` and `mul.f32` (no `.ftz`) also differ: its Vulkan driver flushes
-denormals there and cannot be told not to (`architecture.md`).
+denormals there and cannot be told not to (`architecture.md`). So does
+`div.rn.f32`, on denormal inputs and by 1 ULP elsewhere (`div.rn` is not
+correctly rounded, a known limitation PhysX does not hit): 5 variants in
+all, the same before and after November 2026's readback changes.
 
 Without an NVIDIA driver, `--cpu-reference` compares pxvk with a CPU
 implementation instead, for the variants that have one: `shfl`, global
@@ -182,12 +185,14 @@ Per-launch times are printed too: wall-clock time (dispatch, wait and
 download) and GPU time from timestamp queries. Back-to-back dispatches keep
 them stable to about 1% between runs. When timing, pxvk records a memory
 barrier to the host stage before each end timestamp (`Device::dispatch`):
-without it NVIDIA's driver (620.73.04 on Linux) wrote the end timestamp
-once the last workgroup had started, so grids that fit on the GPU at once
-measured about 0 ms and larger ones missed their last wave. This also
-applies to `PXVK_PROFILE`. The wall-clock figures below
-predate the GPU time. Medians of four alternating rounds on the Intel
-iGPU (driver 101.9175, November 2026), scan at skew 0, against `fence`:
+without it NVIDIA's driver (620.73.04 on Linux, 621.01 on Windows) wrote
+the end timestamp once the last workgroup had started, so grids that fit on
+the GPU at once measured about 0 ms and larger ones missed their last wave.
+This also applies to `PXVK_PROFILE`. The wall-clock figures below predate
+the GPU time; `maximal-reconvergence-drivers.md` has both for the same
+driver (`fence` at 512 blocks: 11.87 ms wall-clock, 11.35 ms GPU). Medians
+of four alternating rounds on the Intel iGPU (driver 101.9175, November
+2026), scan at skew 0, against `fence`:
 
 | Mode | 128 blocks | 512 blocks |
 |---|---|---|
