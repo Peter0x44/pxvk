@@ -603,24 +603,77 @@ void log_stats(State &s)
 
 // ---- launch capture ---------------------------------------------------------------
 // Same format as tools/nvcuda-trace/src/capture.c, so pxvk and native runs of
-// the same frames can be compared (PXVK_CAPTURE_DIR + PXVK_CAPTURE_FRAMES; the
-// harness publishes the current frame in PXVK_FRAME).
-bool capture_selected(State &s)
+// the same frames can be compared. Launches are selected as the tracer does:
+// PXVK_CAPTURE_KERNEL (name substrings separated by '|') takes the first
+// PXVK_CAPTURE_COUNT (default 4) launches of each matching kernel, only
+// inside the PXVK_CAPTURE_LAUNCHES ordinal ranges when those are also set;
+// PXVK_CAPTURE_LAUNCHES alone selects by ordinal. Otherwise
+// PXVK_CAPTURE_FRAMES selects frames as published by the harness
+// (PXVK_FRAME). All need PXVK_CAPTURE_DIR.
+
+// Whether `ordinal` is in a list of ranges such as "100-120,500".
+bool in_ranges(const std::string &spec, unsigned ordinal)
 {
-    static const std::string frames = env("PXVK_CAPTURE_FRAMES");
-    if (frames.empty() || env("PXVK_CAPTURE_DIR").empty()) return false;
-    static const bool directory_ready = (make_directories(env("PXVK_CAPTURE_DIR")), true);
-    (void)directory_ready;
-    const std::string frame = env("PXVK_FRAME");
     std::size_t start = 0;
-    while (start <= frames.size()) {
-        std::size_t end = frames.find(',', start);
-        if (end == std::string::npos) end = frames.size();
-        if (frames.compare(start, end - start, frame) == 0 && !frame.empty()) return true;
+    while (start < spec.size()) {
+        std::size_t end = spec.find(',', start);
+        if (end == std::string::npos) end = spec.size();
+        const std::string item = spec.substr(start, end - start);
+        const std::size_t dash = item.find('-');
+        char *rest = nullptr;
+        const unsigned long first = std::strtoul(item.c_str(), &rest, 10);
+        const unsigned long last =
+            dash == std::string::npos ? first : std::strtoul(item.c_str() + dash + 1, &rest, 10);
+        if (!item.empty() && ordinal >= first && ordinal <= last) return true;
         start = end + 1;
     }
-    (void)s;
     return false;
+}
+
+// Whether `name` contains one of the '|'-separated substrings of `filter`.
+bool name_matches(const std::string &filter, const std::string &name)
+{
+    std::size_t start = 0;
+    while (start <= filter.size()) {
+        std::size_t end = filter.find('|', start);
+        if (end == std::string::npos) end = filter.size();
+        if (end > start && name.find(filter.substr(start, end - start)) != std::string::npos) return true;
+        start = end + 1;
+    }
+    return false;
+}
+
+bool capture_selected(State &s, const std::string &kernel, unsigned ordinal)
+{
+    (void)s;
+    static const std::string directory = env("PXVK_CAPTURE_DIR");
+    if (directory.empty()) return false;
+    static const std::string kernels = env("PXVK_CAPTURE_KERNEL");
+    static const std::string launches = env("PXVK_CAPTURE_LAUNCHES");
+    static const std::string frames = env("PXVK_CAPTURE_FRAMES");
+    bool selected = false;
+    if (!kernels.empty()) {
+        static const unsigned limit = [] {
+            const std::string count = env("PXVK_CAPTURE_COUNT");
+            return count.empty() ? 4u : static_cast<unsigned>(std::strtoul(count.c_str(), nullptr, 10));
+        }();
+        static std::map<std::string, unsigned> taken;
+        if ((launches.empty() || in_ranges(launches, ordinal)) && name_matches(kernels, kernel) &&
+            taken[kernel] < limit) {
+            ++taken[kernel];
+            selected = true;
+        }
+    } else if (!launches.empty()) {
+        selected = in_ranges(launches, ordinal);
+    } else if (!frames.empty()) {
+        const std::string frame = env("PXVK_FRAME");
+        selected = !frame.empty() && in_ranges(frames, static_cast<unsigned>(std::strtoul(frame.c_str(), nullptr, 10)));
+    }
+    if (selected) {
+        static const bool directory_ready = (make_directories(directory), true);
+        (void)directory_ready;
+    }
+    return selected;
 }
 
 void capture_snapshot(State &s, unsigned ordinal, const char *suffix)
@@ -652,7 +705,7 @@ unsigned capture_begin(State &s, const Function &f, const std::uint32_t grid[3],
 {
     static unsigned ordinal = 0;
     ++ordinal;
-    if (!capture_selected(s)) return 0;
+    if (!capture_selected(s, f.name, ordinal)) return 0;
     char path[1200];
     std::snprintf(path, sizeof(path), "%s\\capture_%06u.txt", env("PXVK_CAPTURE_DIR").c_str(), ordinal);
     if (FILE *meta = std::fopen(path, "w")) {

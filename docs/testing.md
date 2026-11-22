@@ -131,10 +131,18 @@ are latency-bound, so instruction count on the dependency chain matters.
 - In-game, `PXVK_PROFILE=1` (pxvk) and `PXVK_TRACE_TIMING=1` (tracer, native)
   log per-kernel GPU time per 500 launches.
 
-The pxvk runtime writes captures in the same format (`PXVK_CAPTURE_DIR` +
-`PXVK_CAPTURE_FRAMES`), and `tools/capture-diff.py` compares native and
-pxvk captures of the same frames with pointer translation. That finds the
-first launch whose inputs or outputs diverge in a full application run.
+The pxvk runtime writes captures in the same format (`PXVK_CAPTURE_DIR`
+with `PXVK_CAPTURE_FRAMES` under the harness, or `PXVK_CAPTURE_KERNEL` and
+`PXVK_CAPTURE_LAUNCHES` as for the tracer, which works in games and on any
+GPU), and `tools/capture-diff.py` compares native and pxvk captures of the
+same frames with pointer translation. That finds the first launch whose
+inputs or outputs diverge in a full application run. pxvk's captures name
+no fatbin, so replay them with `--ptx-dir` and the PTX extracted from the
+same PhysX runtime. A capture of a launch that is slow in the game but fast
+in a replay points at the game's GPU state rather than the kernel or its
+data: on NVK, the Arkham City fluid kernels were slow only because
+nouveau's runtime power management had moved pxvk's heap to system memory
+(`gpus.md`).
 
 `PXVK_API_LOG=1` makes both the tracer and the runtime log every copy,
 synchronization, texture binding and launch per frame for sequence diffs.
