@@ -11,7 +11,7 @@ them per vendor.
 |---|---|---|---|---|
 | NVIDIA GeForce RTX 5070 Laptop (Blackwell) | 621.01 | native reference for captures and opcheck (with the driver's 32-bit allowlist) | 32 | bit-exact target |
 | NVIDIA GeForce RTX 3070 Laptop (Ampere) | — | earlier native reference (`charter.md`) | 32 | |
-| Intel iGPU ("Intel(R) Graphics") | 101.8331 | second GPU in the RTX 5070 laptop | 8, 16, 32 | |
+| Intel iGPU ("Intel(R) Graphics") | 101.8331, 101.9175 | second GPU in the RTX 5070 laptop | 8, 16, 32 | |
 | Intel UHD | — | earlier test iGPU | 32 (required) | |
 | AMD Radeon 8060S (RDNA 3.5) | 26.8.1–26.11.1 | AMD test laptop, no NVIDIA driver | 32, 64 | Arkham Origins not yet run |
 | Mesa lavapipe (software) | Mesa 26.2.6 | fallback paths without a second GPU | 8 (vector width / 32) | `testing.md` |
@@ -32,8 +32,10 @@ them per vendor.
   answer assumes 2048. Arkham Origins' launches are the same either way
   (`roadmap.md`).
 - **Warp synchronization:** `VK_KHR_shader_maximal_reconvergence` is
-  supported. `pxvk-warptest` never saw lanes out of step, with any barrier
-  strategy.
+  supported (driver 621.01). `pxvk-warptest` never saw lanes out of step,
+  with any barrier strategy, and with maximal reconvergence the regression
+  check stays bit-exact and opcheck matches its native baseline (November
+  2026).
 - **32-bit CUDA on RTX 50:** the driver offers the 32-bit runtime only to
   allowlisted executables (driver 591.44 and later). Native tools have to
   run under an allowlisted name, such as `tmp\opcheck-native\borderlands2.exe`
@@ -57,8 +59,18 @@ them per vendor.
 - **Warp synchronization:**
   - Without an acquire before volatile shared loads, lanes read stale shared
     memory (APEX's `BasicIOS_compactKernel` lost particles).
-  - Maximal reconvergence is supported. Its barriers cost about 30% in
-    `pxvk-warptest`'s scan, but nothing measurable in Arkham Origins.
+  - Maximal reconvergence is supported (drivers 101.8331 and 101.9175).
+    The regression check gives the same results with it as with fences,
+    and `pxvk-warptest` never saw lanes out of step with any strategy
+    (November 2026; 101.9175 gave identical results to 101.8331 in the
+    regression check, opcheck and `pxvk-warptest`).
+  - The `MaximallyReconvergesKHR` execution mode, not the barriers, makes
+    `pxvk-warptest`'s scan about 40% slower: with it the compiler keeps
+    more basic blocks and spends fewer instructions, apparently not
+    flattening the scan's lane-dependent loops. Nothing measurable in
+    Arkham Origins (`testing.md`). The driver marks every loop merge when
+    the mode is declared, reusing its Direct3D `dx.break` mechanism
+    (`maximal-reconvergence-drivers.md`).
 - **Memory limits:**
   - `maxStorageBufferRange` is 4 bytes short of 1 GiB, so pxvk reports the
     device's memory as total memory: Arkham Origins enables GPU APEX only

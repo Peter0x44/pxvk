@@ -128,9 +128,17 @@ A self-contained library (no Windows, CUDA or Vulkan dependencies).
     and Intel). This was pxvk's SPIR-V, not the drivers.
   - Cost in Arkham Origins, back to back: NVIDIA 201.6 fps with maximal
     reconvergence against 204.2 with fences; Intel 116.9 against 108.7.
-    Both are within run-to-run noise. In `pxvk-warptest` the barrier-heavy
-    scan is slower on Intel (16.8 against 12.0 ms per launch) and
-    unchanged on NVIDIA. Wider
+    Both are within run-to-run noise. In `pxvk-warptest` the scan, whose
+    lanes spin a lane-dependent number of iterations, is about 35% slower
+    on Intel with maximal reconvergence and unchanged on NVIDIA. The cost
+    is the `MaximallyReconvergesKHR` execution mode, not the barriers:
+    control barriers at the stores and merges without the mode cost 0–3%,
+    and the mode with plain fences costs as much as everything together.
+    With the mode, Intel compiles the scan to fewer instructions but more
+    basic blocks (244 against 306, 23 against 21), which suggests its
+    compiler keeps branches it would otherwise flatten. The divergent test
+    is unaffected (`testing.md`). How each driver implements the mode is in
+    `maximal-reconvergence-drivers.md`. Wider
     subgroups hold whole warps and work too (64 lanes, as on AMD GCN:
     `PXVK_SUBGROUP_SIZE=64` requests them on RDNA for testing). Devices that
     cannot guarantee subgroups of at least 32 lanes use warp emulation
