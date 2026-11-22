@@ -97,8 +97,13 @@ struct CompileOptions {
     //   maximal reconvergence, so which lanes they synchronize is up to the
     //   driver, plus the load fences (pxvk-warptest only: breaks on NVIDIA);
     // none = no barriers (pxvk-warptest only, to see what the hardware does
-    //   by itself).
-    enum class WarpSync { fence, maximal, control, none };
+    //   by itself);
+    // mode_only, no_merge_barriers, merges_only = maximal's pieces
+    //   separately (pxvk-warptest only, to measure their cost): the
+    //   execution mode with fences; the mode with control barriers at the
+    //   stores but none at merges; control barriers at stores and merges
+    //   without the mode.
+    enum class WarpSync { fence, maximal, control, none, mode_only, no_merge_barriers, merges_only };
     WarpSync warp_sync = WarpSync::fence;
     // Device supports VK_KHR_shader_clock's shaderSubgroupClock: %clock reads
     // it (otherwise %clock is 0).

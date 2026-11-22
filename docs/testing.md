@@ -149,7 +149,10 @@ it in practice. It compiles two self-checking PTX kernels:
 Each runs with pxvk's two strategies, control barriers under maximal
 reconvergence (`maximal`, skipped where the device lacks the extension)
 and memory-only barriers (`fence`), and for comparison with no barriers
-(`none`) and control barriers without the extension (`control`). Lanes are
+(`none`), control barriers without the extension (`control`), and
+`maximal`'s pieces separately: the execution mode with fences (`mode`),
+the mode with control barriers at stores only (`nomerge`), and control
+barriers at stores and merges without the mode (`merges`). Lanes are
 skewed by 0, 3 or 31 iterations of busy work, and wrong results are
 counted:
 
@@ -160,13 +163,28 @@ build\x86\pxvk-warptest.exe --device intel --blocks 64 --runs 2
 
 The defaults are 512 blocks of 256 threads, 256 rounds and 20 launches,
 about 671 million checks per case. The exit code is 1 if `maximal` or
-`fence` mismatched. In November 2026 every case was 0 on the RTX 5070 and
-the Intel iGPU; an earlier version without `maximal` showed no problem on
-an AMD GPU (tester's report, no counts recorded). The skewed scan first
-failed with control barriers, identically on both GPUs, until the
+`fence` mismatched. In November 2026 every case was 0 on the RTX 5070, the
+Intel iGPU and the Radeon 8060S (driver 26.11.1, at 32 and 64 lanes). The
+skewed scan first failed with control barriers, identically on NVIDIA and
+Intel, until the
 structurizer stopped nesting post-loop code in loop bodies
-(`architecture.md`). Per-launch times are printed too; on Intel the scan
-takes 16.8 ms with `maximal` against 12.0 with `fence`.
+(`architecture.md`).
+
+Per-launch times are printed too, and back-to-back dispatches keep them
+stable to about 1% between runs. Medians of four alternating rounds on the
+Intel iGPU (driver 101.9175, November 2026), scan at skew 0, against
+`fence`:
+
+| Mode | 128 blocks | 512 blocks |
+|---|---|---|
+| `fence` | 3.23 ms | 11.85 ms |
+| `control`, `merges` | +2–3% | +0–1% |
+| `mode`, `nomerge` | +41–43% | +42–44% |
+| `maximal` | +37% | +37% |
+
+The execution mode is the whole cost; at skew 31, where the busy work
+dominates, it is 13–16%. The divergent test and every mode on the RTX 5070
+stay within a few percent of `fence`.
 
 ## 3. Applications: `tools/bench.py`
 

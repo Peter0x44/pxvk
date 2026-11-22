@@ -228,7 +228,10 @@ struct Mode {
 const Mode kModes[] = {{"none", pxvk::ptx::CompileOptions::WarpSync::none},
                        {"fence", pxvk::ptx::CompileOptions::WarpSync::fence},
                        {"maximal", pxvk::ptx::CompileOptions::WarpSync::maximal},
-                       {"control", pxvk::ptx::CompileOptions::WarpSync::control}};
+                       {"control", pxvk::ptx::CompileOptions::WarpSync::control},
+                       {"mode", pxvk::ptx::CompileOptions::WarpSync::mode_only},
+                       {"nomerge", pxvk::ptx::CompileOptions::WarpSync::no_merge_barriers},
+                       {"merges", pxvk::ptx::CompileOptions::WarpSync::merges_only}};
 
 // Modes pxvk compiles with; the others are only for comparison.
 bool used_by_pxvk(pxvk::ptx::CompileOptions::WarpSync sync)
@@ -285,7 +288,10 @@ int main(int argc, char **argv)
     bool any = false;
     for (const Test &test : kTests) {
         for (const Mode &mode : kModes) {
-            if (mode.sync == pxvk::ptx::CompileOptions::WarpSync::maximal && !caps.maximal_reconvergence) {
+            using W = pxvk::ptx::CompileOptions::WarpSync;
+            const bool needs_extension =
+                mode.sync == W::maximal || mode.sync == W::mode_only || mode.sync == W::no_merge_barriers;
+            if (needs_extension && !caps.maximal_reconvergence) {
                 std::printf("%-9s %-7s skipped: no VK_KHR_shader_maximal_reconvergence\n", test.name, mode.name);
                 continue;
             }

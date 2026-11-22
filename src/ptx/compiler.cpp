@@ -1357,20 +1357,40 @@ private:
     // that made it. Otherwise (WarpSync::fence) the memory-only fence, valid
     // anywhere, with lanes kept in step by the hardware as on NVIDIA, Intel
     // and AMD.
-    bool maximal() const
+    // The pieces of WarpSync::maximal; the test-only modes (pxvk-warptest)
+    // take subsets of them to measure what each costs.
+    bool warp_sync_is(std::initializer_list<CompileOptions::WarpSync> modes) const
     {
-        return options_.warp_sync == CompileOptions::WarpSync::maximal && !options_.emulate_warps;
+        if (options_.emulate_warps) return false;
+        for (const auto m : modes)
+            if (options_.warp_sync == m) return true;
+        return false;
+    }
+    bool declares_reconvergence() const
+    {
+        using W = CompileOptions::WarpSync;
+        return warp_sync_is({W::maximal, W::mode_only, W::no_merge_barriers});
+    }
+    bool control_store_barriers() const
+    {
+        using W = CompileOptions::WarpSync;
+        return warp_sync_is({W::maximal, W::control, W::no_merge_barriers, W::merges_only});
+    }
+    bool merge_barriers() const
+    {
+        using W = CompileOptions::WarpSync;
+        return warp_sync_is({W::maximal, W::merges_only});
     }
 
     void warp_store_barrier()
     {
-        if (options_.warp_sync == CompileOptions::WarpSync::control || maximal()) warp_barrier();
+        if (control_store_barriers()) warp_barrier();
         else warp_fence();
     }
 
     void merge_barrier(const StructNode &node)
     {
-        if (maximal() && contains_warp_sync(node)) warp_barrier();
+        if (merge_barriers() && contains_warp_sync(node)) warp_barrier();
     }
 
     // Before a volatile shared load in warp-synchronous code, and around such
@@ -1715,7 +1735,7 @@ private:
             b_.label(merge);
             // A guarded volatile shared store: lanes that skipped it
             // synchronize with those that made it (see warp_store_barrier).
-            if (maximal() && is_warp_sync_store(in)) warp_barrier();
+            if (merge_barriers() && is_warp_sync_store(in)) warp_barrier();
         } else {
             lower_unguarded(in);
         }
@@ -2495,7 +2515,7 @@ private:
             b_.capability(SpvCapabilitySignedZeroInfNanPreserve);
             b_.execution_mode(main_, SpvExecutionModeSignedZeroInfNanPreserve, {32});
         }
-        if (maximal() && info_.warp_synchronous) {
+        if (declares_reconvergence() && info_.warp_synchronous) {
             // Reconvergence at merge blocks, which the barriers of
             // warp_store_barrier and merge_barrier rely on.
             b_.extension("SPV_KHR_maximal_reconvergence");
