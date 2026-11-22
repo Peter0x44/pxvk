@@ -18,6 +18,9 @@ cmake -S . -B build/x86 -G Ninja -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc `
 cmake --build build/x86
 ```
 
+On Linux, add `-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_PROCESSOR=x86`
+(as CI does); [`linux.md`](linux.md) covers that and running under Wine.
+
 `build/x86` then contains the three runtime files (`pxvk-launch.exe`,
 `nvcuda.dll`, `pxvk-nvapi.dll`), which depend only on Windows system DLLs,
 the drop-in proxy `game-folder/dinput8.dll` (`src/proxy`), and the
@@ -43,6 +46,7 @@ run the GPU tests.
 | [`environment.md`](environment.md) | every environment variable |
 | [`mirrors-edge.md`](mirrors-edge.md) | Mirror's Edge setup, scenes and workloads |
 | [`install.md`](install.md) | installing, running and reporting (for testers) |
+| [`linux.md`](linux.md) | building on Linux and running under Wine |
 | [`compatibility.md`](compatibility.md) | PhysX runtimes, games and what pxvk runs |
 | [`gpus.md`](gpus.md) | tested GPUs, vendor quirks, subgroup sizes and extension support |
 | [`nvidia-32bit-physx.md`](nvidia-32bit-physx.md) | how NVIDIA's driver restores 32-bit PhysX on RTX 50 |

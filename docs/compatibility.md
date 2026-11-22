@@ -139,6 +139,15 @@ The stalls of 150–490 ms during the benchmark happen at the same moments and
 for the same durations natively, so they are the game's own. The first pxvk
 run spent 8.5 s in pipeline creation, the third 51 ms.
 
+It also runs under Wine on Linux (November 2026: Arch Linux, Wine 11.22,
+NVIDIA 620.70.06, same RTX 5070 laptop; setup in [`linux.md`](linux.md)),
+through the drop-in with the game started directly and PhysX High. PhysX
+used the System Software's 2.8.4.12 core and pxvk on the RTX 5070. One
+session including a benchmark run made 151,896 launches of 77 kernels with
+no pxvk errors, and spent 12.8 s in pipeline creation (empty cache).
+Frame rates were not measured, and `BmLauncher.exe` was not tried under
+Wine.
+
 60 native captures of 10 fluid kernels and 60 of 10 cloth kernels replay
 EXACT on NVIDIA, and fluid launch sizes, which follow particle counts, have the same distribution as
 native (`KernelFluidDensity`: mean 6,157 against 6,162 threads, same p90 and
