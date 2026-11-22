@@ -345,8 +345,9 @@ check found no stale words. The mode costs nothing. NVK is slower than
 NVIDIA's own driver on the same GPU, though: the proprietary driver takes
 about 2.6 ms (skew 0) and 3.5 ms (skew 31) for `fence` on Linux, so NVK
 needs 1.8 and 4.8 times as long. A separate shader that runs only a
-dependent integer loop also took about twice as long on NVK, so part of it
-is probably clocks, which nouveau does not expose.
+dependent integer loop took 1.3 to 2.2 times as long on NVK (1,024 to 64
+workgroups), so part of it is probably clocks, which nouveau does not
+expose.
 
 **Code.** `NAK_DEBUG=print` prints each shader's NIR and NAK IR to stderr.
 Each shader's output starts with `Structured NIR for compute shader:`, and
