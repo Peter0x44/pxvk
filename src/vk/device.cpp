@@ -105,6 +105,7 @@ struct Device::Impl {
     std::uint32_t timed = 0;
     std::vector<double> times;
     std::vector<const char *> timed_labels;
+    std::vector<bool> timed_dispatches; // which timed operations are dispatches (for `times`)
     std::map<std::string, KernelTime> profile;
 
     // ---- buffers ------------------------------------------------------------
@@ -238,6 +239,7 @@ struct Device::Impl {
         commands = 0;
         timed = 0;
         timed_labels.clear();
+        timed_dispatches.clear();
     }
 
     // Serializes every command against all previous ones (CUDA stream order).
@@ -266,6 +268,7 @@ struct Device::Impl {
         launch_head = 0;
         timed = 0;
         timed_labels.clear();
+        timed_dispatches.clear();
     }
 
     bool submit_and_wait(std::string &error)
@@ -312,14 +315,63 @@ struct Device::Impl {
                                   VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
             times.clear();
             for (std::uint32_t i = 0; i < timed; ++i) {
-                times.push_back(static_cast<double>(values[2 * i + 1] - values[2 * i]) *
-                                timestamp_period * 1e-6);
+                const double ms = static_cast<double>(values[2 * i + 1] - values[2 * i]) * timestamp_period * 1e-6;
+                if (timed_dispatches[i]) times.push_back(ms);
                 KernelTime &k = profile[timed_labels[i] ? timed_labels[i] : "?"];
                 ++k.count;
-                k.total_ms += times.back();
+                k.total_ms += ms;
             }
         }
         return true;
+    }
+
+    // GPU timing (PXVK_PROFILE, pxvk-warptest) of one recorded operation:
+    // time_begin() before its commands, time_end() after them. Both
+    // timestamps wait for everything recorded before them. Without that a
+    // TOP_OF_PIPE start timestamp is written while earlier work still runs
+    // (the barrier between operations covers only compute and transfer), and
+    // the operation is charged for its predecessor's tail. NVIDIA's driver
+    // (620.73.04 on Linux, 621.01 on Windows) also writes a BOTTOM_OF_PIPE
+    // timestamp after a dispatch once its last workgroup has started, not
+    // finished; execution-only and compute-to-compute barriers do not stop
+    // that, a memory barrier to the host stage does. Only recorded when
+    // timing, so normal runs are unaffected.
+    bool time_begin()
+    {
+        if (!timing || !timestamp_valid_bits) return false;
+        if (!queries) {
+            VkQueryPoolCreateInfo q{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            q.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            q.queryCount = kMaxTimedDispatches * 2;
+            if (vkCreateQueryPool(device, &q, nullptr, &queries) != VK_SUCCESS) {
+                queries = VK_NULL_HANDLE;
+                return false;
+            }
+            vkCmdResetQueryPool(cmd, queries, 0, kMaxTimedDispatches * 2);
+        }
+        if (timed >= kMaxTimedDispatches) return false;
+        wait_before_timestamp();
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queries, timed * 2);
+        return true;
+    }
+
+    // `label` is kept by pointer and must outlive the device.
+    void time_end(const char *label, bool is_dispatch)
+    {
+        wait_before_timestamp();
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, queries, timed * 2 + 1);
+        timed_labels.push_back(label);
+        timed_dispatches.push_back(is_dispatch);
+        ++timed;
+    }
+
+    void wait_before_timestamp()
+    {
+        VkMemoryBarrier done{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        done.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        done.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &done, 0, nullptr, 0, nullptr);
     }
 
     // Reserves host-visible staging space, flushing the batch if it is full.
@@ -1121,7 +1173,9 @@ bool Device::upload(std::uint64_t offset, const void *data, std::size_t bytes, s
         std::memcpy(static_cast<unsigned char *>(d.staging.mapped) + staged, source, chunk);
         d.barrier();
         VkBufferCopy region{staged, offset, chunk};
+        const bool timed = d.time_begin();
         vkCmdCopyBuffer(d.cmd, d.staging.buffer, d.heap.buffer, 1, &region);
+        if (timed) d.time_end("[upload]", false);
         ++d.stats.uploads;
         d.stats.upload_bytes += chunk;
         source += chunk;
@@ -1153,7 +1207,9 @@ bool Device::fill(std::uint64_t offset, std::uint8_t value, std::size_t bytes, s
     }
     d.barrier();
     const std::uint32_t word = value * 0x01010101u;
+    const bool timed = d.time_begin();
     vkCmdFillBuffer(d.cmd, d.heap.buffer, aligned_start, aligned_end - aligned_start, word);
+    if (timed) d.time_end("[fill]", false);
     if (end > aligned_end) {
         std::uint8_t tail[4] = {value, value, value, value};
         if (!upload(aligned_end, tail, static_cast<std::size_t>(end - aligned_end), error)) return false;
@@ -1171,7 +1227,9 @@ bool Device::fill32(std::uint64_t offset, std::uint32_t word, std::size_t count,
     }
     if (count == 0) return true;
     d.barrier();
+    const bool timed = d.time_begin();
     vkCmdFillBuffer(d.cmd, d.heap.buffer, offset, bytes, word);
+    if (timed) d.time_end("[fill]", false);
     return true;
 }
 
@@ -1191,7 +1249,9 @@ bool Device::copy(std::uint64_t dst, std::uint64_t src, std::size_t bytes, std::
     }
     d.barrier();
     VkBufferCopy region{src, dst, bytes};
+    const bool timed = d.time_begin();
     vkCmdCopyBuffer(d.cmd, d.heap.buffer, d.heap.buffer, 1, &region);
+    if (timed) d.time_end("[copy]", false);
     return true;
 }
 
@@ -1220,7 +1280,9 @@ bool Device::download(void *data, std::uint64_t offset, std::size_t bytes, std::
     }
     d.barrier();
     VkBufferCopy region{offset, 0, bytes};
+    const bool timed = d.time_begin();
     vkCmdCopyBuffer(d.cmd, d.heap.buffer, d.readback.buffer, 1, &region);
+    if (timed) d.time_end("[download]", false);
     VkMemoryBarrier b{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
     b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     b.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
@@ -1267,7 +1329,9 @@ bool Device::copy_from_host(HostBuffer *buffer, std::uint64_t source, std::uint6
     if (bytes == 0) return true;
     d.barrier();
     VkBufferCopy region{source, heap_offset, bytes};
+    const bool timed = d.time_begin();
     vkCmdCopyBuffer(d.cmd, buffer->buffer.buffer, d.heap.buffer, 1, &region);
+    if (timed) d.time_end("[pinned to device]", false);
     ++d.stats.uploads;
     d.stats.upload_bytes += bytes;
     return true;
@@ -1284,7 +1348,9 @@ bool Device::copy_to_host(HostBuffer *buffer, std::uint64_t destination, std::ui
     if (bytes == 0) return true;
     d.barrier();
     VkBufferCopy region{heap_offset, destination, bytes};
+    const bool timed = d.time_begin();
     vkCmdCopyBuffer(d.cmd, d.heap.buffer, buffer->buffer.buffer, 1, &region);
+    if (timed) d.time_end("[device to pinned]", false);
     ++d.stats.downloads;
     d.stats.download_bytes += bytes;
     return true;
@@ -1387,38 +1453,13 @@ bool Device::dispatch(Shader *shader, const DispatchShape &shape, const void *la
     std::memcpy(static_cast<unsigned char *>(d.launch.mapped) + offset, launch_block, launch_block_bytes);
 
     d.barrier();
-    if (d.timing && !d.queries && d.timestamp_valid_bits) {
-        VkQueryPoolCreateInfo q{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
-        q.queryType = VK_QUERY_TYPE_TIMESTAMP;
-        q.queryCount = kMaxTimedDispatches * 2;
-        vkCreateQueryPool(d.device, &q, nullptr, &d.queries);
-        vkCmdResetQueryPool(d.cmd, d.queries, 0, kMaxTimedDispatches * 2);
-    }
-    const bool time_this = d.timing && d.queries && d.timed < kMaxTimedDispatches;
-    if (time_this)
-        vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, d.queries, d.timed * 2);
+    const bool time_this = d.time_begin();
     vkCmdBindPipeline(d.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     const std::uint32_t dynamic_offset = static_cast<std::uint32_t>(offset);
     vkCmdBindDescriptorSets(d.cmd, VK_PIPELINE_BIND_POINT_COMPUTE, d.pipeline_layout, 0, 1, &d.set, 1,
                             &dynamic_offset);
     vkCmdDispatch(d.cmd, shape.grid[0], shape.grid[1], shape.grid[2]);
-    if (time_this) {
-        // Wait for the dispatch before the end timestamp. NVIDIA's driver
-        // (620.73.04 on Linux, RTX 5070) writes a BOTTOM_OF_PIPE timestamp
-        // once the last workgroup has been launched, not finished, so a grid
-        // that fits on the GPU at once measured ~0 ms and larger ones missed
-        // their last wave. Execution-only barriers and compute-to-compute
-        // memory barriers do not help; a memory barrier to the host stage
-        // does. Only recorded when timing, so normal runs are unaffected.
-        VkMemoryBarrier done{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-        done.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        done.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-        vkCmdPipelineBarrier(d.cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &done, 0,
-                             nullptr, 0, nullptr);
-        vkCmdWriteTimestamp(d.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, d.queries, d.timed * 2 + 1);
-        d.timed_labels.push_back(label);
-        ++d.timed;
-    }
+    if (time_this) d.time_end(label, true);
     ++d.stats.dispatches;
     return true;
 }

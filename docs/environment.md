@@ -31,7 +31,7 @@ The log output of these needs `PXVK_LOG`.
 | Variable | Values | Effect |
 |---|---|---|
 | `PXVK_API_LOG` | switch | Also logs every memory copy, synchronization, texture binding and launch, tagged with the harness frame number (`f=`) and the calling thread (`t=`). The log grows quickly. |
-| `PXVK_PROFILE` | switch | Measures GPU time per kernel with timestamp queries. Every 500 launches (as well as every 5 s) it logs a `stats` line plus a `profile` line per kernel with launch count and total/average time. |
+| `PXVK_PROFILE` | switch | Measures GPU time per kernel with timestamp queries. Every 500 launches (as well as every 5 s) it logs a `stats` line plus a `profile` line per kernel with launch count and total/average time. Transfers get lines of their own: `[upload]`, `[download]`, `[copy]`, `[fill]`, `[pinned to device]` and `[device to pinned]`. Each timed operation waits for the previous one first, so it is not charged for earlier work (`testing.md`). |
 | `PXVK_SYNC` | switch | Waits for the GPU after every operation instead of batching. Very slow. Use it to tell a synchronization bug from a computation bug. |
 | `PXVK_DUMP_SPIRV` | folder path | Writes every compiled kernel as `<module hash>_<kernel name hash>_<variant>.spv`. Does not need `PXVK_LOG`. |
 | `PXVK_NO_FTZ_EMULATION` | switch | Ignores `.ftz` where pxvk would emulate it (NVIDIA, whose Vulkan driver has no fp32 flush-to-zero): faster, but subnormals then survive where native CUDA flushes them, so results are no longer bit-exact. The log's `init` line shows `ftz_emulation=`. No effect on devices with native flush-to-zero (Intel). |
